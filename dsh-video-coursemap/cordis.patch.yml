@@ -1,0 +1,4 @@
+# dsh-video-coursemap bundle patch：把 host 插件行插入 profile 的插件清单。
+- insert:
+    - id: dsh-video-coursemap
+      name: 'dsh-video-coursemap'
