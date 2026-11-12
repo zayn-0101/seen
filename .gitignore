@@ -6,3 +6,7 @@ docs/backup/
 # local model / browser binaries
 models/*.bin
 bin/
+
+# menubar build artifacts
+menubar/build/
+menubar/dist/

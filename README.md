@@ -153,6 +153,53 @@ node scripts/install-whisper-model.mjs
 
 或使用环境变量 `SEEN_LLM_BASE_URL` / `SEEN_LLM_API_KEY` / `SEEN_LLM_MODEL`。
 
+## 菜单栏应用（macOS）
+
+除了网页面板，还可以装一个菜单栏小应用：常驻图标、点开即用。
+
+**构建与安装**：
+
+```bash
+cd menubar
+./build.sh              # 编译到 menubar/dist/Seen.app
+./build.sh --install    # 同时复制到 ~/Applications/Seen.app
+open dist/Seen.app
+```
+
+**能做什么**：
+
+- 菜单栏图标常驻，点击弹出面板；
+- 看到轮询状态、轮询间隔、最近处理的视频、学科数；
+- 一键开始 / 暂停轮询；
+- 打开网页面板、笔记目录；
+- 运行诊断（等价于 `course_map_check`）；
+- 「登录时自动启动」开关：优先系统登录项（SMAppService），不适用时自动回退 LaunchAgent；
+- 本地服务没在跑时自动拉起；退出应用时停掉它拉起的服务进程。
+
+**两种开机自启的区别**：
+
+| 方式 | 启动内容 | 适合 |
+|---|---|---|
+| 菜单栏应用里的「登录时自动启动」 | 菜单栏图标 + 本地服务 | 平时用菜单栏控制 |
+| `node scripts/install-launchd.mjs` | 只有本地服务（无菜单栏图标） | 只想后台跑服务 |
+
+两者不要同时开，否则会各起一个服务实例；菜单栏应用检测到服务已在跑会直接复用。
+
+**图标**：由 `menubar/icon/*.svg` 生成，默认是「光点书页」。换一版：
+
+```bash
+cd menubar
+STATUS_SRC=icon/status-b.svg APP_SRC=icon/app-b.svg bash scripts/make-icons.sh
+./build.sh
+```
+
+**排障**：
+
+- 日志：`~/.seen/menubar.log`
+- 自启状态：`menubar/dist/Seen.app/Contents/MacOS/Seen --autostart status`
+- 开启自启后如果没生效，到「系统设置 → 通用 → 登录项」允许 Seen；
+- 移动了 app 位置后，需要关掉再打开一次自启开关。
+
 ## Obsidian 目录结构
 
 ```

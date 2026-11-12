@@ -34,6 +34,12 @@ seen/
 │   ├── install-launchd.mjs
 │   └── uninstall-launchd.mjs
 ├── seen.command             双击启动独立服务
+├── menubar/                  菜单栏应用（Swift，只调本地服务 HTTP）
+│   ├── Sources/              main / AppDelegate / PanelView / ServiceClient / AutoLaunch
+│   ├── icon/                 图标 SVG 源文件（status-a/b/c、app-a/b/c）
+│   ├── Resources/            Info.plist 与生成的图标
+│   ├── scripts/make-icons.sh SVG → PNG/ICNS
+│   └── build.sh              编译打包 menubar/dist/Seen.app
 ├── package.json             根脚本（npm start / npm test）
 └── core/                      Seen 视频引擎（包名仍保留 dsh-video-coursemap 以兼容 DSH）
     ├── package.json
@@ -50,6 +56,7 @@ seen/
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
+- 菜单栏应用改动后运行：`cd menubar && ./build.sh`。
 - 插件代码改动后必须重启 DSH Desktop 才生效（DSH 对插件模块做缓存）。
 - 日志不得记录完整弹幕/评论全文、Cookie、密钥。
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。
@@ -67,11 +74,13 @@ seen/
 | DSH profile | `~/.dsh/profiles/desktop` |
 | mnemon CLI | `~/.local/share/fnm/node-versions/v24.15.0/installation/bin/mnemon` |
 | Obsidian CLI | `/opt/homebrew/bin/obsidian-cli` |
+| 菜单栏应用日志 | `~/.seen/menubar.log` |
 
 ## 验证命令
 
 ```bash
 cd core && node --test
+cd menubar && ./build.sh               # 编译菜单栏应用 → menubar/dist/Seen.app
 node scripts/install-local-plugin.mjs   # 安装到 DSH profile（会先备份）
 node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
 node scripts/install-whisper-model.mjs  # 安装抖音转写模型（约 465MB）
@@ -87,6 +96,7 @@ mnemon recall "视频课程"
 
 ## 重要事实
 
+- 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（私有，默认分支 `master`）。改动完成后记得提交并推送。
 - 当前默认只运行独立服务；`dsh-video-coursemap` 已从 DSH profile 的 bundles 中移除，不再随 DSH 加载。
 - 原版 `dsh-video-coursemap 2.0.0` 仅支持 Windows 前台窗口 + Word 输出；本仓库是其 macOS/Obsidian 增强 fork。
