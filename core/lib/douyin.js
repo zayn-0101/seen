@@ -9,7 +9,7 @@
  *
  * 不使用 Douyin 私有的签名接口，也不保存 Cookie。
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -42,21 +42,60 @@ function firstFile(candidates) {
   return null
 }
 
+
+function whichSync(command) {
+  try {
+    const result = spawnSync(process.platform === 'win32' ? 'where' : 'which', [command], {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+    })
+    if (result.status !== 0) return null
+    return String(result.stdout ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) || null
+  } catch {
+    return null
+  }
+}
+
+/** macOS 上按标准位置拼出浏览器可执行文件；Windows/Linux 返回空。 */
+function appBundleCandidates(names) {
+  if (process.platform !== 'darwin') return []
+  const roots = ['/Applications', join(homedir(), 'Applications')]
+  const out = []
+  for (const root of roots) {
+    for (const name of names) out.push(join(root, name + '.app', 'Contents', 'MacOS', name))
+  }
+  return out
+}
+
+const CHROME_APP_NAMES = ['Google Chrome', 'Google Chrome Canary', 'Microsoft Edge', 'Brave Browser', 'Chromium']
+
 export function findChrome(config = {}) {
+  const configured = config.chromePath ? expandHome(config.chromePath) : null
+  const fromEnv = process.env.SEEN_CHROME_BIN ? expandHome(process.env.SEEN_CHROME_BIN) : null
   return firstFile([
-    config.chromePath ? expandHome(config.chromePath) : null,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    configured,
+    fromEnv,
+    whichSync('google-chrome'),
+    whichSync('google-chrome-stable'),
+    whichSync('chromium'),
+    whichSync('chromium-browser'),
+    ...appBundleCandidates(CHROME_APP_NAMES),
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
   ])
 }
 
 export function findFfmpeg(config = {}) {
+  const configured = config.ffmpegBin ? expandHome(config.ffmpegBin) : null
+  const fromEnv = process.env.SEEN_FFMPEG_BIN ? expandHome(process.env.SEEN_FFMPEG_BIN) : null
   return firstFile([
-    config.ffmpegBin ? expandHome(config.ffmpegBin) : null,
+    configured,
+    fromEnv,
+    whichSync('ffmpeg'),
     '/opt/homebrew/bin/ffmpeg',
     '/usr/local/bin/ffmpeg',
     '/usr/bin/ffmpeg',
@@ -64,8 +103,13 @@ export function findFfmpeg(config = {}) {
 }
 
 export function findWhisperCli(config = {}) {
+  const configured = config.whisperBin ? expandHome(config.whisperBin) : null
+  const fromEnv = process.env.SEEN_WHISPER_BIN ? expandHome(process.env.SEEN_WHISPER_BIN) : null
   return firstFile([
-    config.whisperBin ? expandHome(config.whisperBin) : null,
+    configured,
+    fromEnv,
+    whichSync('whisper-cli'),
+    whichSync('whisper-cpp'),
     '/opt/homebrew/bin/whisper-cli',
     '/usr/local/bin/whisper-cli',
     join(homedir(), '.local', 'bin', 'whisper-cli'),

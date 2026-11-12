@@ -17,6 +17,7 @@ const MAX_BUFFER = 1024 * 1024
 
 // macOS 不同版本 lsappinfo 位置不同，按顺序尝试
 const LSAPPINFO_BINS = [
+  'lsappinfo',
   '/usr/bin/lsappinfo',
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsappinfo',
   'lsappinfo',

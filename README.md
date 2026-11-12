@@ -97,6 +97,8 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 - 抖音精选需要本机 Chrome、ffmpeg、whisper-cli 和 Whisper 模型。
 - Obsidian **不需要打开**，笔记直接写入 vault。
 
+**依赖探测**：ffmpeg、whisper-cli、无头 Chrome、yt-dlp、mnemon、obsidian-cli 都按「环境变量 → PATH → 常见安装位置」的顺序自动查找，不写死任何机器的路径。可用 `SEEN_FFMPEG_BIN` / `SEEN_WHISPER_BIN` / `SEEN_CHROME_BIN` 覆盖。
+
 **启动**：
 
 - 在 Finder 里双击 `seen.command`；

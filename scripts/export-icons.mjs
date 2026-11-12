@@ -16,7 +16,7 @@ const logoSizes = [32, 64, 128, 256, 512, 1024]
 const statusSizes = [16, 18, 20, 24, 32, 36, 48, 54, 64]
 
 for (const tool of ['rsvg-convert', 'magick', 'iconutil', 'ditto']) {
-  execFileSync('/usr/bin/which', [tool], { stdio: 'pipe' })
+  execFileSync('which', [tool], { stdio: 'pipe' })
 }
 for (const dir of ['svg', 'png/app-light', 'png/app-dark', 'png/logo', 'template/black', 'template/white', 'macos/Seen.iconset', 'web']) {
   mkdirSync(join(pack, dir), { recursive: true })

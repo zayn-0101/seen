@@ -245,13 +245,6 @@ export function updateOverview({ vaultPath, noteRoot, subjects } = {}) {
 }
 
 function findObsidianCli() {
-  for (const candidate of OBSIDIAN_CLI_CANDIDATES) {
-    try {
-      if (statSync(candidate).isFile()) return candidate
-    } catch {
-      // 继续尝试下一个
-    }
-  }
   try {
     const result = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['obsidian-cli'], {
       encoding: 'utf8',
@@ -263,7 +256,14 @@ function findObsidianCli() {
       if (first) return first
     }
   } catch {
-    // 找不到就返回 null
+    // 继续尝试常见路径
+  }
+  for (const candidate of OBSIDIAN_CLI_CANDIDATES) {
+    try {
+      if (statSync(candidate).isFile()) return candidate
+    } catch {
+      // 继续尝试下一个
+    }
   }
   return null
 }
