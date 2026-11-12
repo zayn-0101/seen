@@ -196,7 +196,7 @@ node scripts/export-icons.mjs
 cd menubar && ./build.sh
 ```
 
-完整交付包在 [`docs/brand/squirrel-icons-v1.zip`](docs/brand/squirrel-icons-v1.zip)，包含 8 份 SVG 母版、16–1024px 应用图标、两个 ICNS、黑白菜单栏模板、透明标识以及 favicon、Apple Touch 和 Web Manifest 资源。规范见 [`docs/brand/README.md`](docs/brand/README.md)。
+运行上面的导出命令会在本地生成完整交付包 `docs/brand/squirrel-icons-v1/`（含 8 份 SVG 母版、16–1024px 应用图标、两个 ICNS、黑白菜单栏模板、透明标识以及 favicon、Apple Touch 和 Web Manifest 资源），该目录与 zip 不入库。规范见 [`docs/brand/README.md`](docs/brand/README.md)。
 
 构建只更新工作区资源；已有工作区 `.app` 会移入 `menubar/build/previous-app.*` 保留备份。
 
@@ -247,7 +247,7 @@ cd menubar && ./build.sh
     pollIntervalMs: 15000
     stablePolls: 2
     noteRoot: 课程知识地图
-    vaultPath: ~/Documents/Obsidian Vault
+    vaultPath: ~/Documents/Obsidian Vault   # 改成你的 vault 路径
     fetchTranscript: true
     useBrowserCookies: true
     cookieBrowser: chrome
