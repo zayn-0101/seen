@@ -31,6 +31,15 @@
       → state 保存
 ```
 
+## 多平台来源
+
+当前支持两类来源：
+
+- **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie。
+- **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；ffmpeg 抽音频；本地 `whisper-cli` 转写。结果缓存到 `~/.myminer/cache/douyin`。
+
+`source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:` 或 `douyin:<id>` 去重。抖音目前只取页面的评论/弹幕总数，不抓取评论/弹幕正文；笔记会明确标注「暂未抓取」。
+
 ## 独立运行模式
 
 `server/index.js` 把同一套插件核心包成一个本地服务：

@@ -85,10 +85,13 @@ export function saveState(statePath, state) {
   atomicWrite(statePath, JSON.stringify(mergeState(state), null, 2) + '\n')
 }
 
-/** 生成去重键：优先 bvid，否则标题小写去空白/标点 */
-export function seenKey({ bvid, title } = {}) {
+/** 生成去重键：优先 bvid / 平台视频 ID，否则标题小写去空白/标点 */
+export function seenKey({ bvid, videoId, source, title } = {}) {
   if (bvid !== null && bvid !== undefined && String(bvid).trim() !== '') {
     return 'bvid:' + String(bvid).trim()
+  }
+  if (videoId !== null && videoId !== undefined && String(videoId).trim() !== '') {
+    return String(source || 'video') + ':' + String(videoId).trim()
   }
   const normalized = String(title ?? '')
     .normalize('NFC')

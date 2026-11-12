@@ -784,7 +784,7 @@ async function digestTranscript(ctx, config, { title, transcript }) {
       const text = await callLlm(ctx, config, {
         system: '你是课程字幕压缩助手，只做忠实的信息压缩，不补充字幕之外的内容。',
         messages: [userMessage(prompt)],
-        maxTokens: 1400,
+        maxTokens: 3000,
       })
       const cleaned = cleanText(text)
       if (cleaned) parts.push('【第 ' + (i + 1) + ' 段】' + cleaned)
@@ -817,7 +817,9 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
       ? '（来源：B站 AI 字幕，自动识别，可能存在同音错字）'
       : content.transcriptSource === 'up-subtitle'
         ? '（来源：UP 主字幕）'
-        : ''
+        : content.transcriptSource === 'whisper'
+          ? '（来源：抖音音频 Whisper 转写，自动识别，可能存在同音错字）'
+          : ''
     parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcript, 14000))
   }
 
@@ -921,7 +923,7 @@ export async function summarize(ctx, config, input = {}) {
       text = await callLlm(ctx, config, {
         system: SUMMARIZE_SYSTEM,
         messages: [userMessage(extra ? prompt + '\n\n' + extra : prompt)],
-        maxTokens: config?.maxTokens ?? DEFAULT_MAX_TOKENS,
+        maxTokens: Math.max(Number(config?.maxTokens) || DEFAULT_MAX_TOKENS, 8192),
       })
     } catch {
       return null

@@ -1,14 +1,14 @@
 # 视频课程知识地图 · Obsidian 版
 
-把 B 站网页课程视频自动变成 Obsidian 知识笔记，并把每篇总结写入 dsh-mnemon 的记忆库。
+把 B 站 / 抖音精选的网页课程长视频自动变成 Obsidian 知识笔记，并把每篇总结写入 dsh-mnemon 的记忆库。
 
 > **当前推荐用法：独立本地服务 + 浏览器面板**。DSH 插件已从 profile 的 bundles 中移除，不再随 DSH 加载；只用独立服务即可。
 
 ## 它会做什么
 
-1. **实时检测**：每 15 秒观察当前前台浏览器；发现新的 B 站视频课程后自动处理。
+1. **实时检测**：每 15 秒观察当前前台浏览器；发现新的 B 站视频 / 抖音精选长视频后自动处理。
 2. **学科分类**：LLM 判断视频属于哪个学科；已有学科 → 更新该学科的学习手册；新学科 → 新建学习手册。
-3. **内容总结**：优先抓取 B 站 AI 字幕/UP 主字幕作为完整讲解文本，再结合简介、标签、弹幕、评论生成核心知识点、讨论焦点和思维导图。没有字幕时会明确标注「内容依据有限」。
+3. **内容总结**：B 站优先抓 AI 字幕/UP 主字幕；抖音精选下载音频后用本地 Whisper 转写，再结合简介、标签、弹幕、评论生成核心知识点、讨论焦点和思维导图。没有字幕/转写时会明确标注「内容依据有限」。
 4. **保存 Obsidian**：每视频一篇原子笔记 + 每学科一篇学习手册 + 全局课程总览。
 5. **写入 mnemon**：每视频写一条精简 insight 到 dsh-mnemon 的 default Memory Space，可在 DSH 对话中召回。
 
@@ -94,6 +94,7 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 
 - 本机 Magpie 菜单栏应用保持运行（它提供本地模型网关；DSH 也用同一个）。
 - Chrome 已登录 B 站（抓 AI 字幕用）。
+- 抖音精选需要本机 Chrome、ffmpeg、whisper-cli 和 Whisper 模型。
 - Obsidian **不需要打开**，笔记直接写入 vault。
 
 **启动**：
@@ -103,6 +104,8 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 - 浏览器打开 [http://127.0.0.1:4780](http://127.0.0.1:4780)。
 
 界面预览：![课程矿工界面](docs/ui-preview.jpg)
+
+抖音精选处理结果：![抖音精选总结](docs/ui-preview-douyin.jpg)
 
 页面里可以：
 
@@ -126,6 +129,14 @@ node scripts/uninstall-launchd.mjs
 ```
 
 服务日志在 `~/.myminer/server.log` / `server.err.log`。
+
+**抖音精选首次使用**：先安装本地 Whisper 模型（约 465MB）：
+
+```bash
+node scripts/install-whisper-model.mjs
+```
+
+之后处理一条抖音精选长视频会自动：无头 Chrome 解析页面 → ffmpeg 抽音频 → Whisper 转写 → LLM 总结。转写结果缓存在 `~/.myminer/cache/douyin`，同一视频第二次不重复转写；`force` 扫描会重新转写。
 
 **和 DSH 的关系**：当前 DSH 插件已从 profile 的 `bundles` 中移除，不会随 DSH 加载，也不会占用锁。以后如果重新启用插件，二者共用状态目录与 `instance.lock`，同一时间只能有一个轮询实例；DSH 在运行时，独立页面会显示「DSH 占用中」并进入只读，退出 DSH 后重启独立服务即可接管。
 
@@ -164,11 +175,12 @@ node scripts/uninstall-launchd.mjs
 ## 内容来源与可信度
 
 - **有 AI 字幕/UP 主字幕**：笔记 frontmatter 标记 `contentSource: ai-subtitle` 或 `up-subtitle`，`contentQuality: full`；知识点以字幕为主。
-- **没有字幕**：标记 `contentSource: metadata`、`contentQuality: metadata-only`，笔记顶部会出现「内容依据有限」警告；核心知识点只基于简介/标签，弹幕和评论只用于讨论焦点。
+- **抖音精选**：`contentSource: whisper`、`contentQuality: full`；音频用本地 Whisper 转写，笔记会标注转写来源。当前只取抖音的评论/弹幕总数，不抓取正文，笔记和页面都会标注「暂未抓取」。
+- **没有字幕/转写**：标记 `contentSource: metadata`、`contentQuality: metadata-only`，笔记顶部会出现「内容依据有限」警告；核心知识点只基于简介/标签，弹幕和评论只用于讨论焦点。
 - 统计区会显示「抓取 X 条 / 全站 Y 条」，不再把匿名接口拿到的 3 条热评写成视频实际评论数。
 - AI 字幕可能包含同音错字，插件会让模型结合上下文纠正，但不保证 100% 准确。
 
-> 隐私说明：`useBrowserCookies: true` 时，插件只在抓取字幕/评论时通过 `yt-dlp` 临时读取 Chrome 的 B 站 Cookie，Cookie 文件写入系统临时目录并在调用后立即删除，不写入日志、不写入 Obsidian、不写入配置。
+> 隐私说明：`useBrowserCookies: true` 时，插件只在抓取 B 站字幕/评论时通过 `yt-dlp` 临时读取 Chrome 的 B 站 Cookie，Cookie 文件写入系统临时目录并在调用后立即删除，不写入日志、不写入 Obsidian、不写入配置。抖音解析使用独立临时 profile 的无头 Chrome，不读取用户 Chrome Cookie；profile 和音频临时文件用后删除。
 
 ## 配置
 
@@ -208,6 +220,11 @@ node scripts/uninstall-launchd.mjs
 | `transcriptLangs` | ai-zh, zh-Hans… | 字幕语言优先级 |
 | `useTranscriptCache` | true | 复用已下载的 AI 字幕（避免重复 LLM 分块） |
 | `transcriptCacheDays` | 7 | 字幕缓存保留天数 |
+| `douyinCacheDays` | 7 | 抖音页面/转写缓存天数 |
+| `chromePath` | null | 可选：自定义 Chrome 可执行文件路径 |
+| `ffmpegBin` | null | 可选：自定义 ffmpeg 路径 |
+| `whisperBin` | null | 可选：自定义 whisper-cli 路径 |
+| `whisperModel` | null | 可选：自定义 Whisper 模型路径 |
 | `commentLimit` | 50 | 最多抓取多少条高赞评论（最大 100） |
 | `ytDlpBin` | 自动 | yt-dlp 路径（默认自动探测） |
 | `enableMnemon` | true | 是否写 mnemon |

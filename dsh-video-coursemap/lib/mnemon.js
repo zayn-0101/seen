@@ -135,7 +135,7 @@ function flattenKeyPoints(keyPoints) {
 }
 
 /** 生成 mnemon insight 内容：标题/学科/摘要/前 5 条知识点/笔记路径/B站链接，≤800 字。 */
-export function buildMnemonContent({ title, subject, summary, keyPoints, notePath, bvid, url } = {}) {
+export function buildMnemonContent({ title, subject, summary, keyPoints, notePath, bvid, videoId, url, platformLabel } = {}) {
   const safeTitle = oneLine(title) || '未命名视频'
   const safeSubject = oneLine(subject) || '未分类'
   const safeSummary = oneLine(summary)
@@ -144,11 +144,12 @@ export function buildMnemonContent({ title, subject, summary, keyPoints, notePat
 
   const note = oneLine(notePath)
   const link = oneLine(url) || (oneLine(bvid) ? `https://www.bilibili.com/video/${oneLine(bvid)}` : '')
+  const platformName = oneLine(platformLabel) || (oneLine(bvid) ? 'B站' : '视频')
 
   const headLines = [`【视频课程】${safeTitle}`, `学科：${safeSubject}`]
   const tailLines = []
   if (note) tailLines.push(`笔记：${note}`)
-  if (link) tailLines.push(`B站：${link}`)
+  if (link) tailLines.push(`${platformName}：${link}`)
 
   const fixedLength =
     headLines.join('\n').length +
@@ -228,7 +229,7 @@ function delay(ms) {
 }
 
 /** 写入一条视频 insight；失败重试一次，绝不抛错。 */
-export async function rememberVideo({ config, title, subject, summary, keyPoints, notePath, bvid, url, keywords } = {}) {
+export async function rememberVideo({ config, title, subject, summary, keyPoints, notePath, bvid, videoId, url, keywords, platformLabel } = {}) {
   try {
     const safeConfig = config && typeof config === 'object' ? config : {}
     const bin = await findMnemon(safeConfig)
@@ -236,9 +237,9 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
       return { ok: false, error: '未找到 mnemon CLI（可用 mnemonBin 配置指定）' }
     }
 
-    const content = buildMnemonContent({ title, subject, summary, keyPoints, notePath, bvid, url })
+    const content = buildMnemonContent({ title, subject, summary, keyPoints, notePath, bvid, videoId, url, platformLabel })
     const tags = ['视频课程', oneLine(subject), ...(Array.isArray(keywords) ? keywords.map(oneLine) : [])].filter(Boolean).slice(0, 10).join(',')
-    const entities = [oneLine(title), oneLine(subject), oneLine(bvid)].filter(Boolean).join(',')
+    const entities = [oneLine(title), oneLine(subject), oneLine(bvid), oneLine(videoId)].filter(Boolean).join(',')
     const args = buildRememberArgs({
       bin,
       content,

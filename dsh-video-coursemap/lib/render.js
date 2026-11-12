@@ -206,6 +206,8 @@ export function renderVideoNote(input = {}) {
   const title = cleanInline(source.title) || DEFAULT_TITLE
   const subject = cleanInline(source.subject) || DEFAULT_SUBJECT
   const bvid = String(source.bvid ?? '').trim()
+  const videoId = String(source.videoId ?? '').trim()
+  const platform = cleanInline(source.source || source.platform) || 'bilibili'
   const url = String(source.url ?? '').trim()
   const author = String(source.author ?? '').trim()
   const createdAt = formatDate(source.createdAt ?? Date.now())
@@ -218,11 +220,10 @@ export function renderVideoNote(input = {}) {
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
 
-  const frontmatter = renderFrontmatter({
+  const frontmatterData = {
     title,
     subject,
-    source: 'bilibili',
-    bvid,
+    source: platform,
     url,
     author,
     created: createdAt,
@@ -231,7 +232,10 @@ export function renderVideoNote(input = {}) {
     contentSource,
     contentQuality,
     type: 'video-note',
-  })
+  }
+  if (bvid) frontmatterData.bvid = bvid
+  if (videoId) frontmatterData.videoId = videoId
+  const frontmatter = renderFrontmatter(frontmatterData)
 
   const lines = []
   lines.push(frontmatter.trimEnd(), '')
@@ -240,8 +244,13 @@ export function renderVideoNote(input = {}) {
     lines.push('> [!warning] 内容依据有限', '> 未获取到视频字幕/转写，本文主要基于简介、标签和观众讨论整理，知识点可能不完整或有偏差。', '')
   } else if (contentSource === 'ai-subtitle') {
     lines.push('> [!info] 内容来源：B站 AI 字幕（自动识别，可能存在少量同音错字）', '')
+  } else if (contentSource === 'whisper') {
+    lines.push('> [!info] 内容来源：抖音音频，本地 Whisper 转写（自动识别，可能存在同音错字）', '')
   }
   lines.push(`> ${summary || '（暂无摘要）'}`, '')
+  if (platform === 'douyin') {
+    lines.push('> [!note] 抖音评论/弹幕正文暂未抓取，下方讨论焦点为基于主题的推演。', '')
+  }
   const manualTarget = `${noteRoot}/${subject}/${subject} 学习手册`
   lines.push(`> 所属学科：[[${manualTarget}|${subject} 学习手册]]`, '')
 
@@ -283,19 +292,30 @@ export function renderVideoNote(input = {}) {
   lines.push('```', '')
 
   lines.push('## 来源统计', '')
-  lines.push(`- B站视频：${url || '（未匹配到 B 站视频）'}`)
-  lines.push(`- BV 号：${bvid || '（无）'}`)
-  lines.push(`- UP 主：${author || '（未知）'}`)
-  lines.push(`- 视频简介：${stats.desc} 字`)
-  lines.push(`- 标签：${stats.tags} 个`)
-  const transcriptLabel = contentSource === 'ai-subtitle'
-    ? '（B站 AI 字幕）'
-    : contentSource === 'up-subtitle'
-      ? '（UP 主字幕）'
-      : ''
-  lines.push(`- 字幕：${stats.transcript} 字${transcriptLabel}`)
-  lines.push(`- 弹幕：抓取 ${stats.danmaku} 条 / 全站 ${stats.totalDanmaku || '未知'} 条`)
-  lines.push(`- 评论：抓取 ${stats.comments} 条 / 全站 ${stats.totalComments || '未知'} 条`, '')
+  if (platform === 'douyin') {
+    lines.push(`- 抖音精选：${url || '（未匹配到抖音视频）'}`)
+    lines.push(`- 视频 ID：${videoId || '（无）'}`)
+    lines.push(`- 作者：${author || '（未知）'}`)
+    lines.push(`- 视频简介：${stats.desc} 字`)
+    lines.push(`- 标签：${stats.tags} 个`)
+    lines.push(`- 音频转写：${stats.transcript} 字（本地 Whisper）`)
+    lines.push(`- 弹幕：全站 ${stats.totalDanmaku || '未知'} 条（暂未抓取）`)
+    lines.push(`- 评论：全站 ${stats.totalComments || '未知'} 条（暂未抓取）`, '')
+  } else {
+    lines.push(`- B站视频：${url || '（未匹配到 B 站视频）'}`)
+    lines.push(`- BV 号：${bvid || '（无）'}`)
+    lines.push(`- UP 主：${author || '（未知）'}`)
+    lines.push(`- 视频简介：${stats.desc} 字`)
+    lines.push(`- 标签：${stats.tags} 个`)
+    const transcriptLabel = contentSource === 'ai-subtitle'
+      ? '（B站 AI 字幕）'
+      : contentSource === 'up-subtitle'
+        ? '（UP 主字幕）'
+        : ''
+    lines.push(`- 字幕：${stats.transcript} 字${transcriptLabel}`)
+    lines.push(`- 弹幕：抓取 ${stats.danmaku} 条 / 全站 ${stats.totalDanmaku || '未知'} 条`)
+    lines.push(`- 评论：抓取 ${stats.comments} 条 / 全站 ${stats.totalComments || '未知'} 条`, '')
+  }
 
   return lines.join('\n')
 }

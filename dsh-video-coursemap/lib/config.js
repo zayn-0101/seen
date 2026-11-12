@@ -30,6 +30,11 @@ export const DEFAULTS = Object.freeze({
   transcriptLangs: ['ai-zh', 'zh-Hans', 'zh-CN', 'zh'],
   useTranscriptCache: true,
   transcriptCacheDays: 7,
+  douyinCacheDays: 7,
+  chromePath: null,
+  ffmpegBin: null,
+  whisperBin: null,
+  whisperModel: null,
   commentLimit: 50,
   enableMnemon: true,
   mnemonBin: null,
@@ -38,9 +43,9 @@ export const DEFAULTS = Object.freeze({
   browserNames: null,
 })
 
-const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays']
+const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays']
 const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian']
-const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin']
+const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin', 'chromePath', 'ffmpegBin', 'whisperBin', 'whisperModel']
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

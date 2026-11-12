@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 *.log
 docs/backup/
+
+# local model / browser binaries
+models/*.bin
+bin/

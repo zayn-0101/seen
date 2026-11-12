@@ -20,6 +20,7 @@ const ICONS = {
   content: '内容已抓取',
   classified: '分类完成',
   transcript: '字幕就绪',
+  progress: '处理进度',
   summarizing: '生成总结',
   summarized: '总结完成',
   saved: '已保存笔记',
@@ -54,6 +55,15 @@ function formatDate(ts) {
 function extractBvid(url) {
   const match = String(url || '').match(/(BV[0-9A-Za-z]{10})/)
   return match ? match[1] : ''
+}
+
+function extractDouyinId(url) {
+  const match = String(url || '').match(/(?:[?&](?:modal_id|aweme_id)=|\/video\/)(\d{10,})/)
+  return match ? match[1] : ''
+}
+
+function platformLabel(source) {
+  return source === 'douyin' ? '抖音精选' : source === 'bilibili' ? 'B站' : ''
 }
 
 function setPill(node, text, tone, title) {
@@ -123,7 +133,9 @@ function renderForeground(fg) {
 
   const meta = el('div', 'fg-meta')
   const bvid = extractBvid(fg.url)
+  const douyinId = extractDouyinId(fg.url)
   if (bvid) meta.append(el('span', 'chip accent', bvid))
+  else if (douyinId) meta.append(el('span', 'chip accent', '抖音 ' + douyinId))
   if (fg.url) {
     try {
       const host = new URL(fg.url).hostname
@@ -150,8 +162,11 @@ function renderSummary(data, stageText) {
   body.replaceChildren()
 
   const title = data.title || '（未命名视频）'
+  const source = data.source || data.platform || (data.contentSource === 'whisper' ? 'douyin' : 'bilibili')
+  const sourceName = platformLabel(source)
   body.append(el('h3', 'summary-title', title))
-  if (data.subject) body.append(el('div', 'summary-subject', data.subject))
+  const subjectLine = [data.subject, sourceName].filter(Boolean).join(' · ')
+  if (subjectLine) body.append(el('div', 'summary-subject', subjectLine))
 
   if (data.summary) body.append(el('blockquote', 'summary-quote', data.summary))
 
@@ -173,7 +188,7 @@ function renderSummary(data, stageText) {
 
   if (Array.isArray(data.discussion) && data.discussion.length) {
     const section = el('div', 'summary-section')
-    section.append(el('h3', '', '弹幕与评论焦点'))
+    section.append(el('h3', '', source === 'douyin' ? '讨论焦点（基于主题）' : '弹幕与评论焦点'))
     const ul = el('ul')
     for (const item of data.discussion) ul.append(el('li', '', item))
     section.append(ul)
@@ -196,10 +211,23 @@ function renderSummary(data, stageText) {
 
   const stats = data.fetchStats || null
   if (stats) {
+    const douyin = source === 'douyin'
     const grid = el('div', 'stats')
-    grid.append(statBox(String(stats.transcript || 0) + ' 字', data.contentSource === 'ai-subtitle' ? 'AI 字幕' : data.contentSource === 'up-subtitle' ? 'UP 主字幕' : '字幕'))
-    grid.append(statBox(String(stats.comments || 0) + ' / ' + (stats.totalComments || '—'), '评论（抓取 / 全站）'))
-    grid.append(statBox(String(stats.danmaku || 0) + ' / ' + (stats.totalDanmaku || '—'), '弹幕（抓取 / 全站）'))
+    const transcriptLabel = data.contentSource === 'ai-subtitle'
+      ? 'AI 字幕'
+      : data.contentSource === 'up-subtitle'
+        ? 'UP 主字幕'
+        : data.contentSource === 'whisper' || douyin
+          ? '音频转写'
+          : '字幕'
+    grid.append(statBox(String(stats.transcript || 0) + ' 字', transcriptLabel))
+    if (douyin) {
+      grid.append(statBox(String(stats.totalComments || '—'), '全站评论（暂未抓取）'))
+      grid.append(statBox(String(stats.totalDanmaku || '—'), '全站弹幕（暂未抓取）'))
+    } else {
+      grid.append(statBox(String(stats.comments || 0) + ' / ' + (stats.totalComments || '—'), '评论（抓取 / 全站）'))
+      grid.append(statBox(String(stats.danmaku || 0) + ' / ' + (stats.totalDanmaku || '—'), '弹幕（抓取 / 全站）'))
+    }
     grid.append(statBox(data.contentQuality === 'full' ? '完整' : '有限', '内容依据'))
     body.append(grid)
   }
@@ -239,13 +267,14 @@ function renderHistory(history) {
   for (const row of rows.slice(0, 12)) {
     const button = el('button', 'history-item')
     button.type = 'button'
-    button.append(el('div', 'h-subject', row.subject || '未分类'))
+    button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ')))
     button.append(el('div', 'h-title', row.title || '（未命名视频）'))
     if (row.summary) button.append(el('div', 'h-summary', row.summary))
     button.addEventListener('click', () => {
       renderSummary({
         title: row.title,
         subject: row.subject,
+        source: row.source,
         summary: row.summary,
         keyPoints: [],
         discussion: [],
@@ -273,6 +302,7 @@ function renderEvents(events) {
     else if (event.type === 'error' && event.data?.message) text = '失败：' + event.data.message
     else if (event.type === 'status' && event.data) text = event.data.polling ? '轮询已启动' : '轮询已停止'
     else if (event.type === 'transcript' && event.data) text = '字幕就绪：' + (event.data.length || 0) + ' 字'
+    else if (event.type === 'progress' && event.data?.message) text = event.data.message
     li.append(el('span', '', text))
     list.append(li)
   }
@@ -317,6 +347,7 @@ function renderSnapshot(snap) {
     renderSummary({
       title: latest.title,
       subject: latest.subject,
+      source: latest.source,
       summary: latest.summary,
       keyPoints: [],
       discussion: [],
@@ -338,6 +369,13 @@ function renderSnapshot(snap) {
 
 function stageForEvent(event) {
   const stage = $('summaryStage')
+  if (event.type === 'progress' && event.data?.message) {
+    if (!state.processingStarted) state.processingStarted = Date.now()
+    state.stageLabel = event.data.message
+    stage.className = 'stage working'
+    updateStageClock()
+    return
+  }
   const map = {
     stable: ['已发现新视频', 'working'],
     detected: ['开始处理', 'working'],

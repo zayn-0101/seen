@@ -243,6 +243,13 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 命令：`<bin> remember "<content>" --cat insight --imp 3 --source agent --tags "<tags>" --entities "<entities>" --store "<store>"`
 - 失败重试一次（2s），仍失败返回 `{ ok: false, error }`，绝不抛错。
 
+## lib/source.js / lib/douyin.js
+
+- `detectSource({url,title})` → `bilibili` / `douyin` / `null`。
+- `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`。
+- `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
+- 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.myminer/models/ggml-small.bin`。
+
 ## lib/index.js
 
 插件入口：`export const name`、`export const inject = ['llm','tools']`、`export function apply(ctx, rawConfig)`。

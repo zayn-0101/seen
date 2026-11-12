@@ -25,6 +25,8 @@ import { classify, summarize, resolveModel } from './analyze.js'
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
 import { findYtDlp } from './ytdlp.js'
+import { detectSource, extractDouyinId, sourceLabel } from './source.js'
+import { fetchDouyinContent, findChrome, findFfmpeg, findWhisperCli, findWhisperModel } from './douyin.js'
 import { renderVideoNote } from './render.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
@@ -146,9 +148,11 @@ export function apply(ctx, rawConfig = {}) {
     let activeKey = ''
     try {
       const rawTitle = cleanTitle(input?.title || '')
-      const bvidFromUrl = extractBvid(input?.url || '') || null
+      const source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : 'bilibili')
+      const bvidFromUrl = source === 'bilibili' ? (extractBvid(input?.url || '') || null) : null
       const inputBvid = input?.bvid || bvidFromUrl
-      key = seenKey({ bvid: inputBvid, title: rawTitle })
+      const inputVideoId = input?.videoId || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
+      key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle })
       activeKey = key
 
       if (!input?.force && isSeen(state, key)) {
@@ -157,46 +161,69 @@ export function apply(ctx, rawConfig = {}) {
       if (!input?.force && shouldSkipFailure(state, key)) {
         return { ok: true, skipped: true, message: '该视频最近失败次数过多，已冷却；可稍后手动重试' }
       }
-      if (!rawTitle && !input?.url && !input?.bvid) {
+      if (!rawTitle && !input?.url && !input?.bvid && !input?.videoId) {
         return { ok: false, message: '缺少视频标题或 URL' }
       }
-      emit('detected', { title: rawTitle, url: input?.url || '', bvid: inputBvid || null, force: Boolean(input?.force) })
+      emit('detected', { title: rawTitle, url: input?.url || '', bvid: inputBvid || null, videoId: inputVideoId || null, source, force: Boolean(input?.force) })
 
       let cookieHeader = null
-      try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
+      if (source === 'bilibili') {
+        try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
+      }
       let content = null
       if (config.fetchContent) {
-        emit('fetching', { title: rawTitle, message: '抓取 B 站视频信息、字幕、弹幕与评论' })
-        content = await fetchContent({
-          ref: input?.url || input?.bvid || rawTitle,
-          title: rawTitle,
-          cookieHeader,
-          commentLimit: config.commentLimit,
-        })
-        logger.log('bili content title=' + JSON.stringify(rawTitle) + ' matched=' + Boolean(content?.matched) + ' bvid=' + (content?.bvid || 'none') + ' danmaku=' + (content?.fetchStats?.danmaku || 0) + ' comments=' + (content?.fetchStats?.comments || 0) + ' transcript=' + (content?.fetchStats?.transcript || 0))
-        emit('content', { bvid: content?.bvid || null, title: content?.title || rawTitle, fetchStats: content?.fetchStats || null, chapters: content?.chapters || [] })
-        if (!cookieHeader && content?.url) {
-          try {
-            cookieHeader = await getBilibiliCookieHeader({ config, url: content.url })
-            if (cookieHeader && content?.aid) {
-              const moreComments = await fetchComments(content.aid, { limit: config.commentLimit, cookieHeader }).catch(() => [])
-              if (moreComments.length > content.comments.length) {
-                content.comments = moreComments
-                content.fetchStats.comments = moreComments.length
-              }
+        if (source === 'douyin') {
+          emit('fetching', { source, title: rawTitle, message: '解析抖音精选页面，下载音频并转写' })
+          content = await fetchDouyinContent({
+            url: input?.url || (inputVideoId ? 'https://www.douyin.com/video/' + inputVideoId : ''),
+            title: rawTitle,
+            config,
+            force: Boolean(input?.force),
+            onProgress: (progress) => emit('progress', { source, ...progress }),
+          })
+          logger.log('douyin content title=' + JSON.stringify(content?.title || rawTitle) + ' videoId=' + (content?.videoId || 'none') + ' transcript=' + (content?.fetchStats?.transcript || 0) + ' comments=' + (content?.fetchStats?.totalComments || 0))
+          emit('content', { source, videoId: content?.videoId || null, title: content?.title || rawTitle, fetchStats: content?.fetchStats || null, chapters: [] })
+          if (content?.videoId) {
+            const videoKey = seenKey({ videoId: content.videoId, source: 'douyin', title: content.title || rawTitle })
+            if (!input?.force && videoKey !== key && isSeen(state, videoKey)) {
+              return { ok: true, skipped: true, message: '该抖音视频已处理过，保持静默' }
             }
-          } catch { /* 降级 */ }
-        }
-        if (content?.bvid) {
-          const bvidKey = seenKey({ bvid: content.bvid, title: content.title || rawTitle })
-          if (!input?.force && bvidKey !== key && isSeen(state, bvidKey)) {
-            return { ok: true, skipped: true, message: '该视频（bvid）已处理过，保持静默' }
+            activeKey = videoKey
           }
-          activeKey = bvidKey
+        } else {
+          emit('fetching', { source, title: rawTitle, message: '抓取 B 站视频信息、字幕、弹幕与评论' })
+          content = await fetchContent({
+            ref: input?.url || input?.bvid || rawTitle,
+            title: rawTitle,
+            cookieHeader,
+            commentLimit: config.commentLimit,
+          })
+          logger.log('bili content title=' + JSON.stringify(rawTitle) + ' matched=' + Boolean(content?.matched) + ' bvid=' + (content?.bvid || 'none') + ' danmaku=' + (content?.fetchStats?.danmaku || 0) + ' comments=' + (content?.fetchStats?.comments || 0) + ' transcript=' + (content?.fetchStats?.transcript || 0))
+          emit('content', { source, bvid: content?.bvid || null, title: content?.title || rawTitle, fetchStats: content?.fetchStats || null, chapters: content?.chapters || [] })
+          if (!cookieHeader && content?.url) {
+            try {
+              cookieHeader = await getBilibiliCookieHeader({ config, url: content.url })
+              if (cookieHeader && content?.aid) {
+                const moreComments = await fetchComments(content.aid, { limit: config.commentLimit, cookieHeader }).catch(() => [])
+                if (moreComments.length > content.comments.length) {
+                  content.comments = moreComments
+                  content.fetchStats.comments = moreComments.length
+                }
+              }
+            } catch { /* 降级 */ }
+          }
+          if (content?.bvid) {
+            const bvidKey = seenKey({ bvid: content.bvid, title: content.title || rawTitle })
+            if (!input?.force && bvidKey !== key && isSeen(state, bvidKey)) {
+              return { ok: true, skipped: true, message: '该视频（bvid）已处理过，保持静默' }
+            }
+            activeKey = bvidKey
+          }
         }
       }
 
-      const title = (content?.matched && content.title && !/^https?:\/\//i.test(content.title)) ? content.title : cleanBiliTitle(rawTitle || inputBvid || '未命名视频')
+      const fallbackTitle = rawTitle || inputBvid || inputVideoId || '未命名视频'
+      const title = (content?.matched && content.title && !/^https?:\/\//i.test(content.title)) ? content.title : (source === 'bilibili' ? cleanBiliTitle(fallbackTitle) : cleanTitle(fallbackTitle))
       const desc = content?.desc || ''
       const tags = content?.tags || []
       const existing = Object.keys(state.subjects)
@@ -208,7 +235,7 @@ export function apply(ctx, rawConfig = {}) {
         throw new Error('视频分类失败（LLM 返回无法解析或调用失败），稍后重试')
       }
       if (cls.isCourse === false) {
-        markSeen(state, activeKey, { at: Date.now(), title, bvid: content?.bvid || inputBvid || null, isCourse: false })
+        markSeen(state, activeKey, { at: Date.now(), title, source, bvid: content?.bvid || inputBvid || null, videoId: content?.videoId || inputVideoId || null, isCourse: false })
         state.lastTitle = title
         state.stats.skipped += 1
         pruneSeen(state)
@@ -254,21 +281,24 @@ export function apply(ctx, rawConfig = {}) {
       emit('summarizing', { title: finalTitle, subject, transcriptLength: transcript.length })
       const summary = await summarize(ctx, config, { title: finalTitle, subject, keywords, content: contentForSummary, transcript, transcriptSource })
       const contentQuality = transcript ? 'full' : 'metadata-only'
-      emit('summarized', { title: finalTitle, subject, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
+      emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
 
       const note = renderVideoNote({
         title: finalTitle,
         subject,
+        source,
+        platform: source,
         bvid: content?.bvid || inputBvid || '',
+        videoId: content?.videoId || inputVideoId || '',
         url: content?.url || input?.url || '',
-        author: content?.owner || '',
+        author: content?.owner || content?.author || '',
         createdAt,
         summary: summary.summary,
         keyPoints: summary.keyPoints,
         discussion: summary.discussion,
         fetchStats: content?.fetchStats || null,
-        tags: ['视频课程', subject, ...keywords].filter(Boolean),
+        tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
         chapters: content?.chapters || [],
         contentSource: transcriptSource || 'metadata',
         contentQuality,
@@ -290,14 +320,22 @@ export function apply(ctx, rawConfig = {}) {
       if (!Array.isArray(state.subjects[subject].videos)) state.subjects[subject].videos = []
       const videoRecord = {
         title: finalTitle,
+        source,
         bvid: content?.bvid || inputBvid || '',
+        videoId: content?.videoId || inputVideoId || '',
+        url: content?.url || input?.url || '',
+        author: content?.owner || content?.author || '',
         notePath: writeResult.relPath,
         keywords,
         summary: summary.summary.slice(0, 120),
         createdAt,
       }
       const videos = state.subjects[subject].videos
-      const existed = videos.findIndex((v) => (videoRecord.bvid && v.bvid === videoRecord.bvid) || (!videoRecord.bvid && v.title === videoRecord.title))
+      const existed = videos.findIndex((v) =>
+        (videoRecord.bvid && v.bvid === videoRecord.bvid) ||
+        (videoRecord.videoId && v.videoId === videoRecord.videoId) ||
+        (!videoRecord.bvid && !videoRecord.videoId && v.title === videoRecord.title)
+      )
       if (existed >= 0) videos[existed] = { ...videos[existed], ...videoRecord }
       else videos.push(videoRecord)
       state.subjects[subject].updatedAt = createdAt
@@ -318,8 +356,10 @@ export function apply(ctx, rawConfig = {}) {
           keyPoints: summary.keyPoints,
           notePath: writeResult.relPath,
           bvid: content?.bvid || inputBvid || '',
+          videoId: content?.videoId || inputVideoId || '',
           url: content?.url || input?.url || '',
           keywords,
+          platformLabel: sourceLabel(source),
         })
         state.stats.lastMnemon = { ok: Boolean(m?.ok), at: Date.now(), error: m?.error || '' }
         if (!m?.ok) logger.log('mnemon.error title=' + JSON.stringify(finalTitle) + ' msg=' + (m?.error || 'unknown'))
@@ -328,7 +368,9 @@ export function apply(ctx, rawConfig = {}) {
       markSeen(state, activeKey, {
         at: Date.now(),
         title: finalTitle,
+        source,
         bvid: content?.bvid || inputBvid || null,
+        videoId: content?.videoId || inputVideoId || null,
         subject,
         notePath: writeResult.relPath,
         isCourse: true,
@@ -344,8 +386,12 @@ export function apply(ctx, rawConfig = {}) {
       emit('saved', {
         title: finalTitle,
         subject,
+        source,
+        platform: source,
         notePath: writeResult.relPath,
         bvid: content?.bvid || inputBvid || '',
+        videoId: content?.videoId || inputVideoId || '',
+        author: content?.owner || content?.author || '',
         url: content?.url || input?.url || '',
         summary: summary.summary,
         keyPoints: summary.keyPoints,
@@ -391,24 +437,31 @@ export function apply(ctx, rawConfig = {}) {
     const rawUrl = fg?.url || ''
     const title = cleanTitle(rawTitle)
     if (!title || title.length < config.titleMinLen) return
-    const bvid = extractBvid(rawUrl) || null
-    const onBilibili = /(^|\.)bilibili\.com\b|(^|\.)b23\.tv\b/i.test(rawUrl)
-    const biliTitle = /哔哩哔哩|bilibili/i.test(rawTitle)
-    // 自动检测只处理 B 站视频；非 B 站网页（YouTube/普通网页）静默忽略。
-    if (!bvid) {
-      if (onBilibili) return // B 站首页/搜索页/分类页等非视频页面
-      if (!biliTitle) return // 非 B 站网页
+    const source = detectSource({ url: rawUrl, title: rawTitle })
+    if (!source) return
+    const bvid = source === 'bilibili' ? (extractBvid(rawUrl) || null) : null
+    const videoId = source === 'douyin' ? (extractDouyinId(rawUrl) || null) : null
+    if (source === 'bilibili') {
+      const onBilibili = /(^|\.)bilibili\.com\b|(^|\.)b23\.tv\b/i.test(rawUrl)
+      const biliTitle = /哔哩哔哩|bilibili/i.test(rawTitle)
+      // B 站首页/搜索页/分类页等非视频页面静默忽略。
+      if (!bvid) {
+        if (onBilibili) return
+        if (!biliTitle) return
+      }
+    } else if (source === 'douyin' && !videoId) {
+      return
     }
-    const key = seenKey({ bvid, title })
+    const key = seenKey({ bvid, videoId, source, title })
     if (isSeen(state, key)) { pending = null; return }
-    logger.logOnce('obs|' + key, 'foreground.browser app=' + JSON.stringify(fg.app) + ' title=' + JSON.stringify(title) + ' bvid=' + (bvid || 'none'))
-    if (!pending || pending.key !== key) pending = { key, title, url: fg?.url || '', bvid, count: 1 }
+    logger.logOnce('obs|' + key, 'foreground.browser app=' + JSON.stringify(fg.app) + ' title=' + JSON.stringify(title) + ' source=' + source + ' id=' + (bvid || videoId || 'none'))
+    if (!pending || pending.key !== key) pending = { key, title, url: fg?.url || '', bvid, videoId, source, count: 1 }
     else pending.count += 1
     if (pending.count >= config.stablePolls) {
       const p = pending
       pending = null
-      emit('stable', { title: p.title, url: p.url, bvid: p.bvid })
-      await processTitle({ title: p.title, url: p.url, bvid: p.bvid })
+      emit('stable', { title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
+      await processTitle({ title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
     }
   }
 
@@ -471,7 +524,11 @@ export function apply(ctx, rawConfig = {}) {
         rows.push({
           subject,
           title: video.title,
+          source: video.source || 'bilibili',
           bvid: video.bvid || '',
+          videoId: video.videoId || '',
+          url: video.url || '',
+          author: video.author || '',
           notePath: video.notePath || '',
           summary: video.summary || '',
           keywords: video.keywords || [],
@@ -665,7 +722,14 @@ export function apply(ctx, rawConfig = {}) {
       try { mnemonPath = await findMnemon(config) } catch { mnemonPath = null }
       add('mnemon', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
       const ytdlpPath = findYtDlp(config)
-      add('ytdlp', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（AI 字幕/转写需要）')
+      add('ytdlp', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕需要）')
+      const chromePath = findChrome(config)
+      const ffmpegPath = findFfmpeg(config)
+      const whisperPath = findWhisperCli(config)
+      const whisperModel = findWhisperModel(config)
+      add('douyin-chrome', Boolean(chromePath), chromePath || '未找到 Chrome（抖音页面解析需要）')
+      add('douyin-ffmpeg', Boolean(ffmpegPath), ffmpegPath || '未找到 ffmpeg（抖音音频提取需要）')
+      add('douyin-whisper', Boolean(whisperPath && whisperModel), (whisperPath || '未找到 whisper-cli') + ' / ' + (whisperModel || '未找到 Whisper 模型'))
       let biliOk = false
       let biliDetail = ''
       try {

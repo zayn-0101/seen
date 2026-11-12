@@ -4,7 +4,7 @@
 
 ## 自动化
 
-- [x] `cd dsh-video-coursemap && node --test`：34 tests / 34 pass / 0 fail
+- [x] `cd dsh-video-coursemap && node --test`：38 tests / 38 pass / 0 fail
 - [x] 所有 lib 文件 `node --check` 通过
 - [x] `scripts/install-local-plugin.mjs` 执行成功，profile 依赖指向本地路径
 - [x] 安装副本版本：`2.2.0-obsidian.1`（已同步，需重启 DSH 生效）
@@ -25,6 +25,18 @@
 - [x] 章节：从 `player/v2` 的 `view_points` 提取 6 个章节
 - [x] 长字幕分块压缩：18,954 字字幕经过分块摘要后再生成最终总结
 - [x] AI 字幕缓存：同一 bvid 第二次抓取命中 `~/.myminer/cache/transcripts`，返回 18,954 字
+
+## 抖音精选
+
+- [x] 识别 `https://www.douyin.com/jingxuan?modal_id=...` 与 `/video/<id>` 链接
+- [x] 无头 Chrome 读取 SSR `RENDER_DATA`：标题、作者、标签、播放地址、评论/弹幕总数
+- [x] ffmpeg 抽取音频，本地 whisper.cpp `ggml-small` 转写（48 分钟视频约 14,099 字）
+- [x] 真实抖音长视频生成笔记：`source: douyin`、`videoId`、`contentSource: whisper`
+- [x] 抖音视频笔记包含核心知识点、来源统计、Obsidian 链接
+- [x] 字幕/转写缓存命中，第二次扫描不重复下载/转写
+- [x] `course_map_check` 新增 douyin-chrome / douyin-ffmpeg / douyin-whisper 检查，全部通过
+- [ ] 抖音评论/弹幕正文尚未抓取，仅显示总数（下一步）
+- [ ] 抖音标题/音频路径在不同视频上的稳定性待更多样本验证
 
 ## 独立服务与前端
 
