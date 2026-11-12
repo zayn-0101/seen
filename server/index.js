@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * myminer 独立本地服务：不启动 DSH Desktop，也能轮询 B 站课程、生成总结和 Obsidian 笔记。
+ * Seen（拾影）独立本地服务：不启动 DSH Desktop，也能轮询 B站/抖音精选、生成总结和 Obsidian 笔记。
  *
  * 前端：http://127.0.0.1:4780
- * 后端：复用 dsh-video-coursemap 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。
+ * 后端：复用 Seen Core 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。
  */
 import { createServer } from 'node:http'
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
@@ -12,17 +12,17 @@ import { join, dirname, extname, normalize, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
-import { apply } from '../dsh-video-coursemap/lib/index.js'
-import { resolveConfig } from '../dsh-video-coursemap/lib/config.js'
+import { apply } from '../core/lib/index.js'
+import { resolveConfig } from '../core/lib/config.js'
 import { createLlmClient, loadLlmConfig } from './llm.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const webRoot = join(here, '..', 'web')
-const uiDir = join(homedir(), '.myminer')
+const uiDir = join(homedir(), '.seen')
 const uiPath = join(uiDir, 'ui.json')
-const PORT = Number(process.env.MYMINER_PORT || 4780)
-const HOST = process.env.MYMINER_HOST || '127.0.0.1'
-const OPEN_BROWSER = !process.argv.includes('--no-open') && process.env.MYMINER_NO_OPEN !== '1'
+const PORT = Number(process.env.SEEN_PORT || 4780)
+const HOST = process.env.SEEN_HOST || '127.0.0.1'
+const OPEN_BROWSER = !process.argv.includes('--no-open') && process.env.SEEN_NO_OPEN !== '1'
 
 function log(...args) {
   console.log('[' + new Date().toLocaleTimeString('zh-CN', { hour12: false }) + ']', ...args)
@@ -60,10 +60,10 @@ const baseConfig = resolveConfig({
   exposeController: true,
   provider: llmConfig.provider,
   model: llmConfig.model,
-  enableMnemon: process.env.MYMINER_DISABLE_MNEMON !== '1',
-  ...(process.env.MYMINER_VAULT ? { vaultPath: process.env.MYMINER_VAULT } : {}),
-  ...(process.env.MYMINER_STATE_DIR ? { stateDir: process.env.MYMINER_STATE_DIR } : {}),
-  ...(process.env.MYMINER_NOTE_ROOT ? { noteRoot: process.env.MYMINER_NOTE_ROOT } : {}),
+  enableMnemon: process.env.SEEN_DISABLE_MNEMON !== '1',
+  ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
+  ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
+  ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
 })
 
 const tools = new Map()
@@ -86,7 +86,7 @@ const ctx = {
 
 const engine = apply(ctx, baseConfig)
 if (!engine || typeof engine.getStatus !== 'function') {
-  console.error('插件入口没有返回控制器，请检查 dsh-video-coursemap 版本。')
+  console.error('核心入口没有返回控制器，请检查 core 版本。')
   process.exit(1)
 }
 
@@ -247,7 +247,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   const url = 'http://' + HOST + ':' + PORT
-  log('myminer 独立服务已启动：' + url)
+  log('Seen 独立服务已启动：' + url)
   log('LLM：' + llmConfig.model + ' @ ' + llmConfig.baseURL + (llmHealth.ok ? '' : '（不可用：' + llmHealth.detail + '）'))
   log('状态目录：' + baseConfig.stateDir)
   if (engine.isReadOnly()) log('注意：DSH 正在运行并持有状态锁，本服务为只读；退出 DSH 后重启本服务即可接管。')

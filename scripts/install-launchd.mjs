@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 安装 macOS LaunchAgent：登录后自动启动 myminer 独立服务。
+ * 安装 macOS LaunchAgent：登录后自动启动 Seen 独立服务。
  * 运行：node scripts/install-launchd.mjs
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -13,9 +13,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const server = join(root, 'server', 'index.js')
 const node = process.execPath
-const logDir = join(homedir(), '.myminer')
-const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.myminer.video.plist')
-const label = 'com.myminer.video'
+const logDir = join(homedir(), '.seen')
+const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.seen.video.plist')
+const label = 'com.seen.video'
 
 mkdirSync(logDir, { recursive: true })
 mkdirSync(dirname(plistPath), { recursive: true })
@@ -56,5 +56,5 @@ if (result.status !== 0) {
   console.error('可手动执行：launchctl bootstrap ' + domain + ' ' + plistPath)
   process.exit(1)
 }
-console.log('已安装并启动。访问 http://127.0.0.1:4780')
+console.log('Seen 已安装并启动。访问 http://127.0.0.1:4780')
 console.log('卸载：node scripts/uninstall-launchd.mjs')

@@ -1,4 +1,4 @@
-# dsh-video-coursemap · Obsidian 版
+# Seen Core · 视频知识地图引擎
 
 DSH 插件：实时检测 B 站网页课程视频 → 学科分类 → 抓取简介/字幕/弹幕/评论 → LLM 知识总结 → 输出 Obsidian 笔记（视频笔记 + 学科学习手册 + 课程总览）+ 写入 dsh-mnemon。
 
@@ -19,7 +19,7 @@ node scripts/install-local-plugin.mjs
 ## 开发
 
 ```bash
-cd dsh-video-coursemap
+cd core
 node --test
 ```
 

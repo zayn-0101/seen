@@ -4,8 +4,8 @@
  * 默认连接本机 Magpie 网关（http://127.0.0.1:3425/v1），这是 DSH 使用的同一模型入口，
  * 但不依赖 DSH 进程，只要求 Magpie 菜单栏应用在运行。
  *
- * 也可通过 ~/.myminer/llm.json 或环境变量接入任意 OpenAI-compatible 服务：
- *   MYMINER_LLM_BASE_URL / MYMINER_LLM_API_KEY / MYMINER_LLM_MODEL
+ * 也可通过 ~/.seen/llm.json 或环境变量接入任意 OpenAI-compatible 服务：
+ *   SEEN_LLM_BASE_URL / SEEN_LLM_API_KEY / SEEN_LLM_MODEL
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -24,14 +24,14 @@ function readJson(file) {
   }
 }
 
-/** 读取独立运行时的 LLM 配置；环境变量优先于 ~/.myminer/llm.json。 */
+/** 读取独立运行时的 LLM 配置；环境变量优先于 ~/.seen/llm.json。 */
 export function loadLlmConfig() {
-  const file = readJson(join(homedir(), '.myminer', 'llm.json'))
+  const file = readJson(join(homedir(), '.seen', 'llm.json'))
   return {
-    baseURL: String(process.env.MYMINER_LLM_BASE_URL || file.baseURL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
-    apiKey: process.env.MYMINER_LLM_API_KEY || file.apiKey || '',
-    model: String(process.env.MYMINER_LLM_MODEL || file.model || DEFAULT_MODEL),
-    provider: String(process.env.MYMINER_LLM_PROVIDER || file.provider || 'magpie'),
+    baseURL: String(process.env.SEEN_LLM_BASE_URL || file.baseURL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
+    apiKey: process.env.SEEN_LLM_API_KEY || file.apiKey || '',
+    model: String(process.env.SEEN_LLM_MODEL || file.model || DEFAULT_MODEL),
+    provider: String(process.env.SEEN_LLM_PROVIDER || file.provider || 'magpie'),
   }
 }
 

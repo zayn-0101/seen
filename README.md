@@ -1,4 +1,4 @@
-# 视频课程知识地图 · Obsidian 版
+# 拾影 Seen · 视频知识笔记
 
 把 B 站 / 抖音精选的网页课程长视频自动变成 Obsidian 知识笔记，并把每篇总结写入 dsh-mnemon 的记忆库。
 
@@ -99,11 +99,11 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 
 **启动**：
 
-- 在 Finder 里双击 `myminer.command`；
+- 在 Finder 里双击 `seen.command`；
 - 或终端执行 `node server/index.js`；
 - 浏览器打开 [http://127.0.0.1:4780](http://127.0.0.1:4780)。
 
-界面预览：![课程矿工界面](docs/ui-preview.jpg)
+界面预览：![拾影界面](docs/ui-preview.jpg)
 
 抖音精选处理结果：![抖音精选总结](docs/ui-preview-douyin.jpg)
 
@@ -128,7 +128,7 @@ node scripts/install-launchd.mjs
 node scripts/uninstall-launchd.mjs
 ```
 
-服务日志在 `~/.myminer/server.log` / `server.err.log`。
+服务日志在 `~/.seen/server.log` / `server.err.log`。
 
 **抖音精选首次使用**：先安装本地 Whisper 模型（约 465MB）：
 
@@ -136,11 +136,11 @@ node scripts/uninstall-launchd.mjs
 node scripts/install-whisper-model.mjs
 ```
 
-之后处理一条抖音精选长视频会自动：无头 Chrome 解析页面 → ffmpeg 抽音频 → Whisper 转写 → LLM 总结。转写结果缓存在 `~/.myminer/cache/douyin`，同一视频第二次不重复转写；`force` 扫描会重新转写。
+之后处理一条抖音精选长视频会自动：无头 Chrome 解析页面 → ffmpeg 抽音频 → Whisper 转写 → LLM 总结。转写结果缓存在 `~/.seen/cache/douyin`，同一视频第二次不重复转写；`force` 扫描会重新转写。
 
 **和 DSH 的关系**：当前 DSH 插件已从 profile 的 `bundles` 中移除，不会随 DSH 加载，也不会占用锁。以后如果重新启用插件，二者共用状态目录与 `instance.lock`，同一时间只能有一个轮询实例；DSH 在运行时，独立页面会显示「DSH 占用中」并进入只读，退出 DSH 后重启独立服务即可接管。
 
-**换模型**：默认使用本机 Magpie 的 `auto/deepseek-v4.1-flash`。如需其他 OpenAI-compatible 服务，创建 `~/.myminer/llm.json`：
+**换模型**：默认使用本机 Magpie 的 `auto/deepseek-v4.1-flash`。如需其他 OpenAI-compatible 服务，创建 `~/.seen/llm.json`：
 
 ```json
 {
@@ -151,7 +151,7 @@ node scripts/install-whisper-model.mjs
 }
 ```
 
-或使用环境变量 `MYMINER_LLM_BASE_URL` / `MYMINER_LLM_API_KEY` / `MYMINER_LLM_MODEL`。
+或使用环境变量 `SEEN_LLM_BASE_URL` / `SEEN_LLM_API_KEY` / `SEEN_LLM_MODEL`。
 
 ## Obsidian 目录结构
 
@@ -236,10 +236,10 @@ node scripts/install-whisper-model.mjs
 
 | 内容 | 位置 |
 |---|---|
-| 插件状态 | `~/.dsh/state/dsh-video-coursemap-obsidian/state.json` |
-| 运行日志 | `~/.dsh/state/dsh-video-coursemap-obsidian/poll.log` |
-| 独立服务开关/间隔 | `~/.myminer/ui.json` |
-| 独立服务日志 | `~/.myminer/server.log` / `server.err.log` |
+| 插件状态 | `~/.dsh/state/seen/state.json` |
+| 运行日志 | `~/.dsh/state/seen/poll.log` |
+| 独立服务开关/间隔 | `~/.seen/ui.json` |
+| 独立服务日志 | `~/.seen/server.log` / `server.err.log` |
 | 独立服务地址 | `http://127.0.0.1:4780` |
 | DSH profile | `~/.dsh/profiles/desktop` |
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 下载本地 Whisper 模型到 ~/.myminer/models。
+ * 下载本地 Whisper 模型到 ~/.seen/models。
  * 默认 small 模型（约 465MB），中文长视频转写用。
  *
  * 用法：
@@ -22,7 +22,7 @@ if (!allowed.has(model)) {
   process.exit(1)
 }
 
-const dir = join(homedir(), '.myminer', 'models')
+const dir = join(homedir(), '.seen', 'models')
 const target = join(dir, 'ggml-' + model + '.bin')
 const temp = target + '.part'
 const url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-' + model + '.bin'

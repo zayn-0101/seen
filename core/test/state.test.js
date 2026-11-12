@@ -9,7 +9,7 @@ import {
 } from '../lib/state.js'
 
 test('state save/load roundtrip and corrupt fallback', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'myminer-state-'))
+  const dir = mkdtempSync(join(tmpdir(), 'seen-state-'))
   try {
     const path = join(dir, 'state.json')
     const state = defaultState()

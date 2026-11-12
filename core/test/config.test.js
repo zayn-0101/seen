@@ -12,7 +12,7 @@ test('resolveConfig merges defaults and validates', () => {
   assert.equal(config.pollIntervalMs, 15000)
   assert.equal(config.stablePolls, 2)
   assert.equal(config.noteRoot, '课程知识地图')
-  assert.ok(config.stateDir.endsWith('dsh-video-coursemap-obsidian'))
+  assert.ok(config.stateDir.endsWith('seen'))
   assert.equal(typeof config.vaultPath, 'string')
   assert.equal(resolveConfig({ pollIntervalMs: 5000 }).pollIntervalMs, 5000)
   assert.throws(() => resolveConfig({ unknownKey: 1 }), /未知配置项/)
@@ -22,7 +22,7 @@ test('resolveConfig merges defaults and validates', () => {
 })
 
 test('detectObsidianVault reads obsidian.json', () => {
-  const home = mkdtempSync(join(tmpdir(), 'myminer-home-'))
+  const home = mkdtempSync(join(tmpdir(), 'seen-home-'))
   try {
     const vault = join(home, 'MyVault')
     mkdirSync(vault, { recursive: true })
@@ -41,7 +41,7 @@ test('detectObsidianVault reads obsidian.json', () => {
 
 test('defaultStateDir and filename helpers', () => {
   const home = '/tmp/example-home'
-  assert.equal(defaultStateDir(home), join(home, '.dsh', 'state', 'dsh-video-coursemap-obsidian'))
+  assert.equal(defaultStateDir(home), join(home, '.dsh', 'state', 'seen'))
   assert.equal(sanitizeFilename('a/b:c*?"<>|d'), 'abcd')
   assert.equal(sanitizeFilename('   '), '未命名')
   assert.equal(sanitizeFilename('标题', 2), '标题')

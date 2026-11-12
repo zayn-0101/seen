@@ -4,7 +4,7 @@
 
 ## 自动化
 
-- [x] `cd dsh-video-coursemap && node --test`：38 tests / 38 pass / 0 fail
+- [x] `cd core && node --test`：38 tests / 38 pass / 0 fail
 - [x] 所有 lib 文件 `node --check` 通过
 - [x] `scripts/install-local-plugin.mjs` 执行成功，profile 依赖指向本地路径
 - [x] 安装副本版本：`2.2.0-obsidian.1`（已同步，需重启 DSH 生效）
@@ -24,7 +24,7 @@
 - [x] 登录态评论：抓取 50 条，`view.stat.reply` 显示全站 12,518 条
 - [x] 章节：从 `player/v2` 的 `view_points` 提取 6 个章节
 - [x] 长字幕分块压缩：18,954 字字幕经过分块摘要后再生成最终总结
-- [x] AI 字幕缓存：同一 bvid 第二次抓取命中 `~/.myminer/cache/transcripts`，返回 18,954 字
+- [x] AI 字幕缓存：同一 bvid 第二次抓取命中 `~/.seen/cache/transcripts`，返回 18,954 字
 
 ## 抖音精选
 

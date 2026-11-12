@@ -1,4 +1,4 @@
-# myminer · 视频课程知识地图 → Obsidian
+# 拾影 Seen · 视频知识笔记
 
 ## 项目目标
 
@@ -13,7 +13,7 @@
 ## 目录约定
 
 ```
-myminer/
+seen/
 ├── CLAUDE.md                 本文件：项目规则
 ├── README.md                 用户手册（安装、权限、使用、排障）
 ├── docs/
@@ -33,9 +33,9 @@ myminer/
 │   ├── rollback-local-plugin.mjs
 │   ├── install-launchd.mjs
 │   └── uninstall-launchd.mjs
-├── myminer.command          双击启动独立服务
+├── seen.command             双击启动独立服务
 ├── package.json             根脚本（npm start / npm test）
-└── dsh-video-coursemap/      本地增强版 DSH 插件（包名保持不变）
+└── core/                      Seen 视频引擎（包名仍保留 dsh-video-coursemap 以兼容 DSH）
     ├── package.json
     ├── cordis.patch.yml
     ├── README.md
@@ -49,7 +49,7 @@ myminer/
 - 插件零运行时依赖：只用 Node 内置模块 + DSH 注入的 `ctx.llm` / `ctx.tools`。
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
-- 改完必须运行：`cd dsh-video-coursemap && node --test`。
+- 改完必须运行：`cd core && node --test`。
 - 插件代码改动后必须重启 DSH Desktop 才生效（DSH 对插件模块做缓存）。
 - 日志不得记录完整弹幕/评论全文、Cookie、密钥。
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。
@@ -61,9 +61,9 @@ myminer/
 |---|---|
 | Obsidian vault | `~/Documents/Obsidian Vault`（自动检测） |
 | 笔记根目录 | `<vault>/课程知识地图` |
-| 插件状态/日志 | `~/.dsh/state/dsh-video-coursemap-obsidian/` |
-| 抖音缓存 | `~/.myminer/cache/douyin/` |
-| Whisper 模型 | `~/.myminer/models/ggml-small.bin` |
+| 插件状态/日志 | `~/.dsh/state/seen/` |
+| 抖音缓存 | `~/.seen/cache/douyin/` |
+| Whisper 模型 | `~/.seen/models/ggml-small.bin` |
 | DSH profile | `~/.dsh/profiles/desktop` |
 | mnemon CLI | `~/.local/share/fnm/node-versions/v24.15.0/installation/bin/mnemon` |
 | Obsidian CLI | `/opt/homebrew/bin/obsidian-cli` |
@@ -71,7 +71,7 @@ myminer/
 ## 验证命令
 
 ```bash
-cd dsh-video-coursemap && node --test
+cd core && node --test
 node scripts/install-local-plugin.mjs   # 安装到 DSH profile（会先备份）
 node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
 node scripts/install-whisper-model.mjs  # 安装抖音转写模型（约 465MB）

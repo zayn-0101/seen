@@ -18,7 +18,7 @@ import { findYtDlp } from './ytdlp.js'
 
 const execFileP = promisify(execFile)
 const SUBTITLE_TIMEOUT_MS = 30000
-const CACHE_DIR = join(homedir(), '.myminer', 'cache', 'transcripts')
+const CACHE_DIR = join(homedir(), '.seen', 'cache', 'transcripts')
 
 function cachePath(bvid) {
   return join(CACHE_DIR, encodeURIComponent(String(bvid || '')) + '.json')

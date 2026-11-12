@@ -8,7 +8,7 @@ import {
 } from '../lib/obsidian.js'
 
 function setup() {
-  const vault = mkdtempSync(join(tmpdir(), 'myminer-vault-'))
+  const vault = mkdtempSync(join(tmpdir(), 'seen-vault-'))
   ensureVaultDirs({ vaultPath: vault, noteRoot: '课程知识地图', stateDir: null })
   return vault
 }

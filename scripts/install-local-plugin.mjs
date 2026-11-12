@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 把本地 dsh-video-coursemap 增强版安装到 DSH Desktop profile。
+ * 把本地 Seen Core（包名仍为 dsh-video-coursemap）安装到 DSH Desktop profile。
  * 会先备份 profile 的 package.json 与 pnpm-lock.yaml，再执行 pnpm install。
  */
 import { existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const workspace = resolve(here, '..')
-const pluginDir = join(workspace, 'dsh-video-coursemap')
+const pluginDir = join(workspace, 'core')
 const profileDir = join(homedir(), '.dsh', 'profiles', 'desktop')
 const pkgPath = join(profileDir, 'package.json')
 const lockPath = join(profileDir, 'pnpm-lock.yaml')

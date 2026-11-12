@@ -5,7 +5,7 @@
  *  1. 用无头 Chrome 打开抖音页面，读取 SSR 的 RENDER_DATA（不需要登录）；
  *  2. 从 videoDetail 取标题、作者、标签、统计和视频直链；
  *  3. 用 ffmpeg 抽音频，用本地 whisper.cpp 转写；
- *  4. 结果缓存到 ~/.myminer/cache/douyin，避免重复下载/转写。
+ *  4. 结果缓存到 ~/.seen/cache/douyin，避免重复下载/转写。
  *
  * 不使用 Douyin 私有的签名接口，也不保存 Cookie。
  */
@@ -17,8 +17,8 @@ import { join } from 'node:path'
 import { extractDouyinId, sourceLabel } from './source.js'
 
 const execFileP = promisify(execFile)
-const CACHE_DIR = join(homedir(), '.myminer', 'cache', 'douyin')
-const MODEL_DIR = join(homedir(), '.myminer', 'models')
+const CACHE_DIR = join(homedir(), '.seen', 'cache', 'douyin')
+const MODEL_DIR = join(homedir(), '.seen', 'models')
 const CHROME_TIMEOUT_MS = 70000
 const FFMPEG_TIMEOUT_MS = 600000
 const WHISPER_TIMEOUT_MS = 30 * 60 * 1000
@@ -202,7 +202,7 @@ function writeCache(id, content) {
 async function readPage(url, config) {
   const chrome = findChrome(config)
   if (!chrome) throw new Error('未找到 Google Chrome，无法解析抖音页面')
-  const profile = mkdtempSync(join(tmpdir(), 'myminer-douyin-chrome-'))
+  const profile = mkdtempSync(join(tmpdir(), 'seen-douyin-chrome-'))
   try {
     const args = [
       '--headless=new',
@@ -233,7 +233,7 @@ async function readPage(url, config) {
 async function downloadAudio(playUrl, config) {
   const ffmpeg = findFfmpeg(config)
   if (!ffmpeg) throw new Error('未找到 ffmpeg，无法提取抖音音频')
-  const dir = mkdtempSync(join(tmpdir(), 'myminer-douyin-audio-'))
+  const dir = mkdtempSync(join(tmpdir(), 'seen-douyin-audio-'))
   const wav = join(dir, 'audio.wav')
   try {
     await execFileP(ffmpeg, [

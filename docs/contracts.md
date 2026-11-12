@@ -28,7 +28,7 @@ export function resolveConfig(raw?: object): object
 // - raw 必须是普通对象，未知 key 抛错
 // - 校验 pollIntervalMs/stablePolls/maxTokens/titleMinLen 为正数
 // - vaultPath 为 null 时自动检测
-// - stateDir 为 null 时使用 ~/.dsh/state/dsh-video-coursemap-obsidian
+// - stateDir 为 null 时使用 ~/.dsh/state/seen
 // - 不允许空字符串 provider/model/mnemonBin（null 除外）
 
 export function detectObsidianVault(home?: string): string | null
@@ -248,7 +248,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `detectSource({url,title})` → `bilibili` / `douyin` / `null`。
 - `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`。
 - `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
-- 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.myminer/models/ggml-small.bin`。
+- 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-small.bin`。
 
 ## lib/index.js
 

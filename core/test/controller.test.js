@@ -18,8 +18,8 @@ function fakeCtx(tools) {
 }
 
 test('standalone controller exposes start/stop/interval/scan', async () => {
-  const vault = mkdtempSync(join(tmpdir(), 'myminer-controller-'))
-  const state = mkdtempSync(join(tmpdir(), 'myminer-controller-state-'))
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
   const tools = new Map()
   try {
     const api = apply(fakeCtx(tools), {
