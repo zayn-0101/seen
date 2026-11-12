@@ -76,11 +76,6 @@ function commonMnemonCandidates() {
       // 目录不存在时忽略
     }
   }
-
-  // CLAUDE.md 记录的本机路径（fnm 全局安装）
-  candidates.push(
-    '~/.local/share/fnm/node-versions/v24.15.0/installation/bin/mnemon'
-  )
   return candidates
 }
 

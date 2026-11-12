@@ -77,8 +77,8 @@ seen/
 | 抖音缓存 | `~/.seen/cache/douyin/` |
 | Whisper 模型 | `~/.seen/models/ggml-small.bin` |
 | DSH profile | `~/.dsh/profiles/desktop` |
-| mnemon CLI | `~/.local/share/fnm/node-versions/v24.15.0/installation/bin/mnemon` |
-| Obsidian CLI | `/opt/homebrew/bin/obsidian-cli` |
+| mnemon CLI | `mnemon`（在 PATH 中，可用 `which mnemon` 确认） |
+| Obsidian CLI | `obsidian-cli`（在 PATH 中） |
 | 菜单栏应用日志 | `~/.seen/menubar.log` |
 
 ## 验证命令
@@ -102,7 +102,7 @@ mnemon recall "视频课程"
 ## 重要事实
 
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
-- 远程仓库：`https://github.com/zayn-0101/seen`（私有，默认分支 `master`）。改动完成后记得提交并推送。
+- 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
 - 当前默认只运行独立服务；`seen-core` 已从 DSH profile 的 bundles 中移除，不再随 DSH 加载。
 - 原版 `dsh-video-coursemap 2.0.0` 仅支持 Windows 前台窗口 + Word 输出；本仓库是其 macOS/Obsidian 增强 fork。
 - macOS 前台窗口读取依赖 AppleScript；首次运行需要用户在「系统设置 → 隐私与安全性 → 辅助功能 / 自动化」授权 DeepSeek Harness。
