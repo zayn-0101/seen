@@ -1,8 +1,8 @@
 /**
  * 独立运行时的 LLM 适配器。
  *
- * 默认连接本机 Magpie 网关（http://127.0.0.1:3425/v1），这是 DSH 使用的同一模型入口，
- * 但不依赖 DSH 进程，只要求 Magpie 菜单栏应用在运行。
+ * 默认连接本机 Magpie 网关（http://127.0.0.1:3425/v1），也是本机其他工具使用的同一模型入口，
+ * 不依赖任何 DSH 组件，只要求 Magpie 菜单栏应用在运行。
  *
  * 也可通过 ~/.seen/llm.json 或环境变量接入任意 OpenAI-compatible 服务：
  *   SEEN_LLM_BASE_URL / SEEN_LLM_API_KEY / SEEN_LLM_MODEL

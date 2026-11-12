@@ -1,4 +1,0 @@
-# seen-core bundle patch：把 host 插件行插入 profile 的插件清单。
-- insert:
-    - id: seen-core
-      name: 'seen-core'

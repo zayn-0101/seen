@@ -97,7 +97,7 @@ function renderToggle() {
   const readonly = Boolean(status.readOnly)
   button.disabled = readonly
   button.setAttribute('aria-pressed', status.polling ? 'true' : 'false')
-  label.textContent = readonly ? 'DSH 占用中' : status.polling ? '暂停轮询' : '启动轮询'
+  label.textContent = readonly ? '另一个实例占用中' : status.polling ? '暂停轮询' : '启动轮询'
   $('readonlyPill').classList.toggle('hidden', !readonly)
   const pollState = $('pollState')
   pollState.textContent = readonly ? '只读' : status.polling ? '轮询中' : '已停止'
@@ -363,7 +363,7 @@ function renderSnapshot(snap) {
     stage.className = 'stage idle'
   }
   if (snap.status?.readOnly) {
-    showToast('DSH Desktop 正在运行并持有状态锁；请退出 DSH 后重启本服务，才能接管轮询。', true)
+    showToast('另一个 Seen 实例正在运行并持有状态锁；请停掉那个实例后重启本服务。', true)
   }
 }
 

@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>Seen</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.seen.menubar</string>
+	<string>com.zayn0101.seen</string>
 	<key>CFBundleExecutable</key>
 	<string>Seen</string>
 	<key>CFBundlePackageType</key>

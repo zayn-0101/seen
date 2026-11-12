@@ -99,10 +99,10 @@ export function detectObsidianVault(home = homedir()) {
   }
 }
 
-/** 默认状态/日志目录：~/.dsh/state/seen */
+/** 默认状态/日志目录：~/.seen/state */
 export function defaultStateDir(home = homedir()) {
   const homeDir = typeof home === 'string' && home ? home : homedir()
-  return join(homeDir, '.dsh', 'state', 'seen')
+  return join(homeDir, '.seen', 'state')
 }
 
 /** 清洗文件名：去掉非法字符、压缩空白、trim 首尾点和空格 */

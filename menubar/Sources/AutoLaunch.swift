@@ -9,11 +9,11 @@ struct AutoLaunchState {
 /// 登录自启：优先系统登录项 API，回退 LaunchAgent。
 /// 两种机制都指向当前 app bundle，开/关时互相清理。
 enum AutoLaunch {
-    static let label = "com.seen.menubar"
+    static let label = "com.zayn0101.seen"
 
     static var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/com.seen.menubar.plist")
+            .appendingPathComponent("Library/LaunchAgents/com.zayn0101.seen.plist")
     }
 
     static var appPath: String { Bundle.main.bundlePath }

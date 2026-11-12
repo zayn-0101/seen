@@ -253,7 +253,7 @@ server.listen(PORT, HOST, () => {
   log('Seen 独立服务已启动：' + url)
   log('LLM：' + llmConfig.model + ' @ ' + llmConfig.baseURL + (llmHealth.ok ? '' : '（不可用：' + llmHealth.detail + '）'))
   log('状态目录：' + baseConfig.stateDir)
-  if (engine.isReadOnly()) log('注意：DSH 正在运行并持有状态锁，本服务为只读；退出 DSH 后重启本服务即可接管。')
+  if (engine.isReadOnly()) log('注意：另一个 Seen 实例正在运行并持有状态锁，本服务为只读；停掉那个实例后重启本服务即可接管。')
   if (OPEN_BROWSER && process.platform === 'darwin') {
     spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
   }
