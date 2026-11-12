@@ -4,7 +4,7 @@
 
 ## 自动化
 
-- [x] `cd dsh-video-coursemap && node --test`：33 tests / 33 pass / 0 fail
+- [x] `cd dsh-video-coursemap && node --test`：34 tests / 34 pass / 0 fail
 - [x] 所有 lib 文件 `node --check` 通过
 - [x] `scripts/install-local-plugin.mjs` 执行成功，profile 依赖指向本地路径
 - [x] 安装副本版本：`2.2.0-obsidian.1`（已同步，需重启 DSH 生效）
@@ -24,6 +24,20 @@
 - [x] 登录态评论：抓取 50 条，`view.stat.reply` 显示全站 12,518 条
 - [x] 章节：从 `player/v2` 的 `view_points` 提取 6 个章节
 - [x] 长字幕分块压缩：18,954 字字幕经过分块摘要后再生成最终总结
+
+## 独立服务与前端
+
+- [x] `node server/index.js` 启动，默认 `http://127.0.0.1:4780`
+- [x] `GET /api/status` 返回状态、前台、历史、LLM 健康
+- [x] `POST /api/config` 可启动/暂停轮询、修改轮询间隔（测试 20 秒）
+- [x] `GET /api/events` SSE 初始 snapshot 与实时事件正常
+- [x] `POST /api/scan` 通过独立服务 + 真实 Magpie LLM + 真实 B 站视频生成笔记（约 3 分钟，含 18,954 字 AI 字幕分块总结）
+- [x] 前端页面在 Chrome 加载，无 console 错误；启动/暂停按钮可切换
+- [x] 前端页面布局、固定高度滚动、历史总结回显正常
+- [x] 界面截图：[docs/ui-preview.jpg](ui-preview.jpg)
+- [x] DSH 运行中启动独立服务时为 `readOnly: true`，不会抢占轮询
+- [ ] `scripts/install-launchd.mjs` 未实际安装（避免修改系统登录项，待用户确认）
+- [ ] 独立服务与 DSH 插件的新控制器代码需重启 DSH 后验证
 
 ## DSH 内（重启后）
 

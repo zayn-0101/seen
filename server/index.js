@@ -1,0 +1,272 @@
+#!/usr/bin/env node
+/**
+ * myminer 独立本地服务：不启动 DSH Desktop，也能轮询 B 站课程、生成总结和 Obsidian 笔记。
+ *
+ * 前端：http://127.0.0.1:4780
+ * 后端：复用 dsh-video-coursemap 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。
+ */
+import { createServer } from 'node:http'
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { join, dirname, extname, normalize, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
+import { spawn } from 'node:child_process'
+import { apply } from '../dsh-video-coursemap/lib/index.js'
+import { resolveConfig } from '../dsh-video-coursemap/lib/config.js'
+import { createLlmClient, loadLlmConfig } from './llm.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const webRoot = join(here, '..', 'web')
+const uiDir = join(homedir(), '.myminer')
+const uiPath = join(uiDir, 'ui.json')
+const PORT = Number(process.env.MYMINER_PORT || 4780)
+const HOST = process.env.MYMINER_HOST || '127.0.0.1'
+const OPEN_BROWSER = !process.argv.includes('--no-open') && process.env.MYMINER_NO_OPEN !== '1'
+
+function log(...args) {
+  console.log('[' + new Date().toLocaleTimeString('zh-CN', { hour12: false }) + ']', ...args)
+}
+
+async function readJson(file, fallback) {
+  try {
+    const text = await readFile(file, 'utf8')
+    const value = JSON.parse(text)
+    return value && typeof value === 'object' ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
+async function writeJson(file, value) {
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(file, JSON.stringify(value, null, 2) + '\n', 'utf8')
+}
+
+const ui = {
+  pollIntervalMs: 15000,
+  started: false,
+  ...(await readJson(uiPath, {})),
+}
+if (!Number.isFinite(Number(ui.pollIntervalMs))) ui.pollIntervalMs = 15000
+
+const llmConfig = loadLlmConfig()
+const llm = createLlmClient(llmConfig)
+const llmHealth = await llm.health()
+
+const baseConfig = resolveConfig({
+  pollIntervalMs: Number(ui.pollIntervalMs) || 15000,
+  autoStart: false,
+  exposeController: true,
+  provider: llmConfig.provider,
+  model: llmConfig.model,
+  enableMnemon: process.env.MYMINER_DISABLE_MNEMON !== '1',
+  ...(process.env.MYMINER_VAULT ? { vaultPath: process.env.MYMINER_VAULT } : {}),
+  ...(process.env.MYMINER_STATE_DIR ? { stateDir: process.env.MYMINER_STATE_DIR } : {}),
+  ...(process.env.MYMINER_NOTE_ROOT ? { noteRoot: process.env.MYMINER_NOTE_ROOT } : {}),
+})
+
+const tools = new Map()
+const disposers = []
+const ctx = {
+  get: () => undefined,
+  effect: (fn) => {
+    const dispose = fn()
+    if (typeof dispose === 'function') disposers.push(dispose)
+    return dispose
+  },
+  tools: {
+    register: (definition) => {
+      tools.set(definition.name, definition)
+      return () => tools.delete(definition.name)
+    },
+  },
+  llm,
+}
+
+const engine = apply(ctx, baseConfig)
+if (!engine || typeof engine.getStatus !== 'function') {
+  console.error('插件入口没有返回控制器，请检查 dsh-video-coursemap 版本。')
+  process.exit(1)
+}
+
+const sseClients = new Set()
+const recentEvents = []
+
+function broadcast(event) {
+  recentEvents.push(event)
+  if (recentEvents.length > 100) recentEvents.shift()
+  const payload = 'data: ' + JSON.stringify(event) + '\n\n'
+  for (const client of sseClients) {
+    try { client.write(payload) } catch { sseClients.delete(client) }
+  }
+}
+
+engine.onEvent((event) => {
+  broadcast(event)
+  if (event.type === 'saved') log('笔记已生成：' + event.data?.notePath)
+  if (event.type === 'error') log('处理失败：' + event.data?.message)
+})
+
+if (ui.started && !engine.isReadOnly()) {
+  const result = engine.start()
+  if (!result.ok) log('自动启动轮询失败：' + result.message)
+}
+
+async function snapshot() {
+  const status = await engine.getStatus()
+  const events = engine.getEvents()
+  const lastForeground = [...events].reverse().find((event) => event.type === 'foreground')?.data || engine.getLastForeground() || null
+  return {
+    status: { ...status, lastForeground },
+    config: engine.getConfig(),
+    history: engine.getHistory(),
+    events: engine.getEvents(),
+    llm: {
+      ok: llmHealth.ok,
+      detail: llmHealth.detail,
+      model: llmConfig.model,
+      baseURL: llmConfig.baseURL,
+    },
+  }
+}
+
+function json(res, code, value) {
+  const body = JSON.stringify(value)
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.end(body)
+}
+
+async function readBody(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > 1024 * 1024) throw new Error('请求体过大')
+    chunks.push(chunk)
+  }
+  const text = Buffer.concat(chunks).toString('utf8')
+  if (!text) return {}
+  return JSON.parse(text)
+}
+
+async function serveStatic(req, res, pathname) {
+  const safe = pathname === '/' ? '/index.html' : pathname
+  const file = normalize(join(webRoot, safe))
+  if (relative(webRoot, file).startsWith('..')) { json(res, 403, { error: 'forbidden' }); return }
+  try {
+    const info = await stat(file)
+    if (!info.isFile()) throw new Error('not file')
+    const ext = extname(file)
+    const types = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.svg': 'image/svg+xml',
+    }
+    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' })
+    res.end(await readFile(file))
+  } catch {
+    json(res, 404, { error: 'not found' })
+  }
+}
+
+const server = createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url || '/', 'http://' + HOST + ':' + PORT)
+    const pathname = url.pathname
+
+    if (pathname === '/api/status' && req.method === 'GET') {
+      return json(res, 200, await snapshot())
+    }
+
+    if (pathname === '/api/config' && req.method === 'POST') {
+      const body = await readBody(req)
+      let message = ''
+      if (body.pollIntervalMs !== undefined) {
+        const result = engine.setPollInterval(body.pollIntervalMs)
+        if (!result.ok) return json(res, 400, { error: result.message })
+        ui.pollIntervalMs = result.pollIntervalMs
+        message = result.message
+      }
+      if (body.started !== undefined) {
+        const result = body.started ? engine.start() : engine.stop()
+        if (!result.ok) return json(res, 409, { error: result.message })
+        ui.started = Boolean(body.started)
+        message = result.message
+      }
+      await writeJson(uiPath, ui)
+      const data = await snapshot()
+      return json(res, 200, { ok: true, message, ...data })
+    }
+
+    if (pathname === '/api/scan' && req.method === 'POST') {
+      const body = await readBody(req)
+      const result = await engine.scan({ title: body.title, url: body.url, force: Boolean(body.force) })
+      const data = await snapshot()
+      return json(res, result.ok ? 200 : 500, { ...data, result })
+    }
+
+    if (pathname === '/api/check' && req.method === 'POST') {
+      const check = tools.get('course_map_check')
+      if (!check) return json(res, 500, { error: 'check tool missing' })
+      return json(res, 200, await check.execute({}))
+    }
+
+    if (pathname === '/api/events' && req.method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      res.write(': connected\n\n')
+      sseClients.add(res)
+      try {
+        res.write('data: ' + JSON.stringify({ type: 'snapshot', data: await snapshot(), at: Date.now() }) + '\n\n')
+      } catch { /* 忽略 */ }
+      const keepAlive = setInterval(() => {
+        try { res.write(': ping\n\n') } catch { /* 忽略 */ }
+      }, 15000)
+      req.on('close', () => {
+        clearInterval(keepAlive)
+        sseClients.delete(res)
+      })
+      return
+    }
+
+    if (pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' })
+    return await serveStatic(req, res, pathname)
+  } catch (error) {
+    console.error('request error:', error)
+    if (!res.headersSent) json(res, 500, { error: String(error?.message || error) })
+    else res.end()
+  }
+})
+
+server.listen(PORT, HOST, () => {
+  const url = 'http://' + HOST + ':' + PORT
+  log('myminer 独立服务已启动：' + url)
+  log('LLM：' + llmConfig.model + ' @ ' + llmConfig.baseURL + (llmHealth.ok ? '' : '（不可用：' + llmHealth.detail + '）'))
+  log('状态目录：' + baseConfig.stateDir)
+  if (engine.isReadOnly()) log('注意：DSH 正在运行并持有状态锁，本服务为只读；退出 DSH 后重启本服务即可接管。')
+  if (OPEN_BROWSER && process.platform === 'darwin') {
+    spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
+  }
+})
+
+function shutdown(code = 0) {
+  try { engine.stop() } catch { /* 忽略 */ }
+  for (const dispose of disposers) {
+    try { dispose() } catch { /* 忽略 */ }
+  }
+  for (const client of sseClients) {
+    try { client.end() } catch { /* 忽略 */ }
+  }
+  server.close(() => process.exit(code))
+  setTimeout(() => process.exit(code), 1000).unref()
+}
+
+process.on('SIGINT', () => shutdown(0))
+process.on('SIGTERM', () => shutdown(0))

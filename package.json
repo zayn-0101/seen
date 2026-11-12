@@ -1,0 +1,16 @@
+{
+  "name": "myminer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "视频课程知识地图 · 独立本地服务与 Obsidian 输出",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:no-open": "node server/index.js --no-open",
+    "test": "cd dsh-video-coursemap && node --test",
+    "check": "node --check server/index.js && node --check server/llm.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

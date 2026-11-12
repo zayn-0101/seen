@@ -21,9 +21,20 @@ myminer/
 │   ├── architecture.md       架构与数据流
 │   ├── acceptance.md         验收清单与记录
 │   └── rollback.md           回滚 DSH 依赖的步骤
+├── server/                   独立本地服务（不依赖 DSH）
+│   ├── index.js              HTTP API + SSE + 静态页面
+│   └── llm.js                Magpie / OpenAI-compatible LLM 适配
+├── web/                      前端页面（原生 HTML/CSS/JS）
+│   ├── index.html
+│   ├── app.js
+│   └── style.css
 ├── scripts/
 │   ├── install-local-plugin.mjs
-│   └── rollback-local-plugin.mjs
+│   ├── rollback-local-plugin.mjs
+│   ├── install-launchd.mjs
+│   └── uninstall-launchd.mjs
+├── myminer.command          双击启动独立服务
+├── package.json             根脚本（npm start / npm test）
 └── dsh-video-coursemap/      本地增强版 DSH 插件（包名保持不变）
     ├── package.json
     ├── cordis.patch.yml
@@ -60,6 +71,7 @@ myminer/
 ```bash
 cd dsh-video-coursemap && node --test
 node scripts/install-local-plugin.mjs   # 安装到 DSH profile（会先备份）
+node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
 obsidian-cli list --vault "Obsidian Vault" "课程知识地图"
 mnemon recall "视频课程"
 ```

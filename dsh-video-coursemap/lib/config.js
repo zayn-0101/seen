@@ -11,6 +11,8 @@ import { join } from 'node:path'
 /** 插件默认配置（契约见 docs/contracts.md） */
 export const DEFAULTS = Object.freeze({
   enabled: true,
+  autoStart: true,
+  exposeController: false,
   pollIntervalMs: 15000,
   stablePolls: 2,
   vaultPath: null,
@@ -35,7 +37,7 @@ export const DEFAULTS = Object.freeze({
 })
 
 const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit']
-const BOOLEAN_KEYS = ['enabled', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'enableMnemon', 'openInObsidian']
+const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'enableMnemon', 'openInObsidian']
 const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin']
 
 function isPlainObject(value) {

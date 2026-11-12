@@ -102,8 +102,11 @@ export function apply(ctx, rawConfig = {}) {
 
   let running = false
   let pending = null
-  let stopped = false
+  let started = false
+  let pollTimer = null
   let readOnly = false
+  const eventListeners = new Set()
+  const recentEvents = []
   const lockPath = join(config.stateDir, 'instance.lock')
   try {
     if (existsSync(lockPath)) {
@@ -116,6 +119,21 @@ export function apply(ctx, rawConfig = {}) {
   } catch { /* 锁失败不阻塞启动 */ }
 
   const outputDir = join(vaultPath, config.noteRoot)
+
+  function emit(type, data) {
+    const event = { type, data: data === undefined ? null : data, at: Date.now() }
+    recentEvents.push(event)
+    if (recentEvents.length > 100) recentEvents.shift()
+    for (const listener of eventListeners) {
+      try { listener(event) } catch { /* 单个订阅失败不影响轮询 */ }
+    }
+  }
+
+  function onEvent(listener) {
+    if (typeof listener !== 'function') return () => {}
+    eventListeners.add(listener)
+    return () => eventListeners.delete(listener)
+  }
 
   function save() {
     try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
@@ -142,11 +160,13 @@ export function apply(ctx, rawConfig = {}) {
       if (!rawTitle && !input?.url && !input?.bvid) {
         return { ok: false, message: '缺少视频标题或 URL' }
       }
+      emit('detected', { title: rawTitle, url: input?.url || '', bvid: inputBvid || null, force: Boolean(input?.force) })
 
       let cookieHeader = null
       try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
       let content = null
       if (config.fetchContent) {
+        emit('fetching', { title: rawTitle, message: '抓取 B 站视频信息、字幕、弹幕与评论' })
         content = await fetchContent({
           ref: input?.url || input?.bvid || rawTitle,
           title: rawTitle,
@@ -154,6 +174,7 @@ export function apply(ctx, rawConfig = {}) {
           commentLimit: config.commentLimit,
         })
         logger.log('bili content title=' + JSON.stringify(rawTitle) + ' matched=' + Boolean(content?.matched) + ' bvid=' + (content?.bvid || 'none') + ' danmaku=' + (content?.fetchStats?.danmaku || 0) + ' comments=' + (content?.fetchStats?.comments || 0) + ' transcript=' + (content?.fetchStats?.transcript || 0))
+        emit('content', { bvid: content?.bvid || null, title: content?.title || rawTitle, fetchStats: content?.fetchStats || null, chapters: content?.chapters || [] })
         if (!cookieHeader && content?.url) {
           try {
             cookieHeader = await getBilibiliCookieHeader({ config, url: content.url })
@@ -181,6 +202,7 @@ export function apply(ctx, rawConfig = {}) {
       const existing = Object.keys(state.subjects)
       const cls = await classify(ctx, config, { title, desc, tags, existingSubjects: existing })
       logger.log('classify title=' + JSON.stringify(title) + ' result=' + JSON.stringify(cls))
+      if (cls) emit('classified', { isCourse: cls.isCourse, subject: cls.subject, title: cls.title, keywords: cls.keywords || [] })
 
       if (!cls) {
         throw new Error('视频分类失败（LLM 返回无法解析或调用失败），稍后重试')
@@ -191,6 +213,7 @@ export function apply(ctx, rawConfig = {}) {
         state.stats.skipped += 1
         pruneSeen(state)
         save()
+        emit('skipped', { reason: 'non-course', title })
         return { ok: true, skipped: true, message: '非知识内容，已静默忽略' }
       }
 
@@ -222,12 +245,15 @@ export function apply(ctx, rawConfig = {}) {
         content.transcriptSource = transcriptSource
         if (content.fetchStats) content.fetchStats.transcript = transcript.length
       }
+      emit('transcript', { source: transcriptSource || 'none', length: transcript.length })
       const contentForSummary = content
         ? { ...content, transcript, transcriptSource }
         : (transcript ? { transcript, transcriptSource } : null)
-      const summary = await summarize(ctx, config, { title: cls.title || title, subject, keywords, content: contentForSummary, transcript, transcriptSource })
       const finalTitle = cls.title || title
+      emit('summarizing', { title: finalTitle, subject, transcriptLength: transcript.length })
+      const summary = await summarize(ctx, config, { title: finalTitle, subject, keywords, content: contentForSummary, transcript, transcriptSource })
       const contentQuality = transcript ? 'full' : 'metadata-only'
+      emit('summarized', { title: finalTitle, subject, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
 
       const note = renderVideoNote({
@@ -314,6 +340,20 @@ export function apply(ctx, rawConfig = {}) {
       save()
 
       logger.log('note.saved subject=' + JSON.stringify(subject) + ' title=' + JSON.stringify(finalTitle) + ' path=' + writeResult.relPath + ' skipped=' + writeResult.skipped)
+      emit('saved', {
+        title: finalTitle,
+        subject,
+        notePath: writeResult.relPath,
+        bvid: content?.bvid || inputBvid || '',
+        url: content?.url || input?.url || '',
+        summary: summary.summary,
+        keyPoints: summary.keyPoints,
+        discussion: summary.discussion,
+        contentSource: transcriptSource || 'metadata',
+        contentQuality,
+        fetchStats: content?.fetchStats || null,
+        chapters: content?.chapters || [],
+      })
       console.log('[dsh-video-coursemap] ' + (isNewSubject ? '新学科' : '更新学科') + '「' + subject + '」 ← ' + finalTitle)
       return { ok: true, message: '已生成「' + subject + '」笔记：' + writeResult.relPath, subject, notePath: writeResult.relPath }
     } catch (error) {
@@ -324,6 +364,7 @@ export function apply(ctx, rawConfig = {}) {
         save()
       }
       logger.log('process.error key=' + JSON.stringify(key) + ' msg=' + msg)
+      emit('error', { message: msg })
       console.error('[dsh-video-coursemap] 处理失败（不影响后续轮询）：', error)
       return { ok: false, message: '处理失败：' + msg }
     } finally {
@@ -332,7 +373,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   async function observeOnce() {
-    if (!config.enabled || stopped) return
+    if (!config.enabled || !started) return
     let fg
     try {
       fg = await observeForeground(config)
@@ -342,6 +383,7 @@ export function apply(ctx, rawConfig = {}) {
     }
     state.lastForeground = { at: Date.now(), app: fg?.app || '', title: fg?.title || '', url: fg?.url || '', source: fg?.source || 'none', error: fg?.error || '' }
     if (fg?.error) logger.logOnce('fg|' + fg.source + '|' + fg.error, 'foreground.degraded app=' + JSON.stringify(fg.app || '') + ' source=' + fg.source + ' msg=' + fg.error)
+    emit('foreground', { app: fg?.app || '', title: fg?.title || '', url: fg?.url || '', source: fg?.source || 'none', permission: fg?.permission || 'unknown', error: fg?.error || '', isBrowser: isBrowserName(fg?.app, config), at: Date.now() })
     if (!isBrowserName(fg?.app, config)) return
 
     const rawTitle = fg?.title || ''
@@ -364,7 +406,147 @@ export function apply(ctx, rawConfig = {}) {
     if (pending.count >= config.stablePolls) {
       const p = pending
       pending = null
+      emit('stable', { title: p.title, url: p.url, bvid: p.bvid })
       await processTitle({ title: p.title, url: p.url, bvid: p.bvid })
+    }
+  }
+
+  async function buildStatus() {
+    let mnemonReady = false
+    try { mnemonReady = Boolean(await findMnemon(config)) } catch { mnemonReady = false }
+    const subjects = Object.entries(state.subjects).map(([subject, d]) => ({ subject, videos: d.videos?.length ?? 0 }))
+    const lastError = state.lastForeground?.error || ''
+    const message = [
+      '视频课程知识地图 Agent 状态：',
+      '- 轮询：' + (readOnly ? '只读（另一个实例持有锁）' : started ? '运行中' : '已停止'),
+      '- 轮询间隔：' + config.pollIntervalMs + 'ms',
+      '- 启用：' + config.enabled,
+      '- Obsidian：' + outputDir,
+      '- 学科数：' + subjects.length,
+      ...subjects.map((s) => '  · ' + s.subject + '（' + s.videos + ' 个视频）'),
+      '- 最近观察：' + (state.lastTitle || '（无）'),
+      '- 前台检测：' + (state.lastForeground ? (state.lastForeground.app || '未知') + ' / ' + (state.lastForeground.error || '正常') : '（尚未运行）'),
+      '- mnemon：' + (mnemonReady ? '可用' : '未找到 CLI'),
+    ].join('\n')
+    return {
+      ok: true,
+      enabled: config.enabled,
+      polling: started,
+      pollIntervalMs: config.pollIntervalMs,
+      readOnly,
+      outputDir,
+      vaultPath,
+      noteRoot: config.noteRoot,
+      lastTitle: state.lastTitle,
+      lastRunAt: state.lastRunAt,
+      lastError,
+      mnemonReady,
+      subjects,
+      message,
+    }
+  }
+
+  function getSafeConfig() {
+    return {
+      pollIntervalMs: config.pollIntervalMs,
+      enabled: config.enabled,
+      polling: started,
+      readOnly,
+      vaultPath,
+      noteRoot: config.noteRoot,
+      stateDir: config.stateDir,
+      provider: config.provider,
+      model: config.model,
+      fetchTranscript: config.fetchTranscript,
+      useBrowserCookies: config.useBrowserCookies,
+      commentLimit: config.commentLimit,
+    }
+  }
+
+  function getHistory() {
+    const rows = []
+    for (const [subject, data] of Object.entries(state.subjects)) {
+      for (const video of data.videos || []) {
+        rows.push({
+          subject,
+          title: video.title,
+          bvid: video.bvid || '',
+          notePath: video.notePath || '',
+          summary: video.summary || '',
+          keywords: video.keywords || [],
+          createdAt: video.createdAt || 0,
+        })
+      }
+    }
+    rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    return rows
+  }
+
+  function clearPollTimer() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  }
+
+  function schedulePoll() {
+    if (!started || readOnly || !config.enabled) return
+    clearPollTimer()
+    pollTimer = setTimeout(async () => {
+      pollTimer = null
+      try {
+        await observeOnce()
+      } catch (error) {
+        logger.log('observe.error msg=' + (error?.message || error))
+        emit('error', { message: String(error?.message || error) })
+      }
+      if (started) schedulePoll()
+    }, Math.max(1000, Number(config.pollIntervalMs) || 15000))
+  }
+
+  function start() {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (!config.enabled) return { ok: false, message: 'Agent 未启用（config.enabled=false）' }
+    if (started) return { ok: true, message: '轮询已在运行' }
+    started = true
+    logger.log('polling.started interval=' + config.pollIntervalMs)
+    emit('status', { polling: true, pollIntervalMs: config.pollIntervalMs, readOnly })
+    schedulePoll()
+    return { ok: true, message: '轮询已启动' }
+  }
+
+  function stop() {
+    if (!started) return { ok: true, message: '轮询已停止' }
+    started = false
+    clearPollTimer()
+    pending = null
+    logger.log('polling.stopped')
+    emit('status', { polling: false, pollIntervalMs: config.pollIntervalMs, readOnly })
+    return { ok: true, message: '轮询已停止' }
+  }
+
+  function setPollInterval(ms) {
+    const value = Math.floor(Number(ms))
+    if (!Number.isFinite(value) || value < 2000 || value > 600000) {
+      return { ok: false, message: '轮询间隔需在 2 秒到 10 分钟之间' }
+    }
+    config.pollIntervalMs = value
+    if (started) schedulePoll()
+    logger.log('polling.interval=' + value)
+    emit('status', { polling: started, pollIntervalMs: value, readOnly })
+    return { ok: true, message: '轮询间隔已更新', pollIntervalMs: value }
+  }
+
+  async function scan(input) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    let waited = 0
+    while (running && waited < 90000) { await new Promise((r) => setTimeout(r, 500)); waited += 500 }
+    return await processTitle(input)
+  }
+
+  async function getSnapshot() {
+    return {
+      status: await buildStatus(),
+      config: getSafeConfig(),
+      history: getHistory(),
+      events: recentEvents.slice(-40),
     }
   }
 
@@ -378,6 +560,7 @@ export function apply(ctx, rawConfig = {}) {
         type: 'object', additionalProperties: false,
         properties: {
           ok: { type: 'boolean' }, enabled: { type: 'boolean' },
+          polling: { type: 'boolean' }, pollIntervalMs: { type: 'integer' }, readOnly: { type: 'boolean' },
           outputDir: { type: 'string' }, vaultPath: { type: 'string' }, noteRoot: { type: 'string' },
           lastTitle: { type: 'string' }, lastRunAt: { type: 'integer' },
           lastError: { type: 'string' }, mnemonReady: { type: 'boolean' },
@@ -389,21 +572,7 @@ export function apply(ctx, rawConfig = {}) {
       render: (_a, v) => [{ type: 'text', text: v.message ?? '' }],
     },
     async execute() {
-      let mnemonReady = false
-      try { mnemonReady = Boolean(await findMnemon(config)) } catch { mnemonReady = false }
-      const subjects = Object.entries(state.subjects).map(([subject, d]) => ({ subject, videos: d.videos?.length ?? 0 }))
-      const lastError = state.lastForeground?.error || ''
-      const message = [
-        '视频课程知识地图 Agent 状态：',
-        '- 启用：' + config.enabled,
-        '- Obsidian：' + outputDir,
-        '- 学科数：' + subjects.length,
-        ...subjects.map((s) => '  · ' + s.subject + '（' + s.videos + ' 个视频）'),
-        '- 最近观察：' + (state.lastTitle || '（无）'),
-        '- 前台检测：' + (state.lastForeground ? (state.lastForeground.app || '未知') + ' / ' + (state.lastForeground.error || '正常') : '（尚未运行）'),
-        '- mnemon：' + (mnemonReady ? '可用' : '未找到 CLI'),
-      ].join('\n')
-      return { ok: true, enabled: config.enabled, outputDir, vaultPath, noteRoot: config.noteRoot, lastTitle: state.lastTitle, lastRunAt: state.lastRunAt, lastError, mnemonReady, subjects, message }
+      return await buildStatus()
     },
   }), 'dsh-video-coursemap: status tool')
 
@@ -518,18 +687,35 @@ export function apply(ctx, rawConfig = {}) {
   ctx.effect(() => {
     if (readOnly) {
       logger.log('readonly mode: another instance holds ' + lockPath)
+      emit('status', { polling: false, pollIntervalMs: config.pollIntervalMs, readOnly: true })
       return () => {}
     }
-    const id = setInterval(() => { observeOnce().catch((e) => logger.log('observe.error msg=' + (e?.message || e))) }, config.pollIntervalMs)
+    if (config.autoStart) start()
     return () => {
-      stopped = true
-      clearInterval(id)
+      stop()
       try {
         if (readFileSync(lockPath, 'utf8').trim() === String(process.pid)) unlinkSync(lockPath)
       } catch { /* 忽略 */ }
     }
   }, 'dsh-video-coursemap: poll timer')
 
-  logger.log('started pollIntervalMs=' + config.pollIntervalMs + ' vault=' + vaultPath + ' noteRoot=' + config.noteRoot + ' mnemon=' + config.enableMnemon + (readOnly ? ' readonly' : ''))
-  console.log('[dsh-video-coursemap] 已启动：每 ' + config.pollIntervalMs + 'ms 轮询前台窗口，输出 ' + outputDir)
+  logger.log('apply pollIntervalMs=' + config.pollIntervalMs + ' autoStart=' + config.autoStart + ' vault=' + vaultPath + ' noteRoot=' + config.noteRoot + ' mnemon=' + config.enableMnemon + (readOnly ? ' readonly' : ''))
+  if (!readOnly && config.autoStart) console.log('[dsh-video-coursemap] 已启动：每 ' + config.pollIntervalMs + 'ms 轮询前台窗口，输出 ' + outputDir)
+
+  const controller = {
+    start,
+    stop,
+    setPollInterval,
+    scan,
+    getStatus: buildStatus,
+    getSnapshot,
+    getHistory,
+    getConfig: getSafeConfig,
+    getEvents: () => recentEvents.slice(-40),
+    getLastForeground: () => state.lastForeground ? { ...state.lastForeground, isBrowser: isBrowserName(state.lastForeground.app, config) } : null,
+    onEvent,
+    isReadOnly: () => readOnly,
+    isStarted: () => started,
+  }
+  if (config.exposeController) return controller
 }

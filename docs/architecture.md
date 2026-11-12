@@ -31,6 +31,27 @@
       → state 保存
 ```
 
+## 独立运行模式
+
+`server/index.js` 把同一套插件核心包成一个本地服务：
+
+```
+浏览器 http://127.0.0.1:4780
+  ├─ GET  /api/status     状态、前台、历史、LLM 健康
+  ├─ GET  /api/events     SSE：foreground / detected / fetching /
+  │                       content / classified / transcript /
+  │                       summarizing / summarized / saved / error
+  ├─ POST /api/config     启动/暂停轮询、修改轮询间隔
+  ├─ POST /api/scan       手动扫描 URL / BV
+  └─ POST /api/check      前台权限、Obsidian、mnemon、B站、LLM 诊断
+```
+
+- `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用插件的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
+- `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成 DSH 的 `ctx.llm.stream` 形态；不启动 DSH 也能调用模型。
+- 独立服务与 DSH 插件共用同一状态目录和 `instance.lock`：DSH 运行时独立服务为只读，退出 DSH 后可接管。
+- `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
+- 开机自启用 `scripts/install-launchd.mjs`；双击 `myminer.command` 可临时启动。
+
 ## 状态文件
 
 `~/.dsh/state/dsh-video-coursemap-obsidian/state.json`

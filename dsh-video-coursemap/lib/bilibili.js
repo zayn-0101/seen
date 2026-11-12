@@ -753,13 +753,16 @@ export async function fetchContent(input = {}) {
 
     const [fetchedTags, transcript, danmaku, comments] = await Promise.all([
       search?.tags?.length ? Promise.resolve(search.tags) : fetchTags(bvid).catch(() => []),
-      fetchSubtitle({ ...(view || {}), subtitle: subtitleEntries }).catch(() => ''),
+      // 只使用 view 里 UP 主上传的字幕；AI 字幕统一由 transcript.js 通过 yt-dlp 获取。
+      // 原因：B站 player/v2 的 AI 字幕 URL 在部分登录态下会返回与当前视频无关的内容。
+      fetchSubtitle(view).catch(() => ''),
       cid ? fetchDanmaku(cid).catch(() => []) : Promise.resolve([]),
       aid ? fetchComments(aid, { limit: commentLimit, cookieHeader }).catch(() => []) : Promise.resolve([]),
     ])
     const tags = fetchedTags.length ? fetchedTags : []
+    const officialSubtitles = Array.isArray(view?.subtitle) ? view.subtitle : []
     const transcriptSource = transcript
-      ? (subtitleEntries.some((entry) => String(entry?.lan || '').toLowerCase().startsWith('ai-') || /ai|自动/i.test(String(entry?.lan_doc || ''))) ? 'ai-subtitle' : 'up-subtitle')
+      ? (officialSubtitles.some((entry) => String(entry?.lan || '').toLowerCase().startsWith('ai-') || /ai|自动/i.test(String(entry?.lan_doc || ''))) ? 'ai-subtitle' : 'up-subtitle')
       : ''
 
     return emptyContent({

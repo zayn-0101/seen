@@ -51,7 +51,7 @@ node scripts/install-local-plugin.mjs
 
 或直接调用 `course_map_check`。全部为 ✅ 即可使用。
 
-## 日常使用
+## 日常使用（DSH 模式）
 
 ### 自动模式
 
@@ -81,6 +81,62 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 > 视频课程插件现在什么状态？
 
 或调用 `course_map_status`。
+
+## 独立运行（不用启动 DSH Desktop）
+
+本地服务自己完成轮询、抓取、总结和写 Obsidian，不需要 DSH 对话窗口。
+
+**前提**：
+
+- 本机 Magpie 菜单栏应用保持运行（它提供本地模型网关；DSH 也用同一个）。
+- Chrome 已登录 B 站（抓 AI 字幕用）。
+- Obsidian **不需要打开**，笔记直接写入 vault。
+
+**启动**：
+
+- 在 Finder 里双击 `myminer.command`；
+- 或终端执行 `node server/index.js`；
+- 浏览器打开 [http://127.0.0.1:4780](http://127.0.0.1:4780)。
+
+界面预览：![课程矿工界面](docs/ui-preview.jpg)
+
+页面里可以：
+
+- 启动 / 暂停自动轮询；
+- 调整轮询间隔（2–600 秒）；
+- 查看当前前台浏览器和最近活动；
+- 查看实时总结、章节、字幕/评论/弹幕统计；
+- 粘贴 B 站 URL 手动扫描，或强制重生成；
+- 点「诊断」检查权限、Obsidian、mnemon、B 站和 LLM。
+
+**开机自动启动**：
+
+```bash
+node scripts/install-launchd.mjs
+```
+
+之后登录 macOS 会自动启动，访问 `http://127.0.0.1:4780` 即可。卸载：
+
+```bash
+node scripts/uninstall-launchd.mjs
+```
+
+服务日志在 `~/.myminer/server.log` / `server.err.log`。
+
+**和 DSH 的关系**：独立服务和 DSH 插件共用状态目录与 `instance.lock`，同一时间只能有一个轮询实例。DSH 在运行时，独立页面会显示「DSH 占用中」并进入只读；退出 DSH 后重启独立服务即可接管。
+
+**换模型**：默认使用本机 Magpie 的 `auto/deepseek-v4.1-flash`。如需其他 OpenAI-compatible 服务，创建 `~/.myminer/llm.json`：
+
+```json
+{
+  "baseURL": "http://127.0.0.1:11434/v1",
+  "apiKey": "",
+  "model": "qwen3:8b",
+  "provider": "local"
+}
+```
+
+或使用环境变量 `MYMINER_LLM_BASE_URL` / `MYMINER_LLM_API_KEY` / `MYMINER_LLM_MODEL`。
 
 ## Obsidian 目录结构
 
@@ -159,6 +215,9 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 |---|---|
 | 插件状态 | `~/.dsh/state/dsh-video-coursemap-obsidian/state.json` |
 | 运行日志 | `~/.dsh/state/dsh-video-coursemap-obsidian/poll.log` |
+| 独立服务开关/间隔 | `~/.myminer/ui.json` |
+| 独立服务日志 | `~/.myminer/server.log` / `server.err.log` |
+| 独立服务地址 | `http://127.0.0.1:4780` |
 | DSH profile | `~/.dsh/profiles/desktop` |
 
 ## 排障

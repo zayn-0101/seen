@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>课程矿工 · 视频课程知识地图</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">M</div>
+        <div class="brand-text">
+          <h1>课程矿工</h1>
+          <p>视频课程 → Obsidian 知识地图</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="llmPill" class="pill neutral" title="">LLM 检测中</span>
+        <span id="readonlyPill" class="pill warn hidden" title="DSH Desktop 正在运行并持有状态锁">DSH 占用中</span>
+        <button id="toggle" class="toggle" type="button" aria-pressed="false">
+          <span class="toggle-dot"></span>
+          <span id="toggleLabel">启动轮询</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="control card">
+        <div class="control-row">
+          <label class="field">
+            <span>轮询间隔</span>
+            <span class="input-wrap">
+              <input id="interval" type="number" min="2" max="600" step="1" value="15">
+              <span class="unit">秒</span>
+            </span>
+          </label>
+          <button id="saveInterval" class="button ghost" type="button">保存</button>
+          <span id="intervalHint" class="hint">每 15 秒观察一次前台浏览器</span>
+          <span class="spacer"></span>
+          <button id="check" class="button quiet" type="button">诊断</button>
+        </div>
+        <div class="control-row manual-row">
+          <input id="manualUrl" class="url-input" type="text" placeholder="粘贴 B 站视频 URL 或 BV 号，立即生成笔记" autocomplete="off" spellcheck="false">
+          <button id="scan" class="button primary" type="button">立即扫描</button>
+          <button id="scanForce" class="button quiet" type="button" title="重新生成已处理的视频">强制重生成</button>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section class="card live-card">
+          <div class="card-head">
+            <div>
+              <h2>实时轮询</h2>
+              <p class="sub">当前前台浏览器</p>
+            </div>
+            <span id="pollState" class="state stopped">已停止</span>
+          </div>
+
+          <div id="foreground" class="foreground empty">
+            <div class="empty-icon">◌</div>
+            <div>
+              <strong>等待浏览器</strong>
+              <p>在 Chrome 打开一个 B 站视频页，保持前台约 30 秒。</p>
+            </div>
+          </div>
+
+          <div class="timeline">
+            <div class="timeline-head">
+              <span>活动</span>
+              <span id="lastPoll">尚未轮询</span>
+            </div>
+            <ol id="events" class="events"></ol>
+          </div>
+        </section>
+
+        <section class="card summary-card">
+          <div class="card-head">
+            <div>
+              <h2>实时总结</h2>
+              <p class="sub">字幕、章节与知识点</p>
+            </div>
+            <span id="summaryStage" class="stage idle">等待新视频</span>
+          </div>
+          <div id="summaryBody" class="summary-body empty">
+            <div class="empty-icon">✦</div>
+            <div>
+              <strong>还没有新的总结</strong>
+              <p>检测到新视频后，这里会显示处理进度和知识总结。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card history-card">
+        <div class="card-head">
+          <div>
+            <h2>知识库</h2>
+            <p class="sub">已生成的视频笔记</p>
+          </div>
+          <span id="historyCount" class="muted">0 个视频</span>
+        </div>
+        <div id="history" class="history-grid empty">
+          <p class="empty-line">还没有笔记。打开 B 站课程视频，或在上方粘贴链接。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>独立运行 · 不依赖 DSH Desktop</span>
+      <span class="dot-sep">·</span>
+      <span>笔记写入 Obsidian vault</span>
+      <span class="spacer"></span>
+      <span id="footerPath" class="muted"></span>
+    </footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

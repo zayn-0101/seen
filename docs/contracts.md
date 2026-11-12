@@ -247,6 +247,11 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 插件入口：`export const name`、`export const inject = ['llm','tools']`、`export function apply(ctx, rawConfig)`。
 
+- DSH 默认 `autoStart: true`，`apply` 返回 `undefined`。
+- 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
+  `{ start, stop, setPollInterval, scan, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+- 事件类型：`foreground / stable / detected / fetching / content / classified / transcript / summarizing / summarized / saved / skipped / error / status`。
+
 - 配置、状态、日志、轮询、编排、工具注册都在这里。
 - 工具名：`course_map_status`、`course_map_scan`、`course_map_check`。
 - 工具返回 schema 与原插件风格一致（raw JSON schema + output.schema + render）。

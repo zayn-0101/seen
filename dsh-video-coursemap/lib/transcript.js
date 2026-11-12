@@ -13,7 +13,7 @@ import { promisify } from 'node:util'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
-import { BILI_UA, BILI_REFERER, fetchPlayerInfo } from './bilibili.js'
+import { BILI_UA, BILI_REFERER } from './bilibili.js'
 import { findYtDlp } from './ytdlp.js'
 
 const execFileP = promisify(execFile)
@@ -134,20 +134,10 @@ async function downloadViaYtDlp({ url, config = {} } = {}) {
  * 获取视频字幕文本。
  * @returns {Promise<{ text: string, source: 'ai-subtitle'|'up-subtitle'|'', detail: string }>}
  */
-export async function fetchTranscript({ bvid, cid, url, config = {}, cookieHeader = '', playerInfo = null } = {}) {
+export async function fetchTranscript({ bvid, cid, url, config = {}, cookieHeader = '' } = {}) {
   try {
-    let entries = Array.isArray(playerInfo?.subtitles) ? playerInfo.subtitles : []
-    if (entries.length === 0 && bvid && cid) {
-      try {
-        const info = await fetchPlayerInfo(bvid, cid, { cookieHeader })
-        entries = Array.isArray(info?.subtitles) ? info.subtitles : []
-      } catch { /* 忽略 */ }
-    }
-    const chosen = chooseSubtitle(entries)
-    if (chosen) {
-      const text = await fetchSubtitleText(chosen, cookieHeader)
-      if (text) return { text, source: subtitleSource(chosen), detail: 'player-v2' }
-    }
+    // 以 yt-dlp 为主：它会按视频自身解析 B站 AI 字幕，避免 player/v2 在某些登录态下
+    // 返回“最近观看视频”的字幕 URL，导致把别的视频内容当成本视频讲解。
     const downloaded = await downloadViaYtDlp({ url, config })
     if (downloaded?.text) return { ...downloaded, detail: 'yt-dlp' }
   } catch { /* 降级 */ }
