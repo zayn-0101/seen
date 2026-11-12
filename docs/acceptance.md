@@ -4,10 +4,10 @@
 
 ## 自动化
 
-- [x] `cd dsh-video-coursemap && node --test`：27 tests / 27 pass / 0 fail
+- [x] `cd dsh-video-coursemap && node --test`：33 tests / 33 pass / 0 fail
 - [x] 所有 lib 文件 `node --check` 通过
 - [x] `scripts/install-local-plugin.mjs` 执行成功，profile 依赖指向本地路径
-- [x] 安装副本版本：`2.1.0-obsidian.1`
+- [x] 安装副本版本：`2.2.0-obsidian.1`（已同步，需重启 DSH 生效）
 - [x] 重启 DSH Desktop 后插件加载（无 duplicate loader entry 报错）
 - [x] 实际自动检测：2026-11-12 08:57 检测到 Chrome 中的 B 站视频，08:58 生成笔记
 
@@ -20,6 +20,10 @@
 - [x] 视频笔记 frontmatter 含 title/subject/source/bvid/url/author/created/updated/tags
 - [x] 学习手册含 `<!-- AUTO:START -->` 与「我的补充」区
 - [x] mnemon 临时数据目录写入 + `mnemon recall` 可召回
+- [x] AI 字幕抓取：通过 yt-dlp + Chrome Cookie 获取 `ai-zh`，该视频字幕 18,954 字
+- [x] 登录态评论：抓取 50 条，`view.stat.reply` 显示全站 12,518 条
+- [x] 章节：从 `player/v2` 的 `view_points` 提取 6 个章节
+- [x] 长字幕分块压缩：18,954 字字幕经过分块摘要后再生成最终总结
 
 ## DSH 内（重启后）
 

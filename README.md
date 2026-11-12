@@ -6,7 +6,7 @@
 
 1. **实时检测**：每 15 秒观察当前前台浏览器；发现新的 B 站视频课程后自动处理。
 2. **学科分类**：LLM 判断视频属于哪个学科；已有学科 → 更新该学科的学习手册；新学科 → 新建学习手册。
-3. **内容总结**：抓取 B 站视频简介、标签、字幕（如有）、弹幕、评论，生成核心知识点、讨论焦点和思维导图。
+3. **内容总结**：优先抓取 B 站 AI 字幕/UP 主字幕作为完整讲解文本，再结合简介、标签、弹幕、评论生成核心知识点、讨论焦点和思维导图。没有字幕时会明确标注「内容依据有限」。
 4. **保存 Obsidian**：每视频一篇原子笔记 + 每学科一篇学习手册 + 全局课程总览。
 5. **写入 mnemon**：每视频写一条精简 insight 到 dsh-mnemon 的 default Memory Space，可在 DSH 对话中召回。
 
@@ -101,6 +101,15 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 - **学习手册**：学科级知识地图（Mermaid mindmap + 视频链接列表），底部「我的补充」区不会被覆盖。
 - **课程总览**：全部学科与视频数量。
 
+## 内容来源与可信度
+
+- **有 AI 字幕/UP 主字幕**：笔记 frontmatter 标记 `contentSource: ai-subtitle` 或 `up-subtitle`，`contentQuality: full`；知识点以字幕为主。
+- **没有字幕**：标记 `contentSource: metadata`、`contentQuality: metadata-only`，笔记顶部会出现「内容依据有限」警告；核心知识点只基于简介/标签，弹幕和评论只用于讨论焦点。
+- 统计区会显示「抓取 X 条 / 全站 Y 条」，不再把匿名接口拿到的 3 条热评写成视频实际评论数。
+- AI 字幕可能包含同音错字，插件会让模型结合上下文纠正，但不保证 100% 准确。
+
+> 隐私说明：`useBrowserCookies: true` 时，插件只在抓取字幕/评论时通过 `yt-dlp` 临时读取 Chrome 的 B 站 Cookie，Cookie 文件写入系统临时目录并在调用后立即删除，不写入日志、不写入 Obsidian、不写入配置。
+
 ## 配置
 
 默认自动检测 Obsidian vault（`~/Library/Application Support/obsidian/obsidian.json`）。如需修改，在 `~/.dsh/profiles/desktop/cordis.patch.yml` 中添加顶层覆盖（不要写 `insert`）：
@@ -113,6 +122,10 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
     stablePolls: 2
     noteRoot: 课程知识地图
     vaultPath: ~/Documents/Obsidian Vault
+    fetchTranscript: true
+    useBrowserCookies: true
+    cookieBrowser: chrome
+    commentLimit: 50
     enableMnemon: true
     mnemonStore: default
     openInObsidian: false
@@ -129,6 +142,12 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 | `provider` / `model` | null | 跟随 DSH 默认模型 |
 | `maxTokens` | 4096 | 总结最大 token |
 | `fetchContent` | true | 是否抓取 B 站内容 |
+| `fetchTranscript` | true | 是否抓取 AI/UP 主字幕作为完整讲解文本 |
+| `useBrowserCookies` | true | 是否允许 yt-dlp 临时读取浏览器 B 站 Cookie（用于 AI 字幕和评论分页） |
+| `cookieBrowser` | chrome | 从哪个浏览器读取 Cookie（chrome/safari/edge） |
+| `transcriptLangs` | ai-zh, zh-Hans… | 字幕语言优先级 |
+| `commentLimit` | 50 | 最多抓取多少条高赞评论（最大 100） |
+| `ytDlpBin` | 自动 | yt-dlp 路径（默认自动探测） |
 | `enableMnemon` | true | 是否写 mnemon |
 | `mnemonBin` | 自动 | mnemon CLI 路径 |
 | `mnemonStore` | default | Memory Space id |

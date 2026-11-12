@@ -13,10 +13,13 @@
   → 去重（state.seen，bvid 优先）
   → 稳定计数（stablePolls=2）
   → processTitle()
+      → session.getBilibiliCookieHeader()（yt-dlp 临时读取浏览器 Cookie，不落盘）
       → fetchContent()：
           → URL/BV 直取 view（title/desc/tags/pages/cid/subtitle）
           → 无 URL 时 searchVideo(title) + 相似度 ≥0.5
-          → 并发抓弹幕（≤150）与评论（匿名约 3 条）
+          → fetchPlayerInfo()：AI 字幕列表 + view_points 章节
+          → 并发抓弹幕（≤150）与评论（登录态最多 100，默认 50）
+      → transcript.fetchTranscript()：AI 字幕 / UP 主字幕 / yt-dlp SRT 兜底
       → classify()：LLM JSON → {isCourse, subject, title, keywords}
       → 非课程：markSeen，静默
       → summarize()：LLM JSON → {summary, keyPoints, discussion, mnemonSummary}

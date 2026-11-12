@@ -21,6 +21,12 @@ export const DEFAULTS = Object.freeze({
   maxTokens: 4096,
   titleMinLen: 4,
   fetchContent: true,
+  fetchTranscript: true,
+  ytDlpBin: null,
+  useBrowserCookies: true,
+  cookieBrowser: 'chrome',
+  transcriptLangs: ['ai-zh', 'zh-Hans', 'zh-CN', 'zh'],
+  commentLimit: 50,
   enableMnemon: true,
   mnemonBin: null,
   mnemonStore: 'default',
@@ -28,9 +34,9 @@ export const DEFAULTS = Object.freeze({
   browserNames: null,
 })
 
-const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen']
-const BOOLEAN_KEYS = ['enabled', 'fetchContent', 'enableMnemon', 'openInObsidian']
-const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin']
+const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit']
+const BOOLEAN_KEYS = ['enabled', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'enableMnemon', 'openInObsidian']
+const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin']
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -164,6 +170,21 @@ export function resolveConfig(raw = {}) {
     throw new Error('dsh-video-coursemap: mnemonStore 必须是非空字符串')
   }
   config.mnemonStore = config.mnemonStore.trim()
+
+  if (typeof config.cookieBrowser !== 'string' || config.cookieBrowser.trim() === '') {
+    throw new Error('dsh-video-coursemap: cookieBrowser 必须是非空字符串')
+  }
+  config.cookieBrowser = config.cookieBrowser.trim()
+
+  if (!Array.isArray(config.transcriptLangs) || config.transcriptLangs.length === 0) {
+    throw new Error('dsh-video-coursemap: transcriptLangs 必须是非空字符串数组')
+  }
+  config.transcriptLangs = config.transcriptLangs.map((item) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw new Error('dsh-video-coursemap: transcriptLangs 必须是非空字符串数组')
+    }
+    return item.trim()
+  })
 
   for (const key of ['vaultPath', 'stateDir']) {
     if (config[key] === null || config[key] === undefined) {

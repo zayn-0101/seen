@@ -68,6 +68,25 @@ export function formatDate(ts) {
   return `${year}-${month}-${day}`
 }
 
+/** 秒数格式化为 mm:ss / hh:mm:ss。 */
+export function formatDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(secs).padStart(2, '0')
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+function normalizeChapters(chapters) {
+  if (!Array.isArray(chapters)) return []
+  return chapters
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({ from: Number(item.from) || 0, content: cleanInline(item.content) }))
+    .filter((item) => item.content)
+}
+
 function cleanInline(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
@@ -130,6 +149,8 @@ function normalizeFetchStats(raw) {
     transcript: toCount(src.transcript),
     danmaku: toCount(src.danmaku),
     comments: toCount(src.comments),
+    totalDanmaku: toCount(src.totalDanmaku),
+    totalComments: toCount(src.totalComments),
   }
 }
 
@@ -193,6 +214,9 @@ export function renderVideoNote(input = {}) {
   const keyPoints = normalizeKeyPoints(source.keyPoints)
   const discussion = normalizeStringList(source.discussion)
   const stats = normalizeFetchStats(source.fetchStats)
+  const chapters = normalizeChapters(source.chapters)
+  const contentSource = cleanInline(source.contentSource) || 'metadata'
+  const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
 
   const frontmatter = renderFrontmatter({
     title,
@@ -204,15 +228,28 @@ export function renderVideoNote(input = {}) {
     created: createdAt,
     updated: createdAt,
     tags: normalizeTags(source.tags, subject),
+    contentSource,
+    contentQuality,
     type: 'video-note',
   })
 
   const lines = []
   lines.push(frontmatter.trimEnd(), '')
   lines.push(`# ${title}`, '')
+  if (contentQuality !== 'full') {
+    lines.push('> [!warning] 内容依据有限', '> 未获取到视频字幕/转写，本文主要基于简介、标签和观众讨论整理，知识点可能不完整或有偏差。', '')
+  } else if (contentSource === 'ai-subtitle') {
+    lines.push('> [!info] 内容来源：B站 AI 字幕（自动识别，可能存在少量同音错字）', '')
+  }
   lines.push(`> ${summary || '（暂无摘要）'}`, '')
   const manualTarget = `${noteRoot}/${subject}/${subject} 学习手册`
   lines.push(`> 所属学科：[[${manualTarget}|${subject} 学习手册]]`, '')
+
+  if (chapters.length > 0) {
+    lines.push('## 章节', '')
+    for (const chapter of chapters) lines.push(`- ${formatDuration(chapter.from)} ${chapter.content}`)
+    lines.push('')
+  }
 
   lines.push('## 核心知识点', '')
   if (keyPoints.length === 0) {
@@ -251,9 +288,14 @@ export function renderVideoNote(input = {}) {
   lines.push(`- UP 主：${author || '（未知）'}`)
   lines.push(`- 视频简介：${stats.desc} 字`)
   lines.push(`- 标签：${stats.tags} 个`)
-  lines.push(`- 字幕：${stats.transcript} 字`)
-  lines.push(`- 弹幕：${stats.danmaku} 条`)
-  lines.push(`- 评论：${stats.comments} 条`, '')
+  const transcriptLabel = contentSource === 'ai-subtitle'
+    ? '（B站 AI 字幕）'
+    : contentSource === 'up-subtitle'
+      ? '（UP 主字幕）'
+      : ''
+  lines.push(`- 字幕：${stats.transcript} 字${transcriptLabel}`)
+  lines.push(`- 弹幕：抓取 ${stats.danmaku} 条 / 全站 ${stats.totalDanmaku || '未知'} 条`)
+  lines.push(`- 评论：抓取 ${stats.comments} 条 / 全站 ${stats.totalComments || '未知'} 条`, '')
 
   return lines.join('\n')
 }

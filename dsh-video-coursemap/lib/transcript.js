@@ -1,0 +1,155 @@
+/**
+ * 视频字幕 / 转写获取。
+ *
+ * 优先级：
+ *  1) 登录态 x/player/v2 的 AI 字幕或 UP 主字幕（需要浏览器 Cookie）
+ *  2) yt-dlp 直接下载 AI 字幕（--cookies-from-browser）
+ *  3) 官方 view.subtitle（由 bilibili.js 的 fetchSubtitle 处理）
+ *
+ * 所有失败都静默降级，返回空文本。
+ */
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, basename } from 'node:path'
+import { BILI_UA, BILI_REFERER, fetchPlayerInfo } from './bilibili.js'
+import { findYtDlp } from './ytdlp.js'
+
+const execFileP = promisify(execFile)
+const SUBTITLE_TIMEOUT_MS = 30000
+
+/** 解析 SRT 字幕为纯文本。 */
+export function parseSrt(text) {
+  const blocks = String(text ?? '').replace(/\r\n/g, '\n').split(/\n{2,}/)
+  const lines = []
+  for (const block of blocks) {
+    const rawLines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (rawLines.length === 0) continue
+    let start = 0
+    if (/^\d+$/.test(rawLines[0])) start = 1
+    if (rawLines[start] && /-->/.test(rawLines[start])) start += 1
+    for (let i = start; i < rawLines.length; i++) {
+      const cleaned = rawLines[i]
+        .replace(/<[^>]+>/g, '')
+        .replace(/\{\\[^}]+\}/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .trim()
+      if (cleaned) lines.push(cleaned)
+    }
+  }
+  return lines.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+/** 选择字幕：优先 AI 中文，其次中文，最后任意字幕。 */
+export function chooseSubtitle(subtitles) {
+  if (!Array.isArray(subtitles)) return null
+  const list = subtitles.filter((item) => item && typeof item.subtitle_url === 'string' && item.subtitle_url.trim())
+  if (list.length === 0) return null
+  const priority = ['ai-zh', 'zh-Hans', 'zh-CN', 'zh', 'ai-en', 'en']
+  for (const lang of priority) {
+    const found = list.find((item) => String(item.lan || '').toLowerCase() === lang.toLowerCase())
+    if (found) return found
+  }
+  const ai = list.find((item) => String(item.lan || '').toLowerCase().startsWith('ai-'))
+  return ai || list[0]
+}
+
+function subtitleSource(entry) {
+  const lan = String(entry?.lan || '').toLowerCase()
+  const doc = String(entry?.lan_doc || '').toLowerCase()
+  return lan.startsWith('ai-') || doc.includes('ai') || doc.includes('自动') ? 'ai-subtitle' : 'up-subtitle'
+}
+
+async function fetchSubtitleText(entry, cookieHeader = '') {
+  let url = String(entry?.subtitle_url || '').trim()
+  if (!url) return ''
+  if (url.startsWith('//')) url = 'https:' + url
+  const headers = {
+    'User-Agent': BILI_UA,
+    Referer: BILI_REFERER,
+    Accept: 'application/json, text/plain, */*',
+    ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+  }
+  const res = await fetch(url, { headers })
+  if (!res.ok) return ''
+  const data = await res.json()
+  const body = Array.isArray(data?.body) ? data.body : []
+  return body.map((item) => String(item?.content || '').trim()).filter(Boolean).join(' ')
+}
+
+async function downloadViaYtDlp({ url, config = {} } = {}) {
+  const ytdlp = findYtDlp(config)
+  if (!ytdlp || !url) return null
+  const tmpDir = mkdtempSync(join(tmpdir(), 'dsh-video-coursemap-subs-'))
+  try {
+    const langs = Array.isArray(config.transcriptLangs) && config.transcriptLangs.length
+      ? config.transcriptLangs.join(',')
+      : 'ai-zh,zh-Hans,zh-CN,zh'
+    const args = [
+      '--no-warnings',
+      '--skip-download',
+      '--write-subs',
+      '--write-auto-subs',
+      '--sub-langs', langs,
+      '--sub-format', 'srt',
+      '--no-playlist',
+      '-o', join(tmpDir, '%(id)s.%(ext)s'),
+    ]
+    if (config.useBrowserCookies !== false) {
+      args.push('--cookies-from-browser', config.cookieBrowser || 'chrome')
+    }
+    args.push(url)
+    await execFileP(ytdlp, args, { timeout: 120000, maxBuffer: 30 * 1024 * 1024 })
+    const files = []
+    for (const entry of readdirSync(tmpDir)) {
+      const file = join(tmpDir, entry)
+      try { if (statSync(file).isFile() && /\.srt$/i.test(entry)) files.push(file) } catch { /* 忽略 */ }
+    }
+    if (files.length === 0) return null
+    files.sort((a, b) => {
+      const score = (file) => {
+        const name = basename(file).toLowerCase()
+        if (name.includes('ai-zh')) return 0
+        if (name.includes('zh-hans') || name.includes('zh-cn')) return 1
+        return 2
+      }
+      return score(a) - score(b)
+    })
+    const file = files[0]
+    const text = parseSrt(readFileSync(file, 'utf8'))
+    if (!text) return null
+    return { text, source: /ai-zh/i.test(basename(file)) ? 'ai-subtitle' : 'up-subtitle' }
+  } catch {
+    return null
+  } finally {
+    try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
+  }
+}
+
+/**
+ * 获取视频字幕文本。
+ * @returns {Promise<{ text: string, source: 'ai-subtitle'|'up-subtitle'|'', detail: string }>}
+ */
+export async function fetchTranscript({ bvid, cid, url, config = {}, cookieHeader = '', playerInfo = null } = {}) {
+  try {
+    let entries = Array.isArray(playerInfo?.subtitles) ? playerInfo.subtitles : []
+    if (entries.length === 0 && bvid && cid) {
+      try {
+        const info = await fetchPlayerInfo(bvid, cid, { cookieHeader })
+        entries = Array.isArray(info?.subtitles) ? info.subtitles : []
+      } catch { /* 忽略 */ }
+    }
+    const chosen = chooseSubtitle(entries)
+    if (chosen) {
+      const text = await fetchSubtitleText(chosen, cookieHeader)
+      if (text) return { text, source: subtitleSource(chosen), detail: 'player-v2' }
+    }
+    const downloaded = await downloadViaYtDlp({ url, config })
+    if (downloaded?.text) return { ...downloaded, detail: 'yt-dlp' }
+  } catch { /* 降级 */ }
+  return { text: '', source: '', detail: '' }
+}

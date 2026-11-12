@@ -1,6 +1,6 @@
 {
   "name": "dsh-video-coursemap",
-  "version": "2.1.0-obsidian.1",
+  "version": "2.2.0-obsidian.1",
   "description": "视频课程知识地图 Agent · Obsidian 版：实时检测 B 站课程视频，按学科分类，结合简介/字幕/弹幕/评论生成知识总结，输出 Obsidian 笔记并写入 dsh-mnemon",
   "type": "module",
   "main": "lib/index.js",

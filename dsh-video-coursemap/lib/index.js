@@ -20,8 +20,11 @@ import {
 } from './state.js'
 import { observeForeground, isBrowserName } from './foreground.js'
 import { probeDarwinPermission } from './foreground-darwin.js'
-import { fetchContent, cleanBiliTitle, extractBvid } from './bilibili.js'
+import { fetchContent, fetchComments, cleanBiliTitle, extractBvid } from './bilibili.js'
 import { classify, summarize, resolveModel } from './analyze.js'
+import { getBilibiliCookieHeader } from './session.js'
+import { fetchTranscript } from './transcript.js'
+import { findYtDlp } from './ytdlp.js'
 import { renderVideoNote } from './render.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
@@ -140,10 +143,29 @@ export function apply(ctx, rawConfig = {}) {
         return { ok: false, message: '缺少视频标题或 URL' }
       }
 
+      let cookieHeader = null
+      try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
       let content = null
       if (config.fetchContent) {
-        content = await fetchContent({ ref: input?.url || input?.bvid || rawTitle, title: rawTitle })
+        content = await fetchContent({
+          ref: input?.url || input?.bvid || rawTitle,
+          title: rawTitle,
+          cookieHeader,
+          commentLimit: config.commentLimit,
+        })
         logger.log('bili content title=' + JSON.stringify(rawTitle) + ' matched=' + Boolean(content?.matched) + ' bvid=' + (content?.bvid || 'none') + ' danmaku=' + (content?.fetchStats?.danmaku || 0) + ' comments=' + (content?.fetchStats?.comments || 0) + ' transcript=' + (content?.fetchStats?.transcript || 0))
+        if (!cookieHeader && content?.url) {
+          try {
+            cookieHeader = await getBilibiliCookieHeader({ config, url: content.url })
+            if (cookieHeader && content?.aid) {
+              const moreComments = await fetchComments(content.aid, { limit: config.commentLimit, cookieHeader }).catch(() => [])
+              if (moreComments.length > content.comments.length) {
+                content.comments = moreComments
+                content.fetchStats.comments = moreComments.length
+              }
+            }
+          } catch { /* 降级 */ }
+        }
         if (content?.bvid) {
           const bvidKey = seenKey({ bvid: content.bvid, title: content.title || rawTitle })
           if (!input?.force && bvidKey !== key && isSeen(state, bvidKey)) {
@@ -174,8 +196,38 @@ export function apply(ctx, rawConfig = {}) {
 
       const subject = resolveSubjectName(cls.subject, existing)
       const keywords = Array.isArray(cls.keywords) ? cls.keywords.map(String).filter(Boolean).slice(0, 10) : []
-      const summary = await summarize(ctx, config, { title: cls.title || title, subject, keywords, content })
+      let transcript = content?.transcript || ''
+      let transcriptSource = content?.transcriptSource || (transcript ? 'up-subtitle' : '')
+      if (!transcript && config.fetchTranscript && content?.bvid) {
+        try {
+          const tr = await fetchTranscript({
+            bvid: content.bvid,
+            cid: content.cid,
+            url: content.url || input?.url,
+            config,
+            cookieHeader,
+            playerInfo: { subtitles: content.subtitleEntries || [] },
+          })
+          if (tr?.text) {
+            transcript = tr.text
+            transcriptSource = tr.source || 'ai-subtitle'
+            logger.log('transcript source=' + transcriptSource + ' detail=' + tr.detail + ' length=' + transcript.length)
+          }
+        } catch (error) {
+          logger.log('transcript.error msg=' + (error?.message || error))
+        }
+      }
+      if (content) {
+        content.transcript = transcript
+        content.transcriptSource = transcriptSource
+        if (content.fetchStats) content.fetchStats.transcript = transcript.length
+      }
+      const contentForSummary = content
+        ? { ...content, transcript, transcriptSource }
+        : (transcript ? { transcript, transcriptSource } : null)
+      const summary = await summarize(ctx, config, { title: cls.title || title, subject, keywords, content: contentForSummary, transcript, transcriptSource })
       const finalTitle = cls.title || title
+      const contentQuality = transcript ? 'full' : 'metadata-only'
       const createdAt = Date.now()
 
       const note = renderVideoNote({
@@ -190,6 +242,9 @@ export function apply(ctx, rawConfig = {}) {
         discussion: summary.discussion,
         fetchStats: content?.fetchStats || null,
         tags: ['视频课程', subject, ...keywords].filter(Boolean),
+        chapters: content?.chapters || [],
+        contentSource: transcriptSource || 'metadata',
+        contentQuality,
         noteRoot: config.noteRoot,
       })
 
@@ -439,6 +494,8 @@ export function apply(ctx, rawConfig = {}) {
       let mnemonPath = null
       try { mnemonPath = await findMnemon(config) } catch { mnemonPath = null }
       add('mnemon', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
+      const ytdlpPath = findYtDlp(config)
+      add('ytdlp', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（AI 字幕/转写需要）')
       let biliOk = false
       let biliDetail = ''
       try {

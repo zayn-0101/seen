@@ -506,6 +506,36 @@ export async function fetchTags(bvid) {
 /* 弹幕 / 评论 / 字幕                                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 获取播放器信息：字幕列表（需要登录时可能为空）与章节 view_points。
+ * 匿名也能拿到 view_points；登录 Cookie 可拿到 AI 字幕列表。
+ */
+export async function fetchPlayerInfo(bvid, cid, { cookieHeader = '' } = {}) {
+  const id = extractBvid(String(bvid ?? '')) || String(bvid ?? '').trim()
+  if (!id || !cid) return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
+  try {
+    const data = await biliFetch(
+      BILI_API + '/x/player/v2?bvid=' + encodeURIComponent(id) + '&cid=' + encodeURIComponent(String(cid)),
+      { headers: cookieHeader ? { Cookie: cookieHeader } : {} }
+    )
+    if (data?.code !== 0) return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
+    const d = data?.data ?? {}
+    return {
+      needLoginSubtitle: d.need_login_subtitle === true,
+      subtitles: Array.isArray(d?.subtitle?.subtitles) ? d.subtitle.subtitles : [],
+      viewPoints: Array.isArray(d?.view_points)
+        ? d.view_points.map((item) => ({
+            from: toNumber(item?.from) ?? 0,
+            to: toNumber(item?.to) ?? 0,
+            content: String(item?.content ?? ''),
+          }))
+        : [],
+    }
+  } catch {
+    return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
+  }
+}
+
 /** 抓取弹幕 XML：去重、最多 150 条、响应上限 5MB。 */
 export async function fetchDanmaku(cid) {
   const id = String(cid ?? '').trim()
@@ -539,19 +569,40 @@ export async function fetchDanmaku(cid) {
   return items
 }
 
-/** 抓取一级评论（匿名接口实际最多约 3 条，按实际数量返回）。 */
-export async function fetchComments(aid) {
+/**
+ * 抓取一级评论（按热度）。
+ * - 匿名接口每页实际约 3 条；带 Cookie 登录态可每页 20 条。
+ * - limit 默认 20，最大 100；带 Cookie 时自动翻页。
+ */
+export async function fetchComments(aid, { limit = 20, cookieHeader = '' } = {}) {
   const id = String(aid ?? '').trim()
   if (!id) return []
-  const data = await biliFetch(
-    BILI_API + '/x/v2/reply?type=1&oid=' + encodeURIComponent(id) + '&sort=2&ps=20&pn=1'
-  )
-  if (data?.code !== 0) throw new Error('B站评论接口返回 code ' + data?.code)
-  const replies = Array.isArray(data?.data?.replies) ? data.data.replies : []
-  return replies
-    .map((reply) => stripHtml(reply?.content?.message ?? ''))
-    .filter(Boolean)
-    .slice(0, 20)
+  const max = Math.max(1, Math.min(100, Number(limit) || 20))
+  const results = []
+  const seen = new Set()
+  let page = 1
+  while (results.length < max && page <= 6) {
+    const data = await biliFetch(
+      BILI_API + '/x/v2/reply?type=1&oid=' + encodeURIComponent(id) + '&sort=2&ps=20&pn=' + page,
+      { headers: cookieHeader ? { Cookie: cookieHeader } : {} }
+    )
+    if (data?.code !== 0) break
+    const replies = Array.isArray(data?.data?.replies) ? data.data.replies : []
+    if (replies.length === 0) break
+    for (const reply of replies) {
+      const message = stripHtml(reply?.content?.message ?? '')
+      if (!message || seen.has(message)) continue
+      seen.add(message)
+      results.push(message)
+      if (results.length >= max) break
+    }
+    if (!cookieHeader && replies.length <= 3) break
+    const total = Number(data?.data?.page?.count ?? data?.data?.page?.acount ?? 0)
+    if (total > 0 && page * 20 >= total) break
+    page += 1
+    await sleep(250)
+  }
+  return results.slice(0, max)
 }
 
 /** 抓取字幕文本；任何失败静默返回空字符串。 */
@@ -562,7 +613,10 @@ export async function fetchSubtitle(view) {
       : Array.isArray(view?.subtitle?.list)
         ? view.subtitle.list
         : []
-    const item = list.find((entry) => entry && entry.subtitle_url)
+    const priority = ['ai-zh', 'zh-Hans', 'zh-CN', 'zh', 'ai-en', 'en']
+    const item = priority
+      .map((lang) => list.find((entry) => entry && entry.subtitle_url && String(entry.lan || '').toLowerCase() === lang.toLowerCase()))
+      .find(Boolean) || list.find((entry) => entry && entry.subtitle_url)
     if (!item) return ''
 
     let url = String(item.subtitle_url).trim()
@@ -597,21 +651,25 @@ function emptyContent(overrides = {}) {
     owner: '',
     stat: {},
     transcript: '',
+    transcriptSource: '',
     danmaku: [],
     comments: [],
-    fetchStats: { desc: 0, tags: 0, transcript: 0, danmaku: 0, comments: 0 },
+    chapters: [],
+    subtitleEntries: [],
+    needLoginSubtitle: false,
+    fetchStats: { desc: 0, tags: 0, transcript: 0, danmaku: 0, comments: 0, totalDanmaku: 0, totalComments: 0 },
     ...overrides,
   }
 }
 
 /**
  * 综合抓取视频内容。
- * @param {{ ref?: string, title?: string, fetchContent?: boolean }} input
+ * @param {{ ref?: string, title?: string, fetchContent?: boolean, cookieHeader?: string, commentLimit?: number }} input
  * @returns {Promise<object>} ContentResult；永不抛错。
  */
 export async function fetchContent(input = {}) {
   const options = input && typeof input === 'object' ? input : { ref: input }
-  const { ref, title, fetchContent: withContent = true } = options
+  const { ref, title, fetchContent: withContent = true, cookieHeader = '', commentLimit = 20 } = options
   const refText = typeof ref === 'string' ? ref.trim() : ''
   const titleText = typeof title === 'string' ? title.trim() : ''
 
@@ -685,13 +743,24 @@ export async function fetchContent(input = {}) {
     const owner = String(view?.owner || '')
     const stat = view?.stat && typeof view.stat === 'object' ? view.stat : {}
 
+    let playerInfo = { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
+    try {
+      playerInfo = await fetchPlayerInfo(bvid, cid, { cookieHeader })
+    } catch { /* 降级 */ }
+    const subtitleEntries = playerInfo.subtitles.length
+      ? playerInfo.subtitles
+      : (Array.isArray(view?.subtitle) ? view.subtitle : [])
+
     const [fetchedTags, transcript, danmaku, comments] = await Promise.all([
       search?.tags?.length ? Promise.resolve(search.tags) : fetchTags(bvid).catch(() => []),
-      fetchSubtitle(view).catch(() => ''),
+      fetchSubtitle({ ...(view || {}), subtitle: subtitleEntries }).catch(() => ''),
       cid ? fetchDanmaku(cid).catch(() => []) : Promise.resolve([]),
-      aid ? fetchComments(aid).catch(() => []) : Promise.resolve([]),
+      aid ? fetchComments(aid, { limit: commentLimit, cookieHeader }).catch(() => []) : Promise.resolve([]),
     ])
     const tags = fetchedTags.length ? fetchedTags : []
+    const transcriptSource = transcript
+      ? (subtitleEntries.some((entry) => String(entry?.lan || '').toLowerCase().startsWith('ai-') || /ai|自动/i.test(String(entry?.lan_doc || ''))) ? 'ai-subtitle' : 'up-subtitle')
+      : ''
 
     return emptyContent({
       matched: true,
@@ -705,14 +774,20 @@ export async function fetchContent(input = {}) {
       owner,
       stat,
       transcript,
+      transcriptSource,
       danmaku,
       comments,
+      chapters: playerInfo.viewPoints,
+      subtitleEntries,
+      needLoginSubtitle: playerInfo.needLoginSubtitle,
       fetchStats: {
         desc: desc.length,
         tags: tags.length,
         transcript: transcript.length,
         danmaku: danmaku.length,
         comments: comments.length,
+        totalDanmaku: Number(stat?.danmaku) || 0,
+        totalComments: Number(stat?.reply) || 0,
       },
     })
   } catch {
@@ -741,6 +816,7 @@ export default {
   titleSimilarity,
   searchVideo,
   fetchView,
+  fetchPlayerInfo,
   fetchTags,
   fetchDanmaku,
   fetchComments,
