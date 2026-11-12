@@ -185,17 +185,19 @@ open dist/Seen.app
 
 两者不要同时开，否则会各起一个服务实例；菜单栏应用检测到服务已在跑会直接复用。
 
-**图标**：由 `menubar/icon/*.svg` 生成，默认是「光点书页」。
+**图标**：菜单栏图标用 Apple 系统符号渲染（默认 `book.pages`），应用图标由 `menubar/icon/app-a.svg` 生成。
 
-![菜单栏图标三版预览](docs/menubar-icon-preview.png)
+![菜单栏与应用图标](docs/menubar-icon-preview.png)
 
-换一版：
+换菜单栏符号（任意 SF Symbols 名称，如 `eye`、`bookmark`、`film`）：
 
 ```bash
 cd menubar
-STATUS_SRC=icon/status-b.svg APP_SRC=icon/app-b.svg bash scripts/make-icons.sh
+swift scripts/make-status-symbol.swift bookmark
 ./build.sh
 ```
+
+换应用图标：改 `menubar/icon/app-a.svg` 后重跑 `bash scripts/make-icons.sh && ./build.sh`。
 
 **排障**：
 
