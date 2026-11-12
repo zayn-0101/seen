@@ -87,6 +87,7 @@ mnemon recall "视频课程"
 
 ## 重要事实
 
+- 远程仓库：`https://github.com/zayn-0101/seen`（私有，默认分支 `master`）。改动完成后记得提交并推送。
 - 当前默认只运行独立服务；`dsh-video-coursemap` 已从 DSH profile 的 bundles 中移除，不再随 DSH 加载。
 - 原版 `dsh-video-coursemap 2.0.0` 仅支持 Windows 前台窗口 + Word 输出；本仓库是其 macOS/Obsidian 增强 fork。
 - macOS 前台窗口读取依赖 AppleScript；首次运行需要用户在「系统设置 → 隐私与安全性 → 辅助功能 / 自动化」授权 DeepSeek Harness。
