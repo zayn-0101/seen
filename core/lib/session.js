@@ -59,7 +59,7 @@ export async function getBilibiliCookieHeader({ config = {}, url } = {}) {
   const ytdlp = findYtDlp(config)
   if (!ytdlp) return null
 
-  const tmpDir = mkdtempSync(join(tmpdir(), 'dsh-video-coursemap-cookies-'))
+  const tmpDir = mkdtempSync(join(tmpdir(), 'seen-core-cookies-'))
   const cookiePath = join(tmpDir, 'cookies.txt')
   try {
     await execFileP(ytdlp, [

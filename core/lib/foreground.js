@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · 前台窗口观察入口
+ * seen-core · 前台窗口观察入口
  *
  * 按平台分派到 macOS / Windows 实现；其他平台返回 unsupported。
  */

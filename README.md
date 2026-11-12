@@ -27,7 +27,7 @@ node scripts/install-local-plugin.mjs
 脚本会：
 
 - 备份 `~/.dsh/profiles/desktop/package.json` 与 `pnpm-lock.yaml` 到 `docs/backup/<时间戳>/`；
-- 把 `dsh-video-coursemap` 依赖改为本地 `file:` 路径；
+- 把 `seen-core` 依赖改为本地 `file:` 路径；
 - 在 DSH profile 目录执行 `pnpm install`。
 
 ### 2. 重启 DSH Desktop
@@ -241,8 +241,8 @@ cd menubar && ./build.sh
 默认自动检测 Obsidian vault（`~/Library/Application Support/obsidian/obsidian.json`）。如需修改，在 `~/.dsh/profiles/desktop/cordis.patch.yml` 中添加顶层覆盖（不要写 `insert`）：
 
 ```yaml
-- id: dsh-video-coursemap
-  name: dsh-video-coursemap
+- id: seen-core
+  name: seen-core
   config:
     pollIntervalMs: 15000
     stablePolls: 2
@@ -325,7 +325,7 @@ cd menubar && ./build.sh
 
 ## 可选：重新启用 DSH 插件
 
-编辑 `~/.dsh/profiles/desktop/package.json`，把 `dsh-video-coursemap` 加回 `dsh.profile.bundles`，然后重启 DSH Desktop。当前已禁用的备份在 `docs/backup/disable-dsh-plugin-*/`。
+编辑 `~/.dsh/profiles/desktop/package.json`，把 `seen-core` 加回 `dsh.profile.bundles`，然后重启 DSH Desktop。当前已禁用的备份在 `docs/backup/disable-dsh-plugin-*/`。
 
 ## 回滚
 

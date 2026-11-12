@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 回滚 DSH Desktop profile 中的 dsh-video-coursemap 依赖到最近一次备份。
+ * 回滚 DSH Desktop profile 中的 seen-core 依赖到最近一次备份。
  */
 import { existsSync, copyFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'

@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · mnemon 集成
+ * seen-core · mnemon 集成
  *
  * 纯 ESM、零运行时依赖。
  *  - findMnemon：显式配置 → which/where → 常见安装路径

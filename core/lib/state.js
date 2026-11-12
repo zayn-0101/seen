@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · 状态持久化
+ * seen-core · 状态持久化
  *
  * 纯 ESM、零依赖。状态文件采用「临时文件 + rename」原子写；
  * 损坏或缺失的 JSON 一律回退到默认状态并做默认值合并。

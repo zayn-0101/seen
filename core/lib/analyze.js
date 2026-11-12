@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · LLM 分析与 JSON 解析
+ * seen-core · LLM 分析与 JSON 解析
  *
  * 纯 ESM、零运行时依赖。通过 DSH 注入的 ctx.llm.stream 调用模型。
  *

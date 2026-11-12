@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · 配置解析
+ * seen-core · 配置解析
  *
  * 纯 ESM、零依赖。负责默认值、校验、Obsidian vault 自动检测与状态目录推导。
  */
@@ -53,7 +53,7 @@ function isPlainObject(value) {
 
 function requireNonEmptyString(value, key) {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`dsh-video-coursemap: ${key} 必须是非空字符串`)
+    throw new Error(`seen-core: ${key} 必须是非空字符串`)
   }
 }
 
@@ -135,14 +135,14 @@ export function normalizeSubjectName(name) {
  */
 export function resolveConfig(raw = {}) {
   if (!isPlainObject(raw)) {
-    throw new Error('dsh-video-coursemap: 配置必须是普通对象')
+    throw new Error('seen-core: 配置必须是普通对象')
   }
 
   const config = { ...DEFAULTS }
 
   for (const [key, value] of Object.entries(raw)) {
     if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) {
-      throw new Error(`dsh-video-coursemap: 未知配置项 "${key}"`)
+      throw new Error(`seen-core: 未知配置项 "${key}"`)
     }
     if (value === undefined) continue
     config[key] = value
@@ -150,14 +150,14 @@ export function resolveConfig(raw = {}) {
 
   for (const key of BOOLEAN_KEYS) {
     if (typeof config[key] !== 'boolean') {
-      throw new Error(`dsh-video-coursemap: ${key} 必须是布尔值`)
+      throw new Error(`seen-core: ${key} 必须是布尔值`)
     }
   }
 
   for (const key of POSITIVE_NUMBER_KEYS) {
     const value = config[key]
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-      throw new Error(`dsh-video-coursemap: ${key} 必须是正数`)
+      throw new Error(`seen-core: ${key} 必须是正数`)
     }
   }
 
@@ -167,7 +167,7 @@ export function resolveConfig(raw = {}) {
       continue
     }
     if (typeof config[key] !== 'string' || config[key].trim() === '') {
-      throw new Error(`dsh-video-coursemap: ${key} 必须是 null 或非空字符串`)
+      throw new Error(`seen-core: ${key} 必须是 null 或非空字符串`)
     }
     config[key] = config[key].trim()
   }
@@ -176,21 +176,21 @@ export function resolveConfig(raw = {}) {
   config.noteRoot = config.noteRoot.trim()
 
   if (typeof config.mnemonStore !== 'string' || config.mnemonStore.trim() === '') {
-    throw new Error('dsh-video-coursemap: mnemonStore 必须是非空字符串')
+    throw new Error('seen-core: mnemonStore 必须是非空字符串')
   }
   config.mnemonStore = config.mnemonStore.trim()
 
   if (typeof config.cookieBrowser !== 'string' || config.cookieBrowser.trim() === '') {
-    throw new Error('dsh-video-coursemap: cookieBrowser 必须是非空字符串')
+    throw new Error('seen-core: cookieBrowser 必须是非空字符串')
   }
   config.cookieBrowser = config.cookieBrowser.trim()
 
   if (!Array.isArray(config.transcriptLangs) || config.transcriptLangs.length === 0) {
-    throw new Error('dsh-video-coursemap: transcriptLangs 必须是非空字符串数组')
+    throw new Error('seen-core: transcriptLangs 必须是非空字符串数组')
   }
   config.transcriptLangs = config.transcriptLangs.map((item) => {
     if (typeof item !== 'string' || item.trim() === '') {
-      throw new Error('dsh-video-coursemap: transcriptLangs 必须是非空字符串数组')
+      throw new Error('seen-core: transcriptLangs 必须是非空字符串数组')
     }
     return item.trim()
   })
@@ -201,18 +201,18 @@ export function resolveConfig(raw = {}) {
       continue
     }
     if (typeof config[key] !== 'string' || config[key].trim() === '') {
-      throw new Error(`dsh-video-coursemap: ${key} 必须是 null 或非空字符串`)
+      throw new Error(`seen-core: ${key} 必须是 null 或非空字符串`)
     }
     config[key] = config[key].trim()
   }
 
   if (config.browserNames !== null && config.browserNames !== undefined) {
     if (!Array.isArray(config.browserNames)) {
-      throw new Error('dsh-video-coursemap: browserNames 必须是 null 或字符串数组')
+      throw new Error('seen-core: browserNames 必须是 null 或字符串数组')
     }
     config.browserNames = config.browserNames.map((item) => {
       if (typeof item !== 'string' || item.trim() === '') {
-        throw new Error('dsh-video-coursemap: browserNames 必须是 null 或字符串数组')
+        throw new Error('seen-core: browserNames 必须是 null 或字符串数组')
       }
       return item.trim()
     })

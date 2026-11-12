@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · Obsidian 版
+ * seen-core · Obsidian 版
  *
  * 实时检测 B 站网页课程视频 → 学科分类 → 抓取简介/字幕/弹幕/评论 →
  * LLM 知识总结 → Obsidian 笔记/学习手册/课程总览 + dsh-mnemon insight。
@@ -31,7 +31,7 @@ import { renderVideoNote } from './render.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
-export const name = 'dsh-video-coursemap'
+export const name = 'seen-core'
 export const inject = ['llm', 'tools']
 
 const TITLE_SUFFIXES = [
@@ -401,7 +401,7 @@ export function apply(ctx, rawConfig = {}) {
         fetchStats: content?.fetchStats || null,
         chapters: content?.chapters || [],
       })
-      console.log('[dsh-video-coursemap] ' + (isNewSubject ? '新学科' : '更新学科') + '「' + subject + '」 ← ' + finalTitle)
+      console.log('[seen-core] ' + (isNewSubject ? '新学科' : '更新学科') + '「' + subject + '」 ← ' + finalTitle)
       return { ok: true, message: '已生成「' + subject + '」笔记：' + writeResult.relPath, subject, notePath: writeResult.relPath }
     } catch (error) {
       const msg = String(error?.message || error)
@@ -412,7 +412,7 @@ export function apply(ctx, rawConfig = {}) {
       }
       logger.log('process.error key=' + JSON.stringify(key) + ' msg=' + msg)
       emit('error', { message: msg })
-      console.error('[dsh-video-coursemap] 处理失败（不影响后续轮询）：', error)
+      console.error('[seen-core] 处理失败（不影响后续轮询）：', error)
       return { ok: false, message: '处理失败：' + msg }
     } finally {
       running = false
@@ -632,7 +632,7 @@ export function apply(ctx, rawConfig = {}) {
     async execute() {
       return await buildStatus()
     },
-  }), 'dsh-video-coursemap: status tool')
+  }), 'seen-core: status tool')
 
   // ---- 工具：手动扫描 ----
   ctx.effect(() => ctx.tools.register({
@@ -669,7 +669,7 @@ export function apply(ctx, rawConfig = {}) {
       while (running && waited < 90000) { await new Promise((r) => setTimeout(r, 500)); waited += 500 }
       return await processTitle({ title, url, force: Boolean(args?.force) })
     },
-  }), 'dsh-video-coursemap: scan tool')
+  }), 'seen-core: scan tool')
 
   // ---- 工具：诊断 ----
   ctx.effect(() => ctx.tools.register({
@@ -746,7 +746,7 @@ export function apply(ctx, rawConfig = {}) {
       const message = ['视频课程知识地图诊断：', ...checks.map((c) => (c.ok ? '✅ ' : '❌ ') + c.id + '：' + c.detail), '', failed.length === 0 ? '全部通过，可以开始使用。' : '有 ' + failed.length + ' 项未通过，请按 README 的排障说明处理。'].join('\n')
       return { ok: failed.length === 0, checks, message }
     },
-  }), 'dsh-video-coursemap: check tool')
+  }), 'seen-core: check tool')
 
   // ---- 轮询定时器 ----
   ctx.effect(() => {
@@ -762,10 +762,10 @@ export function apply(ctx, rawConfig = {}) {
         if (readFileSync(lockPath, 'utf8').trim() === String(process.pid)) unlinkSync(lockPath)
       } catch { /* 忽略 */ }
     }
-  }, 'dsh-video-coursemap: poll timer')
+  }, 'seen-core: poll timer')
 
   logger.log('apply pollIntervalMs=' + config.pollIntervalMs + ' autoStart=' + config.autoStart + ' vault=' + vaultPath + ' noteRoot=' + config.noteRoot + ' mnemon=' + config.enableMnemon + (readOnly ? ' readonly' : ''))
-  if (!readOnly && config.autoStart) console.log('[dsh-video-coursemap] 已启动：每 ' + config.pollIntervalMs + 'ms 轮询前台窗口，输出 ' + outputDir)
+  if (!readOnly && config.autoStart) console.log('[seen-core] 已启动：每 ' + config.pollIntervalMs + 'ms 轮询前台窗口，输出 ' + outputDir)
 
   const controller = {
     start,

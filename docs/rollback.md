@@ -20,7 +20,7 @@
 
 ## 原始依赖
 
-`dsh-video-coursemap` 的原 release 地址：
+`seen-core` 的原 release 地址：
 
 ```
 https://github.com/linner1224/dsh-video-coursemap/releases/download/v2.0.0/dsh-video-coursemap-2.0.0.tgz
@@ -30,6 +30,6 @@ Obsidian 笔记不会被自动删除；如需清理请手动处理 `<vault>/课�
 
 ## 当前状态：DSH 插件已禁用
 
-用户已选择只保留独立服务，`dsh-video-coursemap` 已从 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 移除。修改前的备份在 `docs/backup/disable-dsh-plugin-20261112-134141/`。
+用户已选择只保留独立服务，`seen-core` 已从 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 移除。修改前的备份在 `docs/backup/disable-dsh-plugin-20261112-134141/`。
 
-重新启用：把 `dsh-video-coursemap` 加回 bundles 数组，重启 DSH Desktop。独立服务不受影响。
+重新启用：把 `seen-core` 加回 bundles 数组，重启 DSH Desktop。独立服务不受影响。

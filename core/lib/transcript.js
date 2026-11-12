@@ -117,7 +117,7 @@ async function fetchSubtitleText(entry, cookieHeader = '') {
 async function downloadViaYtDlp({ url, config = {} } = {}) {
   const ytdlp = findYtDlp(config)
   if (!ytdlp || !url) return null
-  const tmpDir = mkdtempSync(join(tmpdir(), 'dsh-video-coursemap-subs-'))
+  const tmpDir = mkdtempSync(join(tmpdir(), 'seen-core-subs-'))
   try {
     const langs = Array.isArray(config.transcriptLangs) && config.transcriptLangs.length
       ? config.transcriptLangs.join(',')

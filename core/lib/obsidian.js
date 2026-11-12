@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · Obsidian 写入层
+ * seen-core · Obsidian 写入层
  *
  * 纯 ESM、零运行时依赖。
  *  - vault / noteRoot / stateDir 目录准备

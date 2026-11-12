@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · Windows 前台窗口观察
+ * seen-core · Windows 前台窗口观察
  *
  * 保留原 dsh-video-coursemap 2.0.0 的 PowerShell 前台窗口逻辑：
  * 通过 user32.dll 的 GetForegroundWindow / GetWindowText / GetWindowThreadProcessId
@@ -42,7 +42,7 @@ let scriptFiles = null
 
 function ensureScriptFiles() {
   if (scriptFiles) return scriptFiles
-  const dir = join(tmpdir(), 'dsh-video-coursemap')
+  const dir = join(tmpdir(), 'seen-core')
   mkdirSync(dir, { recursive: true })
   const ps1Path = join(dir, 'poll-' + process.pid + '.ps1')
   const outPath = join(dir, 'poll-out-' + process.pid + '.txt')

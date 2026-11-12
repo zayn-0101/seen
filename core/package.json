@@ -1,7 +1,7 @@
 {
-  "name": "dsh-video-coursemap",
+  "name": "seen-core",
   "version": "2.2.0-obsidian.1",
-  "description": "视频课程知识地图 Agent · Obsidian 版：实时检测 B 站课程视频，按学科分类，结合简介/字幕/弹幕/评论生成知识总结，输出 Obsidian 笔记并写入 dsh-mnemon",
+  "description": "Seen Core · 视频知识笔记引擎：检测浏览器里的课程视频，抓字幕/弹幕/评论，LLM 总结后写入 Obsidian 与 dsh-mnemon",
   "type": "module",
   "main": "lib/index.js",
   "license": "MIT",
@@ -21,7 +21,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/linner1224/dsh-video-coursemap"
+    "url": "https://github.com/zayn-0101/seen"
   },
   "keywords": [
     "dsh",

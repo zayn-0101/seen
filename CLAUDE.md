@@ -20,8 +20,8 @@ seen/
 │   ├── contracts.md          模块接口契约（所有实现必须遵守）
 │   ├── architecture.md       架构与数据流
 │   ├── acceptance.md         验收清单与记录
-│   ├── icon-concepts/        图标探索稿与提示词，不参与构建
-│   ├── brand/                松鼠品牌规范、预览与完整图标交付包
+│   ├── icon-concepts/        图标探索稿（本地保留，不入库）
+│   ├── brand/                松鼠品牌规范与预览（完整交付包本地生成，不入库）
 │   └── rollback.md           回滚 DSH 依赖的步骤
 ├── server/                   独立本地服务（不依赖 DSH）
 │   ├── index.js              HTTP API + SSE + 静态页面
@@ -38,12 +38,12 @@ seen/
 ├── seen.command             双击启动独立服务
 ├── menubar/                  菜单栏应用（Swift，只调本地服务 HTTP）
 │   ├── Sources/              main / AppDelegate / PanelView / ServiceClient / AutoLaunch
-│   ├── icon/                 图标母版；squirrel/ 为选定的松鼠系列，保留旧稿
+│   ├── icon/squirrel/        松鼠图标母版（应用/菜单栏/网页资源都从这里导出）
 │   ├── Resources/            Info.plist 与生成的图标
 │   ├── scripts/make-icons.sh SVG → PNG/ICNS
 │   └── build.sh              编译打包 menubar/dist/Seen.app
 ├── package.json             根脚本（npm start / npm test）
-└── core/                      Seen 视频引擎（包名仍保留 dsh-video-coursemap 以兼容 DSH）
+└── core/                      Seen 视频引擎（包名 seen-core）
     ├── package.json
     ├── cordis.patch.yml
     ├── README.md
@@ -61,6 +61,7 @@ seen/
 - 菜单栏应用改动后运行：`cd menubar && ./build.sh`。
 - 松鼠系列以 `menubar/icon/squirrel/` 母版为准，使用 `node scripts/export-icons.mjs` 统一生成应用、菜单栏和网页资源；规范与完整交付包见 `docs/brand/`。
 - 图标构建使用新的临时工作目录，保留既有构建备份，不自动删除文件。
+- docs/icon-concepts/ 与 docs/brand/squirrel-icons-v1* 是本地草稿/生成物，已加入 .gitignore，不入库。
 - 插件代码改动后必须重启 DSH Desktop 才生效（DSH 对插件模块做缓存）。
 - 日志不得记录完整弹幕/评论全文、Cookie、密钥。
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。
@@ -102,7 +103,7 @@ mnemon recall "视频课程"
 
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（私有，默认分支 `master`）。改动完成后记得提交并推送。
-- 当前默认只运行独立服务；`dsh-video-coursemap` 已从 DSH profile 的 bundles 中移除，不再随 DSH 加载。
+- 当前默认只运行独立服务；`seen-core` 已从 DSH profile 的 bundles 中移除，不再随 DSH 加载。
 - 原版 `dsh-video-coursemap 2.0.0` 仅支持 Windows 前台窗口 + Word 输出；本仓库是其 macOS/Obsidian 增强 fork。
 - macOS 前台窗口读取依赖 AppleScript；首次运行需要用户在「系统设置 → 隐私与安全性 → 辅助功能 / 自动化」授权 DeepSeek Harness。
 - 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie。

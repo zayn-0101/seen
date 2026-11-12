@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 把本地 Seen Core（包名仍为 dsh-video-coursemap）安装到 DSH Desktop profile。
+ * 把本地 Seen Core（包名 seen-core）安装到 DSH Desktop profile。
  * 会先备份 profile 的 package.json 与 pnpm-lock.yaml，再执行 pnpm install。
  */
 import { existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -34,10 +34,10 @@ console.log('已备份 profile 配置到：' + backupDir)
 
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
 pkg.dependencies = pkg.dependencies || {}
-const previous = pkg.dependencies['dsh-video-coursemap'] || ''
-pkg.dependencies['dsh-video-coursemap'] = 'file:' + pluginDir
+const previous = pkg.dependencies['seen-core'] || ''
+pkg.dependencies['seen-core'] = 'file:' + pluginDir
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-console.log('dsh-video-coursemap: ' + previous + ' → file:' + pluginDir)
+console.log('seen-core: ' + previous + ' → file:' + pluginDir)
 
 const pnpm = process.env.PNPM_BIN || 'pnpm'
 const result = spawnSync(pnpm, ['install'], { cwd: profileDir, stdio: 'inherit', env: process.env })
@@ -48,7 +48,7 @@ if (result.error || result.status !== 0) {
   process.exit(result.status || 1)
 }
 
-const installedDir = join(profileDir, 'node_modules', 'dsh-video-coursemap')
+const installedDir = join(profileDir, 'node_modules', 'seen-core')
 const installedPkg = join(installedDir, 'package.json')
 if (existsSync(installedPkg)) {
   // pnpm 对 file: 依赖可能沿用安装时快照；这里把工作区源码同步到已安装副本，保证重启后加载最新代码。
@@ -62,6 +62,6 @@ if (existsSync(installedPkg)) {
   const v = JSON.parse(readFileSync(installedPkg, 'utf8')).version
   console.log('安装完成，已安装版本：' + v)
 } else {
-  console.log('pnpm install 完成，但未在 node_modules 找到 dsh-video-coursemap，请检查 pnpm 输出。')
+  console.log('pnpm install 完成，但未在 node_modules 找到 seen-core，请检查 pnpm 输出。')
 }
 console.log('请退出并重新打开 DSH Desktop 使插件生效。')

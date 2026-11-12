@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · B 站内容抓取
+ * seen-core · B 站内容抓取
  *
  * 纯 ESM、零运行时依赖。只使用 Node 内置的 fetch（Node 18+）。
  *

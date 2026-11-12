@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · macOS 前台窗口观察
+ * seen-core · macOS 前台窗口观察
  *
  * 1) lsappinfo 取前台 App 名称；
  * 2) Chrome / Safari / Edge / Brave / Chromium / Arc 通过 AppleScript 读 active tab 的 title + URL；

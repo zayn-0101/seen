@@ -1,5 +1,5 @@
 /**
- * dsh-video-coursemap · Markdown / Mermaid 渲染
+ * seen-core · Markdown / Mermaid 渲染
  *
  * 纯 ESM、零运行时依赖。三类 Markdown 模板：
  *  - 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 弹幕评论焦点 + Mermaid mindmap + 来源统计
