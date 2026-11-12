@@ -164,6 +164,9 @@ async function serveStatic(req, res, pathname) {
       '.css': 'text/css; charset=utf-8',
       '.json': 'application/json; charset=utf-8',
       '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.ico': 'image/vnd.microsoft.icon',
+      '.webmanifest': 'application/manifest+json; charset=utf-8',
     }
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' })
     res.end(await readFile(file))

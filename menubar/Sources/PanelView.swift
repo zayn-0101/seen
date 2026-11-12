@@ -61,6 +61,11 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
+            Image("BrandIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text("拾影").font(.system(size: 16, weight: .semibold))
                 Text("Seen").font(.system(size: 10)).foregroundStyle(.secondary).tracking(1.2)

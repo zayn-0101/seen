@@ -185,19 +185,20 @@ open dist/Seen.app
 
 两者不要同时开，否则会各起一个服务实例；菜单栏应用检测到服务已在跑会直接复用。
 
-**图标**：菜单栏图标用 Apple 系统符号渲染（默认 `book.pages`），应用图标由 `menubar/icon/app-a.svg` 生成。
+**图标**：应用、菜单栏和网页统一使用松鼠形象。菜单栏使用透明单色模板，由 macOS 自动适配浅色与深色外观；应用图标默认使用浅色版，同时提供可选深色版。
 
-![菜单栏与应用图标](docs/menubar-icon-preview.png)
+![松鼠图标全套预览](docs/brand/squirrel-icons-preview-v1.png)
 
-换菜单栏符号（任意 SF Symbols 名称，如 `eye`、`bookmark`、`film`）：
+母版放在 `menubar/icon/squirrel/`，修改后从项目根目录统一导出并构建：
 
 ```bash
-cd menubar
-swift scripts/make-status-symbol.swift bookmark
-./build.sh
+node scripts/export-icons.mjs
+cd menubar && ./build.sh
 ```
 
-换应用图标：改 `menubar/icon/app-a.svg` 后重跑 `bash scripts/make-icons.sh && ./build.sh`。
+完整交付包在 [`docs/brand/squirrel-icons-v1.zip`](docs/brand/squirrel-icons-v1.zip)，包含 8 份 SVG 母版、16–1024px 应用图标、两个 ICNS、黑白菜单栏模板、透明标识以及 favicon、Apple Touch 和 Web Manifest 资源。规范见 [`docs/brand/README.md`](docs/brand/README.md)。
+
+构建只更新工作区资源；已有工作区 `.app` 会移入 `menubar/build/previous-app.*` 保留备份。
 
 **排障**：
 

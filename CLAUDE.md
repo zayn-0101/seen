@@ -20,6 +20,8 @@ seen/
 │   ├── contracts.md          模块接口契约（所有实现必须遵守）
 │   ├── architecture.md       架构与数据流
 │   ├── acceptance.md         验收清单与记录
+│   ├── icon-concepts/        图标探索稿与提示词，不参与构建
+│   ├── brand/                松鼠品牌规范、预览与完整图标交付包
 │   └── rollback.md           回滚 DSH 依赖的步骤
 ├── server/                   独立本地服务（不依赖 DSH）
 │   ├── index.js              HTTP API + SSE + 静态页面
@@ -36,7 +38,7 @@ seen/
 ├── seen.command             双击启动独立服务
 ├── menubar/                  菜单栏应用（Swift，只调本地服务 HTTP）
 │   ├── Sources/              main / AppDelegate / PanelView / ServiceClient / AutoLaunch
-│   ├── icon/                 图标 SVG 源文件（status-a/b/c、app-a/b/c）
+│   ├── icon/                 图标母版；squirrel/ 为选定的松鼠系列，保留旧稿
 │   ├── Resources/            Info.plist 与生成的图标
 │   ├── scripts/make-icons.sh SVG → PNG/ICNS
 │   └── build.sh              编译打包 menubar/dist/Seen.app
@@ -57,6 +59,8 @@ seen/
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
 - 菜单栏应用改动后运行：`cd menubar && ./build.sh`。
+- 松鼠系列以 `menubar/icon/squirrel/` 母版为准，使用 `node scripts/export-icons.mjs` 统一生成应用、菜单栏和网页资源；规范与完整交付包见 `docs/brand/`。
+- 图标构建使用新的临时工作目录，保留既有构建备份，不自动删除文件。
 - 插件代码改动后必须重启 DSH Desktop 才生效（DSH 对插件模块做缓存）。
 - 日志不得记录完整弹幕/评论全文、Cookie、密钥。
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。

@@ -18,4 +18,8 @@ macOS 菜单栏常驻小应用，作为 Seen 本地服务的控制器。Swift + 
 - `Sources/PanelView.swift`：SwiftUI 面板
 - `Sources/ServiceClient.swift`：本地服务 HTTP 客户端
 - `Sources/AutoLaunch.swift`：登录自启（SMAppService 优先，LaunchAgent 回退）
-- `icon/`：图标 SVG 源文件；`scripts/make-icons.sh` 生成 PNG / ICNS
+- `icon/squirrel/`：选定松鼠形象的 SVG 母版；旧 app-a/b/c 与 status-a/b/c 保留。
+- `scripts/make-icons.sh`：调用根目录 `scripts/export-icons.mjs` 统一生成应用、菜单栏和网页图标。
+- `Resources/BrandIcon*`：弹出面板标题旁的彩色松鼠标识。
+
+完整图标包与使用规范见 [`../docs/brand/`](../docs/brand/README.md)。默认构建将已有的 `dist/Seen.app` 移入独立备份目录，再生成新包。
