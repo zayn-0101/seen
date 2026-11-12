@@ -7,6 +7,8 @@ const state = {
   events: [],
   lastPollAt: 0,
   lastForegroundKey: '',
+  processingStarted: 0,
+  stageLabel: '',
   eventSource: null,
 }
 
@@ -210,7 +212,9 @@ function renderSummary(data, stageText) {
     body.append(link)
   }
 
-  $('summaryStage').textContent = stageText || '已生成'
+  state.stageLabel = stageText || '已生成'
+  state.processingStarted = 0
+  $('summaryStage').textContent = state.stageLabel
   $('summaryStage').className = 'stage done'
 }
 
@@ -274,8 +278,30 @@ function renderEvents(events) {
   }
 }
 
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const minutes = String(Math.floor(total / 60)).padStart(2, '0')
+  const seconds = String(total % 60).padStart(2, '0')
+  return minutes + ':' + seconds
+}
+
+function updateStageClock() {
+  const stage = $('summaryStage')
+  if (!stage) return
+  if (!state.processingStarted) {
+    stage.textContent = state.stageLabel || '等待新视频'
+    return
+  }
+  stage.textContent = (state.stageLabel || '处理中') + ' · ' + formatElapsed(Date.now() - state.processingStarted)
+}
+
+function stopStageClock() {
+  state.processingStarted = 0
+}
+
 function renderSnapshot(snap) {
   state.snapshot = snap
+  stopStageClock()
   state.events = Array.isArray(snap.events) ? snap.events.slice() : state.events
   renderToggle()
   const llm = snap.llm || {}
@@ -298,6 +324,12 @@ function renderSnapshot(snap) {
       notePath: latest.notePath,
       contentQuality: 'history',
     }, '历史笔记')
+  } else {
+    state.stageLabel = '等待新视频'
+    state.processingStarted = 0
+    const stage = $('summaryStage')
+    stage.textContent = state.stageLabel
+    stage.className = 'stage idle'
   }
   if (snap.status?.readOnly) {
     showToast('DSH Desktop 正在运行并持有状态锁；请退出 DSH 后重启本服务，才能接管轮询。', true)
@@ -321,8 +353,12 @@ function stageForEvent(event) {
   }
   const item = map[event.type]
   if (!item) return
-  stage.textContent = item[0]
+  const terminal = ['saved', 'skipped', 'error'].includes(event.type)
+  if (terminal) stopStageClock()
+  else if (!state.processingStarted) state.processingStarted = Date.now()
+  state.stageLabel = item[0]
   stage.className = 'stage ' + item[1]
+  updateStageClock()
 }
 
 function handleEvent(event) {
@@ -438,5 +474,6 @@ $('scanForce').addEventListener('click', () => scan(true))
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
 
+setInterval(updateStageClock, 1000)
 load()
 connect()

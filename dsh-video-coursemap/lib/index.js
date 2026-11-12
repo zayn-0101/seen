@@ -229,6 +229,7 @@ export function apply(ctx, rawConfig = {}) {
             url: content.url || input?.url,
             config,
             cookieHeader,
+            force: Boolean(input?.force),
             playerInfo: { subtitles: content.subtitleEntries || [] },
           })
           if (tr?.text) {

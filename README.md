@@ -2,6 +2,8 @@
 
 把 B 站网页课程视频自动变成 Obsidian 知识笔记，并把每篇总结写入 dsh-mnemon 的记忆库。
 
+> **当前推荐用法：独立本地服务 + 浏览器面板**。DSH 插件已从 profile 的 bundles 中移除，不再随 DSH 加载；只用独立服务即可。
+
 ## 它会做什么
 
 1. **实时检测**：每 15 秒观察当前前台浏览器；发现新的 B 站视频课程后自动处理。
@@ -10,7 +12,9 @@
 4. **保存 Obsidian**：每视频一篇原子笔记 + 每学科一篇学习手册 + 全局课程总览。
 5. **写入 mnemon**：每视频写一条精简 insight 到 dsh-mnemon 的 default Memory Space，可在 DSH 对话中召回。
 
-## 首次安装（由实施者/管理员执行）
+## 可选：安装 DSH 插件（当前已禁用，可跳过）
+
+如果只用独立服务，**这一节可以跳过**，直接看「独立运行」。
 
 ### 1. 安装本地插件
 
@@ -51,7 +55,7 @@ node scripts/install-local-plugin.mjs
 
 或直接调用 `course_map_check`。全部为 ✅ 即可使用。
 
-## 日常使用（DSH 模式）
+## 可选：DSH 插件模式（当前已禁用）
 
 ### 自动模式
 
@@ -82,9 +86,9 @@ course_map_scan({ "url": "https://www.bilibili.com/video/BV...", "force": false 
 
 或调用 `course_map_status`。
 
-## 独立运行（不用启动 DSH Desktop）
+## 独立运行（当前推荐用法）
 
-本地服务自己完成轮询、抓取、总结和写 Obsidian，不需要 DSH 对话窗口。
+本地服务自己完成轮询、抓取、总结和写 Obsidian，不需要 DSH 对话窗口，也不需要 DSH 插件。
 
 **前提**：
 
@@ -123,7 +127,7 @@ node scripts/uninstall-launchd.mjs
 
 服务日志在 `~/.myminer/server.log` / `server.err.log`。
 
-**和 DSH 的关系**：独立服务和 DSH 插件共用状态目录与 `instance.lock`，同一时间只能有一个轮询实例。DSH 在运行时，独立页面会显示「DSH 占用中」并进入只读；退出 DSH 后重启独立服务即可接管。
+**和 DSH 的关系**：当前 DSH 插件已从 profile 的 `bundles` 中移除，不会随 DSH 加载，也不会占用锁。以后如果重新启用插件，二者共用状态目录与 `instance.lock`，同一时间只能有一个轮询实例；DSH 在运行时，独立页面会显示「DSH 占用中」并进入只读，退出 DSH 后重启独立服务即可接管。
 
 **换模型**：默认使用本机 Magpie 的 `auto/deepseek-v4.1-flash`。如需其他 OpenAI-compatible 服务，创建 `~/.myminer/llm.json`：
 
@@ -202,6 +206,8 @@ node scripts/uninstall-launchd.mjs
 | `useBrowserCookies` | true | 是否允许 yt-dlp 临时读取浏览器 B 站 Cookie（用于 AI 字幕和评论分页） |
 | `cookieBrowser` | chrome | 从哪个浏览器读取 Cookie（chrome/safari/edge） |
 | `transcriptLangs` | ai-zh, zh-Hans… | 字幕语言优先级 |
+| `useTranscriptCache` | true | 复用已下载的 AI 字幕（避免重复 LLM 分块） |
+| `transcriptCacheDays` | 7 | 字幕缓存保留天数 |
 | `commentLimit` | 50 | 最多抓取多少条高赞评论（最大 100） |
 | `ytDlpBin` | 自动 | yt-dlp 路径（默认自动探测） |
 | `enableMnemon` | true | 是否写 mnemon |
@@ -245,6 +251,10 @@ node scripts/uninstall-launchd.mjs
 ### Word 输出没了
 
 本版本专注 Obsidian Markdown，不再生成 Word。原版 Word 功能已停用。
+
+## 可选：重新启用 DSH 插件
+
+编辑 `~/.dsh/profiles/desktop/package.json`，把 `dsh-video-coursemap` 加回 `dsh.profile.bundles`，然后重启 DSH Desktop。当前已禁用的备份在 `docs/backup/disable-dsh-plugin-*/`。
 
 ## 回滚
 

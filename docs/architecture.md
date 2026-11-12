@@ -50,6 +50,7 @@
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成 DSH 的 `ctx.llm.stream` 形态；不启动 DSH 也能调用模型。
 - 独立服务与 DSH 插件共用同一状态目录和 `instance.lock`：DSH 运行时独立服务为只读，退出 DSH 后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
+- AI 字幕缓存写入 `~/.myminer/cache/transcripts/<bvid>.json`，默认保留 7 天；`force` 扫描会跳过缓存。
 - 开机自启用 `scripts/install-launchd.mjs`；双击 `myminer.command` 可临时启动。
 
 ## 状态文件

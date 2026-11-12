@@ -10,14 +10,47 @@
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { BILI_UA, BILI_REFERER } from './bilibili.js'
 import { findYtDlp } from './ytdlp.js'
 
 const execFileP = promisify(execFile)
 const SUBTITLE_TIMEOUT_MS = 30000
+const CACHE_DIR = join(homedir(), '.myminer', 'cache', 'transcripts')
+
+function cachePath(bvid) {
+  return join(CACHE_DIR, encodeURIComponent(String(bvid || '')) + '.json')
+}
+
+function readCache(bvid, config = {}) {
+  if (!bvid || config.useTranscriptCache === false) return null
+  try {
+    const file = cachePath(bvid)
+    if (!existsSync(file)) return null
+    const days = Number(config.transcriptCacheDays ?? 7)
+    const maxAge = (Number.isFinite(days) && days > 0 ? days : 7) * 24 * 60 * 60 * 1000
+    if (Date.now() - statSync(file).mtimeMs > maxAge) return null
+    const data = JSON.parse(readFileSync(file, 'utf8'))
+    if (typeof data?.text === 'string' && data.text.length > 0) {
+      return { text: data.text, source: data.source || 'ai-subtitle', detail: 'cache' }
+    }
+  } catch { /* 忽略缓存错误 */ }
+  return null
+}
+
+function writeCache(bvid, result) {
+  if (!bvid || !result?.text) return
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true })
+    writeFileSync(cachePath(bvid), JSON.stringify({
+      text: result.text,
+      source: result.source || 'ai-subtitle',
+      savedAt: new Date().toISOString(),
+    }), 'utf8')
+  } catch { /* 缓存失败不影响主流程 */ }
+}
 
 /** 解析 SRT 字幕为纯文本。 */
 export function parseSrt(text) {
@@ -134,12 +167,20 @@ async function downloadViaYtDlp({ url, config = {} } = {}) {
  * 获取视频字幕文本。
  * @returns {Promise<{ text: string, source: 'ai-subtitle'|'up-subtitle'|'', detail: string }>}
  */
-export async function fetchTranscript({ bvid, cid, url, config = {}, cookieHeader = '' } = {}) {
+export async function fetchTranscript({ bvid, cid, url, config = {}, cookieHeader = '', force = false } = {}) {
   try {
+    if (!force) {
+      const cached = readCache(bvid, config)
+      if (cached) return cached
+    }
     // 以 yt-dlp 为主：它会按视频自身解析 B站 AI 字幕，避免 player/v2 在某些登录态下
     // 返回“最近观看视频”的字幕 URL，导致把别的视频内容当成本视频讲解。
     const downloaded = await downloadViaYtDlp({ url, config })
-    if (downloaded?.text) return { ...downloaded, detail: 'yt-dlp' }
+    if (downloaded?.text) {
+      const result = { ...downloaded, detail: 'yt-dlp' }
+      writeCache(bvid, result)
+      return result
+    }
   } catch { /* 降级 */ }
   return { text: '', source: '', detail: '' }
 }
