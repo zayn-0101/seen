@@ -185,7 +185,11 @@ open dist/Seen.app
 
 两者不要同时开，否则会各起一个服务实例；菜单栏应用检测到服务已在跑会直接复用。
 
-**图标**：由 `menubar/icon/*.svg` 生成，默认是「光点书页」。换一版：
+**图标**：由 `menubar/icon/*.svg` 生成，默认是「光点书页」。
+
+![菜单栏图标三版预览](docs/menubar-icon-preview.png)
+
+换一版：
 
 ```bash
 cd menubar
