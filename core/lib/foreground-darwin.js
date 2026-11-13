@@ -327,34 +327,19 @@ export async function probeDarwinPermission() {
     return { ok: false, detail: 'lsappinfo 不可用：' + (errorMessage(lsError) || '未知错误') }
   }
 
-  const ui = await runExec('osascript', [
-    '-e',
-    'tell application "System Events" to get UI elements enabled',
-  ])
-  if (!ui.ok) {
-    const kind = classifyForegroundError(ui.error)
-    return { ok: false, detail: '辅助功能检测失败（' + kind + '）：' + (errorMessage(ui.error) || '未知错误') }
-  }
-  const enabled = String(ui.stdout || '').trim().toLowerCase()
-  if (enabled !== 'true') {
-    return {
-      ok: false,
-      detail: (() => {
-        const host = hostAppName()
-        const target = host ? '「' + host + '」' : '运行本服务的程序（菜单栏应用 Seen，或你启动服务的终端）'
-        return '辅助功能未授权：请在「系统设置 → 隐私与安全性 → 辅助功能」中授权' + target
-      })(),
-    }
-  }
-
   const front = await runExec('osascript', [
     '-e',
     'tell application "System Events" to get name of first application process whose frontmost is true',
   ])
   if (!front.ok) {
     const kind = classifyForegroundError(front.error)
-    return { ok: false, detail: '自动化权限检测失败（' + kind + '）：' + (errorMessage(front.error) || '未知错误') }
+    const host = hostAppName()
+    const target = host ? '「' + host + '」' : '运行本服务的程序（菜单栏应用 Seen，或你启动服务的终端）'
+    return {
+      ok: false,
+      detail: '需要「自动化」权限：请在「系统设置 → 隐私与安全性 → 自动化」中允许' + target + '控制 System Events 与浏览器（' + kind + '）',
+    }
   }
   const appName = String(front.stdout || '').trim()
-  return { ok: true, detail: '辅助功能与自动化权限正常' + (appName ? '（前台：' + appName + '）' : '') }
+  return { ok: true, detail: '前台检测可用' + (appName ? '（当前前台：' + appName + '）' : '') }
 }
