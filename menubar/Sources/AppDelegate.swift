@@ -99,14 +99,19 @@ final class AppModel: ObservableObject {
             await MainActor.run { self.busy = true }
             do {
                 let checks = try await API.check()
-                let lines = checks.map { item -> String in
-                    let id = item["id"] as? String ?? "check"
-                    let ok = item["ok"] as? Bool ?? false
-                    let detail = item["detail"] as? String ?? ""
-                    return (ok ? "✅ " : "⚠️ ") + id + "：" + detail
+                let failed = checks.filter { !($0["ok"] as? Bool ?? false) }
+                if failed.isEmpty {
+                    await MainActor.run { self.showAlert(title: "Seen 检查", message: "一切正常") }
+                } else {
+                    let lines = failed.map { item -> String in
+                        let label = item["label"] as? String ?? (item["id"] as? String ?? "检查项")
+                        let detail = item["detail"] as? String ?? ""
+                        return "· " + label + "：" + detail
+                    }
+                    await MainActor.run {
+                        self.showAlert(title: "有 " + String(failed.count) + " 项需要处理", message: lines.joined(separator: "\n"))
+                    }
                 }
-                let text = lines.isEmpty ? "诊断已完成，没有返回检查项。" : lines.joined(separator: "\n")
-                await MainActor.run { self.showAlert(title: "Seen 诊断", message: text) }
             } catch {
                 await MainActor.run { self.showAlert(title: "诊断失败", message: error.localizedDescription) }
             }

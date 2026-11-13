@@ -496,12 +496,15 @@ async function scan(force) {
 }
 
 async function check() {
-  showToast('正在诊断…', true)
+  showToast('正在检查…', true)
   try {
     const data = await api('/api/check', { method: 'POST', body: '{}' })
     const failed = (data.checks || []).filter((item) => !item.ok)
-    if (failed.length === 0) showToast('诊断通过：权限、Obsidian、mnemon、B站、LLM 均正常')
-    else showToast('诊断有 ' + failed.length + ' 项未通过：\n' + failed.map((item) => item.id + '：' + item.detail).join('\n'), true)
+    if (failed.length === 0) {
+      showToast('一切正常')
+    } else {
+      showToast('有 ' + failed.length + ' 项需要处理：' + '\n' + failed.map((item) => (item.label || item.id) + '：' + item.detail).join('\n'), true)
+    }
   } catch (error) {
     showToast(error.message)
   }

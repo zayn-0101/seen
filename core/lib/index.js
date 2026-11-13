@@ -693,8 +693,8 @@ export function apply(ctx, rawConfig = {}) {
     },
     async execute() {
       const checks = []
-      const add = (id, ok, detail) => checks.push({ id, ok: Boolean(ok), detail: String(detail || '') })
-      add('platform', process.platform === 'darwin' || process.platform === 'win32', process.platform + ' ' + process.arch)
+      const add = (id, label, ok, detail) => checks.push({ id, label, ok: Boolean(ok), detail: String(detail || '') })
+      add('platform', '运行环境', process.platform === 'darwin' || process.platform === 'win32', process.platform + ' ' + process.arch)
       let fg = null
       try { fg = await observeForeground(config) } catch (e) { fg = { error: String(e?.message || e) } }
       let fgOk = Boolean(fg && (fg.title || fg.url) && !fg.error)
@@ -714,25 +714,25 @@ export function apply(ctx, rawConfig = {}) {
           fgDetail = '权限探测失败：' + String(e?.message || e)
         }
       }
-      add('foreground', fgOk, fgDetail)
+      add('foreground', '读取浏览器窗口', fgOk, fgDetail)
       let vaultOk = false
       try { vaultOk = existsSync(vaultPath) && existsSync(outputDir) } catch { vaultOk = false }
-      add('vault', vaultOk, vaultPath + ' → ' + outputDir)
+      add('vault', 'Obsidian 笔记库', vaultOk, vaultPath + ' → ' + outputDir)
       let stateOk = false
       try { ensureDir(config.stateDir); stateOk = existsSync(config.stateDir) } catch { stateOk = false }
-      add('state', stateOk, config.stateDir)
+      add('state', '数据目录', stateOk, config.stateDir)
       let mnemonPath = null
       try { mnemonPath = await findMnemon(config) } catch { mnemonPath = null }
-      add('mnemon', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
+      add('mnemon', '记忆库（可选）', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
       const ytdlpPath = findYtDlp(config)
-      add('ytdlp', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕需要）')
+      add('ytdlp', 'B站字幕工具', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕需要）')
       const chromePath = findChrome(config)
       const ffmpegPath = findFfmpeg(config)
       const whisperPath = findWhisperCli(config)
       const whisperModel = findWhisperModel(config)
-      add('douyin-chrome', Boolean(chromePath), chromePath || '未找到 Chrome（抖音页面解析需要）')
-      add('douyin-ffmpeg', Boolean(ffmpegPath), ffmpegPath || '未找到 ffmpeg（抖音音频提取需要）')
-      add('douyin-whisper', Boolean(whisperPath && whisperModel), (whisperPath || '未找到 whisper-cli') + ' / ' + (whisperModel || '未找到 Whisper 模型'))
+      add('douyin-chrome', '抖音解析所需的 Chrome', Boolean(chromePath), chromePath || '未找到 Chrome（抖音页面解析需要）')
+      add('douyin-ffmpeg', '抖音音频所需的 ffmpeg', Boolean(ffmpegPath), ffmpegPath || '未找到 ffmpeg（抖音音频提取需要）')
+      add('douyin-whisper', '抖音语音转写', Boolean(whisperPath && whisperModel), (whisperPath || '未找到 whisper-cli') + ' / ' + (whisperModel || '未找到 Whisper 模型'))
       let biliOk = false
       let biliDetail = ''
       try {
@@ -741,12 +741,14 @@ export function apply(ctx, rawConfig = {}) {
         biliOk = res.ok && j?.code === 0
         biliDetail = 'HTTP ' + res.status + ' code=' + (j?.code ?? '?')
       } catch (e) { biliDetail = String(e?.message || e) }
-      add('bilibili', biliOk, biliDetail)
+      add('bilibili', 'B站接口', biliOk, biliDetail)
       let model = null
       try { model = resolveModel(ctx, config) } catch { model = null }
-      add('llm', Boolean(model), model ? model.provider + '/' + model.model : '无法解析模型')
+      add('llm', '模型服务', Boolean(model), model ? model.provider + '/' + model.model : '无法解析模型')
       const failed = checks.filter((c) => !c.ok)
-      const message = ['视频课程知识地图诊断：', ...checks.map((c) => (c.ok ? '✅ ' : '❌ ') + c.id + '：' + c.detail), '', failed.length === 0 ? '全部通过，可以开始使用。' : '有 ' + failed.length + ' 项未通过，请按 README 的排障说明处理。'].join('\n')
+      const message = failed.length === 0
+        ? '一切正常'
+        : '有 ' + failed.length + ' 项需要处理：' + '\n' + failed.map((c) => '· ' + c.label + '：' + c.detail).join('\n')
       return { ok: failed.length === 0, checks, message }
     },
   }), 'seen-core: check tool')
