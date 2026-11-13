@@ -69,6 +69,16 @@ export function formatDate(ts) {
 }
 
 /** 秒数格式化为 mm:ss / hh:mm:ss。 */
+/** B 站视频链接追加 t=秒 参数；其它来源或不支持时返回空字符串。 */
+export function buildTimeLink(url, platform, seconds) {
+  const text = String(url ?? '').trim()
+  if (!text) return ''
+  if (String(platform ?? '').toLowerCase() !== 'bilibili') return ''
+  if (!/bilibili\.com|b23\.tv/i.test(text)) return ''
+  const sec = Math.max(0, Math.floor(Number(seconds) || 0))
+  return text + (text.includes('?') ? '&' : '?') + 't=' + sec
+}
+
 export function formatDuration(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0))
   const hours = Math.floor(total / 3600)
@@ -131,7 +141,10 @@ function normalizeKeyPoints(value) {
     const points = Array.isArray(item.points)
       ? item.points.map((point) => oneLine(point)).filter(Boolean)
       : []
-    if (title || points.length) result.push({ title: title || '要点', points })
+    const time = Number(item.time ?? item.start)
+    const entry = { title: title || '要点', points }
+    if (Number.isFinite(time) && time >= 0) entry.time = Math.floor(time)
+    if (title || points.length) result.push(entry)
   }
   return result
 }
@@ -256,7 +269,11 @@ export function renderVideoNote(input = {}) {
 
   if (chapters.length > 0) {
     lines.push('## 章节', '')
-    for (const chapter of chapters) lines.push(`- ${formatDuration(chapter.from)} ${chapter.content}`)
+    for (const chapter of chapters) {
+      const label = formatDuration(chapter.from)
+      const link = buildTimeLink(url, platform, chapter.from)
+      lines.push(link ? `- [${label}](${link}) ${chapter.content}` : `- ${label} ${chapter.content}`)
+    }
     lines.push('')
   }
 
@@ -265,7 +282,8 @@ export function renderVideoNote(input = {}) {
     lines.push('- （暂无知识点）', '')
   } else {
     for (const topic of keyPoints) {
-      lines.push(`### ${topic.title}`, '')
+      const topicLink = Number.isFinite(topic.time) ? buildTimeLink(url, platform, topic.time) : ''
+      lines.push(topicLink ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})` : `### ${topic.title}`, '')
       if (topic.points.length === 0) lines.push('- （暂无要点）')
       else for (const point of topic.points) lines.push(`- ${point}`)
       lines.push('')

@@ -35,10 +35,8 @@ struct PanelView: View {
                 ghostButton("笔记目录", icon: "folder") { model.openNotes() }
             }
             HStack(spacing: 8) {
+                ghostButton("本周回顾", icon: "calendar") { model.weeklyReview() }
                 ghostButton("运行诊断", icon: "stethoscope") { model.diagnose() }
-                ghostButton("刷新", icon: "arrow.clockwise") {
-                    Task { await model.refresh() }
-                }
             }
             Divider()
             autoStartRow

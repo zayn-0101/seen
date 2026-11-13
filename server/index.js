@@ -14,6 +14,9 @@ import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { apply } from '../core/lib/index.js'
 import { resolveConfig } from '../core/lib/config.js'
+import { createNotifier } from '../core/lib/notify.js'
+import { buildWeeklyReview } from '../core/lib/review.js'
+import { writeWeeklyReview } from '../core/lib/obsidian.js'
 import { createLlmClient, loadLlmConfig } from './llm.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -102,9 +105,23 @@ function broadcast(event) {
   }
 }
 
+const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '1' })
+
+function notifySaved(data = {}) {
+  const platform = data.source === 'douyin' ? '抖音' : 'B站'
+  notifier.notify({
+    title: '拾影 · 笔记已生成',
+    subtitle: [data.subject, platform].filter(Boolean).join(' · '),
+    body: data.title || '新视频',
+  })
+}
+
 engine.onEvent((event) => {
   broadcast(event)
-  if (event.type === 'saved') log('笔记已生成：' + event.data?.notePath)
+  if (event.type === 'saved') {
+    log('笔记已生成：' + event.data?.notePath)
+    notifySaved(event.data)
+  }
   if (event.type === 'error') log('处理失败：' + event.data?.message)
 })
 
@@ -239,6 +256,18 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    if (pathname === '/api/review' && req.method === 'POST') {
+      const status = await engine.getStatus()
+      const review = buildWeeklyReview({ videos: engine.getHistory(), now: new Date() })
+      const written = writeWeeklyReview({
+        vaultPath: status.vaultPath,
+        noteRoot: status.noteRoot,
+        label: review.label,
+        markdown: review.markdown,
+      })
+      return json(res, 200, { ok: true, week: review.label, count: review.count, ...written })
+    }
+
     if (pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' })
     return await serveStatic(req, res, pathname)
   } catch (error) {
@@ -247,6 +276,26 @@ const server = createServer(async (req, res) => {
     else res.end()
   }
 })
+
+// 启动时补生成上周回顾（本周文件已存在时自动跳过）
+async function ensureLastWeekReview() {
+  try {
+    const status = await engine.getStatus()
+    if (!status.vaultPath) return
+    const lastWeek = new Date(Date.now() - 7 * 86400000)
+    const review = buildWeeklyReview({ videos: engine.getHistory(), now: lastWeek })
+    if (review.count === 0) return
+    const written = writeWeeklyReview({
+      vaultPath: status.vaultPath,
+      noteRoot: status.noteRoot,
+      label: review.label,
+      markdown: review.markdown,
+    })
+    log('上周回顾：' + (written.skipped ? '已存在，跳过' : written.relPath))
+  } catch (error) {
+    log('生成上周回顾失败：' + String(error?.message || error))
+  }
+}
 
 server.listen(PORT, HOST, () => {
   const url = 'http://' + HOST + ':' + PORT
@@ -257,6 +306,7 @@ server.listen(PORT, HOST, () => {
   if (OPEN_BROWSER && process.platform === 'darwin') {
     spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
   }
+  ensureLastWeekReview().catch(() => {})
 })
 
 function shutdown(code = 0) {

@@ -66,6 +66,16 @@ enum API {
         }
     }
 
+    static func review() async throws -> [String: Any] {
+        var req = request(path: "/api/review", method: "POST", body: Data("{}".utf8))
+        req.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw ServiceError.badResponse("生成回顾失败")
+        }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     static func check() async throws -> [[String: Any]] {
         var req = request(path: "/api/check", method: "POST", body: Data("{}".utf8))
         req.timeoutInterval = 30

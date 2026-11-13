@@ -20,7 +20,7 @@ test('renderVideoNote warns when no transcript and shows real totals', () => {
   assert.ok(md.includes('全站 3557 条'))
   assert.ok(md.includes('全站 12513 条'))
   assert.ok(md.includes('## 章节'))
-  assert.ok(md.includes('00:45 技术概念'))
+  assert.ok(md.includes('[00:45](https://www.bilibili.com/video/BV1GJ411x7h7?t=45) 技术概念'))
   assert.equal(formatDuration(3041), '50:41')
 })
 

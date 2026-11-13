@@ -699,7 +699,10 @@ function normalizeKeyPoints(value) {
           .slice(0, 5)
       : []
     if (!title && !points.length) continue
-    result.push({ title: title || points[0] || '', points })
+    const time = Number(item.time ?? item.start ?? item.at)
+    const entry = { title: title || points[0] || '', points }
+    if (Number.isFinite(time) && time >= 0) entry.time = Math.floor(time)
+    result.push(entry)
     if (result.length >= 20) break
   }
   return result
@@ -811,8 +814,10 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
     : []
   if (tags.length) parts.push('【视频标签】\n' + tags.join('、'))
 
+  const timed = cleanText(content.timedTranscript)
   const transcript = cleanText(transcriptText === null ? content.transcript : transcriptText)
-  if (transcript) {
+  const transcriptBody = timed || transcript
+  if (transcriptBody) {
     const sourceLabel = content.transcriptSource === 'ai-subtitle'
       ? '（来源：B站 AI 字幕，自动识别，可能存在同音错字）'
       : content.transcriptSource === 'up-subtitle'
@@ -820,7 +825,7 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
         : content.transcriptSource === 'whisper'
           ? '（来源：抖音音频 Whisper 转写，自动识别，可能存在同音错字）'
           : ''
-    parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcript, 14000))
+    parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcriptBody, 14000))
   }
 
   const danmaku = Array.isArray(content.danmaku)
@@ -877,7 +882,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
-    '{"summary":"不超过120字的一句话总结","keyPoints":[{"title":"主题","points":["要点1","要点2"]}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
+    '{"summary":"不超过120字的一句话总结","keyPoints":[{"title":"主题","time":123,"points":["要点1","要点2"]}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
     '',
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
@@ -885,6 +890,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '3. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
     '4. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
     '5. 全部使用中文。',
+    '6. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
   ].join('\n')
 }
 

@@ -44,7 +44,7 @@ seen/
 └── core/                      Seen 视频引擎（包名 seen-core）
     ├── package.json
     ├── README.md
-    ├── lib/                  source.js / douyin.js / bilibili.js / analyze.js
+    ├── lib/                  source / douyin / bilibili / analyze / render / review / notify
     └── test/
 ```
 
@@ -91,6 +91,7 @@ mnemon recall "视频课程"
 
 ## 重要事实
 
+- 视频处理完成后通过 macOS 通知提醒（SEEN_DISABLE_NOTIFY=1 可关）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站章节与知识点带 t= 时间链接。
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
 - 应用完全独立运行：不依赖 DSH Desktop，也不是 DSH 插件；`core/` 只是本地引擎。

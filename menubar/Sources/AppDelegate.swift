@@ -63,6 +63,31 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: dir))
     }
 
+    func weeklyReview() {
+        Task {
+            await MainActor.run { self.busy = true }
+            do {
+                let result = try await API.review()
+                let count = result["count"] as? Int ?? 0
+                let skipped = result["skipped"] as? Bool ?? false
+                let relPath = result["relPath"] as? String ?? ""
+                if count == 0 {
+                    await MainActor.run { self.note = "本周还没有新视频" }
+                } else if skipped {
+                    await MainActor.run { self.note = "本周回顾已存在：" + relPath }
+                } else if let path = result["absPath"] as? String {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    await MainActor.run { self.note = "已生成本周回顾" }
+                } else {
+                    await MainActor.run { self.note = "已生成：" + relPath }
+                }
+            } catch {
+                await MainActor.run { self.note = "生成回顾失败：" + error.localizedDescription }
+            }
+            await MainActor.run { self.busy = false }
+        }
+    }
+
     func diagnose() {
         Task {
             await MainActor.run { self.busy = true }

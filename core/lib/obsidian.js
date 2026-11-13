@@ -295,3 +295,15 @@ export function openInObsidian({ vaultPath, notePath } = {}) {
     return { ok: false, error: String(error?.message || error) }
   }
 }
+
+/** 写入每周回顾；文件已存在时跳过，不覆盖用户内容。 */
+export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {}) {
+  if (!vaultPath) throw new Error('writeWeeklyReview: 缺少 vaultPath')
+  if (!label) throw new Error('writeWeeklyReview: 缺少 label')
+  const root = normalizeNoteRoot(noteRoot)
+  const relPath = toPosix(join(root, '每周回顾', label + '.md'))
+  const absPath = absoluteFromRel(vaultPath, relPath)
+  if (existsSync(absPath)) return { ok: true, skipped: true, relPath, absPath }
+  atomicWrite(absPath, markdown)
+  return { ok: true, skipped: false, relPath, absPath }
+}

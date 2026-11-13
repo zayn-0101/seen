@@ -34,7 +34,7 @@ function readCache(bvid, config = {}) {
     if (Date.now() - statSync(file).mtimeMs > maxAge) return null
     const data = JSON.parse(readFileSync(file, 'utf8'))
     if (typeof data?.text === 'string' && data.text.length > 0) {
-      return { text: data.text, source: data.source || 'ai-subtitle', detail: 'cache' }
+      return { text: data.text, timed: typeof data.timed === 'string' ? data.timed : '', source: data.source || 'ai-subtitle', detail: 'cache' }
     }
   } catch { /* 忽略缓存错误 */ }
   return null
@@ -46,10 +46,82 @@ function writeCache(bvid, result) {
     mkdirSync(CACHE_DIR, { recursive: true })
     writeFileSync(cachePath(bvid), JSON.stringify({
       text: result.text,
+      timed: result.timed || '',
       source: result.source || 'ai-subtitle',
       savedAt: new Date().toISOString(),
     }), 'utf8')
   } catch { /* 缓存失败不影响主流程 */ }
+}
+
+
+/** 清理单行 SRT 文本。 */
+function cleanSrtLine(line) {
+  return String(line ?? '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\{[^}]+\}/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .trim()
+}
+
+const SRT_TIME = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})/
+
+/** 解析 SRT 为带时间轴的片段：[{ start, end, text }]。 */
+export function parseSrtSegments(text) {
+  const blocks = String(text ?? '').replace(/\r\n/g, '\n').split(/\n{2,}/)
+  const segments = []
+  for (const block of blocks) {
+    const rawLines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (rawLines.length === 0) continue
+    let index = 0
+    if (/^\d+$/.test(rawLines[0])) index = 1
+    let start = 0
+    let end = 0
+    const match = rawLines[index] ? rawLines[index].match(SRT_TIME) : null
+    if (match) {
+      start = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+      end = Number(match[5]) * 3600 + Number(match[6]) * 60 + Number(match[7])
+      index += 1
+    }
+    const textLines = []
+    for (let i = index; i < rawLines.length; i++) {
+      const cleaned = cleanSrtLine(rawLines[i])
+      if (cleaned) textLines.push(cleaned)
+    }
+    const content = textLines.join(' ').trim()
+    if (content) segments.push({ start, end: end || start, text: content })
+  }
+  return segments
+}
+
+/** 把片段合并成带时间标记的文本，每块约 maxSeconds 秒。 */
+export function buildTimedTranscript(segments, options = {}) {
+  const maxSeconds = Number(options.maxSeconds) > 0 ? Number(options.maxSeconds) : 8
+  const lines = []
+  let bucketStart = null
+  let buffer = []
+  const flush = () => {
+    if (buffer.length === 0) return
+    const startSec = Math.max(0, Math.floor(bucketStart ?? 0))
+    const mm = String(Math.floor(startSec / 60)).padStart(2, '0')
+    const ss = String(startSec % 60).padStart(2, '0')
+    lines.push('[' + mm + ':' + ss + '] ' + buffer.join(' '))
+    buffer = []
+  }
+  for (const segment of Array.isArray(segments) ? segments : []) {
+    if (!segment || !segment.text) continue
+    const start = Number(segment.start) || 0
+    if (bucketStart === null) bucketStart = start
+    if (start - bucketStart >= maxSeconds && buffer.length > 0) {
+      flush()
+      bucketStart = start
+    }
+    buffer.push(segment.text)
+  }
+  flush()
+  return lines.join('\n')
 }
 
 /** 解析 SRT 字幕为纯文本。 */
@@ -153,9 +225,17 @@ async function downloadViaYtDlp({ url, config = {} } = {}) {
       return score(a) - score(b)
     })
     const file = files[0]
-    const text = parseSrt(readFileSync(file, 'utf8'))
+    const raw = readFileSync(file, 'utf8')
+    const segments = parseSrtSegments(raw)
+    const text = segments.length
+      ? segments.map((segment) => segment.text).join(' ').replace(/\s+/g, ' ').trim()
+      : parseSrt(raw)
     if (!text) return null
-    return { text, source: /ai-zh/i.test(basename(file)) ? 'ai-subtitle' : 'up-subtitle' }
+    return {
+      text,
+      timed: segments.length ? buildTimedTranscript(segments) : '',
+      source: /ai-zh/i.test(basename(file)) ? 'ai-subtitle' : 'up-subtitle',
+    }
   } catch {
     return null
   } finally {

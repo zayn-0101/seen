@@ -247,6 +247,7 @@ export function apply(ctx, rawConfig = {}) {
       const subject = resolveSubjectName(cls.subject, existing)
       const keywords = Array.isArray(cls.keywords) ? cls.keywords.map(String).filter(Boolean).slice(0, 10) : []
       let transcript = content?.transcript || ''
+      let timedTranscript = content?.timedTranscript || ''
       let transcriptSource = content?.transcriptSource || (transcript ? 'up-subtitle' : '')
       if (!transcript && config.fetchTranscript && content?.bvid) {
         try {
@@ -261,6 +262,7 @@ export function apply(ctx, rawConfig = {}) {
           })
           if (tr?.text) {
             transcript = tr.text
+            timedTranscript = tr.timed || ''
             transcriptSource = tr.source || 'ai-subtitle'
             logger.log('transcript source=' + transcriptSource + ' detail=' + tr.detail + ' length=' + transcript.length)
           }
@@ -271,11 +273,12 @@ export function apply(ctx, rawConfig = {}) {
       if (content) {
         content.transcript = transcript
         content.transcriptSource = transcriptSource
+        content.timedTranscript = timedTranscript
         if (content.fetchStats) content.fetchStats.transcript = transcript.length
       }
       emit('transcript', { source: transcriptSource || 'none', length: transcript.length })
       const contentForSummary = content
-        ? { ...content, transcript, transcriptSource }
+        ? { ...content, transcript, transcriptSource, timedTranscript }
         : (transcript ? { transcript, transcriptSource } : null)
       const finalTitle = cls.title || title
       emit('summarizing', { title: finalTitle, subject, transcriptLength: transcript.length })
