@@ -8,7 +8,7 @@
  * 所有子进程 timeout 5s；失败不抛错，按 denied / timeout / unknown 分类。
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileP = promisify(execFile)
@@ -297,6 +297,20 @@ export async function observeDarwin(config = {}) {
   return out
 }
 
+
+/** 探测运行本服务的宿主程序名（菜单栏应用或终端），用于权限提示。 */
+function hostAppName() {
+  try {
+    const raw = execFileSync('ps', ['-o', 'comm=', '-p', String(process.ppid)], { encoding: 'utf8' }).trim()
+    if (!raw) return ''
+    const match = raw.match(/([^/]+)\.app\/Contents\/MacOS\//)
+    if (match) return match[1]
+    return raw.split('/').pop() || ''
+  } catch {
+    return ''
+  }
+}
+
 /** 诊断 macOS 辅助功能 / 自动化权限 */
 export async function probeDarwinPermission() {
   let lsOk = false
@@ -325,7 +339,11 @@ export async function probeDarwinPermission() {
   if (enabled !== 'true') {
     return {
       ok: false,
-      detail: '辅助功能未授权：请在「系统设置 → 隐私与安全性 → 辅助功能」中授权 DeepSeek Harness',
+      detail: (() => {
+        const host = hostAppName()
+        const target = host ? '「' + host + '」' : '运行本服务的程序（菜单栏应用 Seen，或你启动服务的终端）'
+        return '辅助功能未授权：请在「系统设置 → 隐私与安全性 → 辅助功能」中授权' + target
+      })(),
     }
   }
 

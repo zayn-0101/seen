@@ -8,7 +8,7 @@ DSH 插件：实时检测 B 站网页课程视频 → 学科分类 → 抓取简
 node scripts/install-local-plugin.mjs
 ```
 
-然后重启 DSH Desktop，并在系统设置中授予 DeepSeek Harness 辅助功能/自动化权限。
+然后重启服务，并在系统设置中授予运行服务的程序（菜单栏应用 Seen 或你的终端）辅助功能/自动化权限。
 
 ## 工具
 
