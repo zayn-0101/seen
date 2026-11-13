@@ -2,7 +2,24 @@
 
 把 B 站 / 抖音精选的网页课程长视频自动变成 Obsidian 知识笔记，并可选择把每篇总结写入本地 mnemon 记忆库。
 
-> **开箱即用**：一个本地服务 + 浏览器面板 + 可选菜单栏应用，数据全部留在本机。
+> **开箱即用**：一个本地服务 + 浏览器面板 + 可选菜单栏应用；笔记保存在本机，模型可选择本地或远程服务。
+
+<p align="center">
+  <img src="docs/seen-concept-light.png" alt="拾影 Seen 浅色工作台概念图" />
+</p>
+
+<table>
+  <tr>
+    <td><img src="docs/seen-concept-dark.png" alt="深色总结与知识库概念图" /></td>
+    <td><img src="docs/seen-concept-menubar.png" alt="菜单栏浅色和深色模式概念图" /></td>
+  </tr>
+  <tr>
+    <td align="center">深色总结与知识库</td>
+    <td align="center">菜单栏浅色 / 深色</td>
+  </tr>
+</table>
+
+<sub>以上为概念示意，图中内容均为虚构示例；实际界面和功能以当前版本为准。</sub>
 
 ## 它会做什么
 
@@ -34,9 +51,9 @@
 - 或终端执行 `node server/index.js`；
 - 浏览器打开 [http://127.0.0.1:4780](http://127.0.0.1:4780)。
 
-界面预览：![拾影界面](docs/ui-preview.jpg)
+**真实界面截图**（使用隔离的虚构示例数据）：
 
-抖音精选处理结果：![抖音精选总结](docs/ui-preview-douyin.jpg)
+![拾影 Seen 实际工作台，显示示例总结和知识库](docs/seen-workspace-real.png)
 
 页面里可以：
 
@@ -73,7 +90,7 @@ node scripts/install-whisper-model.mjs
 
 **模型配置（首次必做）**：
 
-打开面板右上角的「模型」按钮（或菜单栏面板的「设置」），选择供应商，粘贴 API Key，点「获取模型列表」挑一个模型，测试通过后保存。保存后立即生效。
+打开网页侧栏的「设置」、右上角的模型状态按钮，或菜单栏面板的「设置」，选择供应商，粘贴 API Key，点「获取模型列表」挑一个模型，测试通过后保存。保存后立即生效。
 
 - 预设按 国内 / 国际 / 本地 分组：DeepSeek、通义千问、Kimi、智谱 GLM、豆包、文心、混元、星火、MiniMax、阶跃星辰、硅基流动；OpenAI、Gemini、OpenRouter、Grok、Groq、Mistral、Together、Fireworks；Ollama、LM Studio、vLLM。
 - 都不合适就选「自定义」，手动填 baseURL 和模型 ID。

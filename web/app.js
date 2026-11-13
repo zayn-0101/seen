@@ -81,6 +81,11 @@ function showToast(message, stay = false) {
   if (!stay) showToast.timer = setTimeout(() => toast.classList.remove('show'), 4200)
 }
 
+function renderConnection(connected) {
+  $('connectionDot').className = 'sidebar-dot ' + (connected ? 'online' : 'offline')
+  $('connectionLabel').textContent = connected ? '本地服务已连接' : '服务连接中断'
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -428,10 +433,12 @@ function connect() {
   if (state.eventSource) state.eventSource.close()
   const source = new EventSource('/api/events')
   state.eventSource = source
+  source.onopen = () => renderConnection(true)
   source.onmessage = (message) => {
     try { handleEvent(JSON.parse(message.data)) } catch { /* 忽略 */ }
   }
   source.onerror = () => {
+    renderConnection(false)
     source.close()
     setTimeout(connect, 3000)
   }
@@ -440,8 +447,10 @@ function connect() {
 async function load() {
   try {
     const snap = await api('/api/status')
+    renderConnection(true)
     renderSnapshot(snap)
   } catch (error) {
+    renderConnection(false)
     showToast('无法连接本地服务：' + error.message, true)
   }
 }
@@ -711,7 +720,16 @@ function handleSettingsHash() {
   if (location.hash === '#settings') openSettings()
 }
 
+function updateNavigation() {
+  const section = location.hash === '#knowledge' ? '#knowledge' : '#workspace'
+  for (const link of document.querySelectorAll('.sidebar-nav a[href]')) {
+    if (link.getAttribute('href') === section) link.setAttribute('aria-current', 'location')
+    else link.removeAttribute('aria-current')
+  }
+}
+
 $('llmPill').addEventListener('click', openSettings)
+$('navSettings').addEventListener('click', openSettings)
 $('closeSettings').addEventListener('click', closeSettingsDialog)
 $('settingsDialog').addEventListener('close', () => {
   if (location.hash === '#settings') {
@@ -719,6 +737,8 @@ $('settingsDialog').addEventListener('close', () => {
   }
 })
 window.addEventListener('hashchange', handleSettingsHash)
+window.addEventListener('hashchange', updateNavigation)
+updateNavigation()
 $('settingsForm').addEventListener('submit', saveSettings)
 $('providerSelect').addEventListener('change', (event) => applyPreset(event.target.value))
 $('fetchModels').addEventListener('click', fetchModelList)

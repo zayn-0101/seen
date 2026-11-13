@@ -197,9 +197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.animates = true
         let host = NSHostingController(rootView: PanelView(model: model))
-        host.view.frame = NSRect(x: 0, y: 0, width: 336, height: 380)
+        host.sizingOptions = [.preferredContentSize, .intrinsicContentSize]
         popover.contentViewController = host
-        popover.contentSize = NSSize(width: 336, height: 380)
 
         model.onQuit = { NSApp.terminate(nil) }
         model.onStartService = { [weak self] in self?.ensureService() }
