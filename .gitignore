@@ -22,3 +22,6 @@ docs/brand/squirrel-icons-v1.zip
 
 # 浏览器自动化截图
 .playwright-mcp/
+
+# 视觉升级的过程预览图（约 12MB，本地保留）
+docs/brand/squirrel-ui-*.png

@@ -77,6 +77,8 @@
 ```
 <vault>/课程知识地图/
 ├── 课程总览.md
+├── 索引.md                  # 全部视频索引表（AUTO 区块维护）
+├── 每周回顾/<年>-W<周>.md   # 每周回顾，已存在不覆盖
 └── <学科>/
     ├── <学科> 学习手册.md
     └── <视频标题>.md
@@ -87,8 +89,17 @@
 - 课程总览：AUTO 区（学科 mindmap + 学科列表）。
 - 写入采用 tmp + rename 原子替换；学习手册/总览只替换 `<!-- AUTO:START -->` 与 `<!-- AUTO:END -->` 之间。
 
-## mnemon 集成
+## 模型服务
 
+优先级：用户保存的设置（`~/.seen/llm.json`）→ 环境变量 → 自动探测本机 Magpie → 未配置。
+
+- 设置由网页「模型」弹窗写入，支持 24 个 OpenAI 兼容供应商预设与自定义 baseURL；
+- 启动时 resolveLlmConfig() 决定来源，运行时保存设置通过 updateConfig() 热更新，无需重启；
+- apiKey 只存在本机文件（权限 600），接口回显脱敏，日志不记录。
+
+## mnemon 集成（可选，默认关闭）
+
+- 设置页开关跟随探测：检测到 mnemon CLI 才启用，缺失时禁用；
 - 使用 `mnemon remember --store default` 写入本地 mnemon 记忆库。
 - 内容为精简版（标题/学科/摘要/前 5 条知识点/笔记路径/B站链接），≤800 字。
 - 其它使用 mnemon 的工具调用同一 CLI 与 `~/.mnemon/data/default/mnemon.db`，可以检索到同一批记录。

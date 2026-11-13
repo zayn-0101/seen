@@ -10,6 +10,15 @@
 - `squirrel-icons-v1/`：完整交付包；目录内部的 README 说明各类资源。
 - `squirrel-icons-v1.zip`：同名目录的便携交付包。
 - `validation-v1.md`：本轮尺寸、格式、网页加载与应用构建的验证记录。
+- `visual-upgrade-plan-v1.md`：网页与菜单栏整体视觉升级方案，供实施前确认。
+- `visual-upgrade-prompts-v1.md`：两张视觉示意图的生成提示词。
+- `squirrel-ui-light-preview-v1.png`、`squirrel-ui-dark-preview-v1.png`：视觉升级的浅色和深色示意图，包含虚构示例内容，不是运行截图。
+- `visual-upgrade-plan-v2.md`、`visual-upgrade-prompts-v2.md`：较现代的第二版方案与示意图提示词。
+- `squirrel-ui-modern-*-preview-v2.png`：第二版网页浅色、深色及菜单栏示意图，包含虚构示例内容，不是运行截图。
+- `squirrel-ui-modern-*-preview-v3.png`：补充英文名 Seen 后的网页和菜单栏示意图。
+- `visual-upgrade-prompts-v3.md`：英文名修订所用的图像编辑提示词。
+
+（各版预览示意图体积较大，仅本地保留，已加入 .gitignore，不入库。）
 
 生产母版放在 `menubar/icon/squirrel/`；网页资源导出到 `web/icons/`，菜单栏资源导出到 `menubar/Resources/`。
 
