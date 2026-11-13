@@ -36,7 +36,7 @@ export const DEFAULTS = Object.freeze({
   whisperBin: null,
   whisperModel: null,
   commentLimit: 50,
-  enableMnemon: true,
+  enableMnemon: false,
   mnemonBin: null,
   mnemonStore: 'default',
   openInObsidian: false,
