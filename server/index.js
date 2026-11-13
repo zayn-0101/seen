@@ -209,7 +209,7 @@ async function serveStatic(req, res, pathname) {
       '.ico': 'image/vnd.microsoft.icon',
       '.webmanifest': 'application/manifest+json; charset=utf-8',
     }
-    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' })
+    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store, must-revalidate' })
     res.end(await readFile(file))
   } catch {
     json(res, 404, { error: 'not found' })

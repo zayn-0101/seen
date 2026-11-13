@@ -580,14 +580,21 @@ function applyPreset(id) {
   setModelOptions(provider.models || [], '')
   $('customModel').value = ''
   $('settingsResult').textContent = provider.note || ''
+
+  const isLocal = provider.group === '本地'
+  const keyInput = $('apiKeyInput')
+  keyInput.disabled = isLocal
+  keyInput.placeholder = isLocal ? '本地服务通常不需要 API Key' : '粘贴 API Key'
+  if (isLocal) keyInput.value = ''
 }
 
 function currentForm() {
+  const keyInput = $('apiKeyInput')
   return {
     provider: $('providerSelect').value,
     baseURL: $('baseUrlInput').value.trim(),
     model: ($('modelSelect').value || $('customModel').value || '').trim(),
-    apiKey: $('apiKeyInput').value.trim(),
+    apiKey: keyInput.disabled ? '' : keyInput.value.trim(),
   }
 }
 
@@ -604,11 +611,19 @@ async function openSettings() {
 
     if (data.saved) {
       $('providerSelect').value = data.saved.provider || 'custom'
+      applyPreset(data.saved.provider || 'custom')
       $('baseUrlInput').value = data.saved.baseURL || ''
-      $('baseUrlInput').readOnly = (data.saved.provider || '') !== 'custom'
       setModelOptions([data.saved.model], data.saved.model)
       $('apiKeyInput').value = ''
-      $('apiKeyInput').placeholder = data.saved.maskedKey ? '已保存 ' + data.saved.maskedKey + '（留空不修改）' : '粘贴 API Key'
+      if (!$('apiKeyInput').disabled) {
+        $('apiKeyInput').placeholder = data.saved.maskedKey ? '已保存 ' + data.saved.maskedKey + '（留空不修改）' : '粘贴 API Key'
+      }
+    } else if (data.source === 'magpie' && data.provider === 'magpie') {
+      $('providerSelect').value = 'magpie'
+      applyPreset('magpie')
+      if (data.baseURL) $('baseUrlInput').value = data.baseURL
+      const magpieModels = (data.health && Array.isArray(data.health.models)) ? data.health.models : []
+      setModelOptions(magpieModels, data.model || '')
     } else {
       $('providerSelect').value = 'deepseek'
       applyPreset('deepseek')

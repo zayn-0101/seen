@@ -366,3 +366,10 @@ button { cursor: pointer; }
 
 .settings-dialog .field { align-items: flex-start; }
 .settings-dialog .field > span:first-child { width: 100%; text-align: left; }
+
+.settings-dialog .switch-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
