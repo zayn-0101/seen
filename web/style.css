@@ -373,3 +373,34 @@ button { cursor: pointer; }
   flex: 0 0 auto;
   accent-color: var(--accent);
 }
+
+/* 顶部：模型徽章可点击 */
+.pill-button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pill-button:hover { border-color: var(--line-strong); }
+
+/* 设置弹窗：开关行布局 */
+.settings-dialog .switch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.settings-dialog .switch-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+.settings-dialog .switch-row > span:first-of-type { white-space: nowrap; }
+.settings-dialog #mnemonHint { flex-basis: 100%; margin: 2px 0 0 24px; }

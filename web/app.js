@@ -67,8 +67,9 @@ function platformLabel(source) {
 }
 
 function setPill(node, text, tone, title) {
+  const clickable = node.classList.contains('pill-button') ? ' pill-button' : ''
   node.textContent = text
-  node.className = 'pill ' + (tone || 'neutral')
+  node.className = 'pill ' + (tone || 'neutral') + clickable
   if (title) node.title = title
 }
 
@@ -97,7 +98,8 @@ function renderToggle() {
   const readonly = Boolean(status.readOnly)
   button.disabled = readonly
   button.setAttribute('aria-pressed', status.polling ? 'true' : 'false')
-  label.textContent = readonly ? '另一个实例占用中' : status.polling ? '暂停轮询' : '启动轮询'
+  label.textContent = readonly ? '只读' : status.polling ? '轮询中' : '已暂停'
+  button.title = readonly ? '另一个实例正在占用' : status.polling ? '点击暂停轮询' : '点击开始轮询'
   $('readonlyPill').classList.toggle('hidden', !readonly)
   const pollState = $('pollState')
   pollState.textContent = readonly ? '只读' : status.polling ? '轮询中' : '已停止'
@@ -339,7 +341,8 @@ function renderSnapshot(snap) {
   const llmModel = String(llm.model || '').slice(0, 28)
   const llmLabel = !llmConfigured ? '未配置模型' : (llm.ok ? llmModel || 'LLM 就绪' : 'LLM 不可用')
   setPill($('llmPill'), llmLabel, llm.ok ? 'ok' : 'bad', (llm.detail || '') + (llm.source ? ' · 来源：' + llm.source : ''))
-  $('footerPath').textContent = snap.status?.vaultPath ? snap.status.vaultPath : ''
+  const vaultPath = snap.status?.vaultPath ? String(snap.status.vaultPath) : ''
+  $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
   renderHistory(snap.history || [])
   renderEvents(state.events)
   if (snap.status?.lastForeground) renderForeground({ ...snap.status.lastForeground, isBrowser: snap.status.lastForeground.isBrowser !== false })
@@ -705,7 +708,7 @@ function handleSettingsHash() {
   if (location.hash === '#settings') openSettings()
 }
 
-$('openSettings').addEventListener('click', openSettings)
+$('llmPill').addEventListener('click', openSettings)
 $('closeSettings').addEventListener('click', closeSettingsDialog)
 $('settingsDialog').addEventListener('close', () => {
   if (location.hash === '#settings') {
