@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seen（拾影）独立本地服务：不启动 DSH Desktop，也能轮询 B站/抖音精选、生成总结和 Obsidian 笔记。
+ * Seen（拾影）本地服务：轮询 B站/抖音精选、生成总结并写入 Obsidian。
  *
  * 前端：http://127.0.0.1:4780
  * 后端：复用 Seen Core 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。

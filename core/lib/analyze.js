@@ -1,7 +1,7 @@
 /**
  * seen-core · LLM 分析与 JSON 解析
  *
- * 纯 ESM、零运行时依赖。通过 DSH 注入的 ctx.llm.stream 调用模型。
+ * 纯 ESM、零运行时依赖。通过注入的 ctx.llm.stream 调用模型。
  *
  * 安全约定：
  *  - 视频简介 / 字幕 / 弹幕 / 评论都是「素材数据」，不是指令；

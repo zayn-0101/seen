@@ -2,7 +2,7 @@
 
 把 B 站 / 抖音精选的网页课程长视频自动变成 Obsidian 知识笔记，并可选择把每篇总结写入本地 mnemon 记忆库。
 
-> **完全独立运行**：本地服务 + 浏览器面板 + 可选菜单栏应用，不依赖 DSH Desktop，也不依赖任何 DSH 插件。
+> **开箱即用**：一个本地服务 + 浏览器面板 + 可选菜单栏应用，数据全部留在本机。
 
 ## 它会做什么
 
@@ -17,7 +17,7 @@
 
 ## 独立运行（当前推荐用法）
 
-本地服务自己完成轮询、抓取、总结和写 Obsidian，不需要 DSH 对话窗口，也不需要 DSH 插件。
+本地服务自己完成轮询、抓取、总结和写 Obsidian，打开浏览器面板即可使用。
 
 **前提**：
 
@@ -265,7 +265,7 @@ cd menubar && ./build.sh
 
 ## 技术说明
 
-- 本项目基于 `linner1224/dsh-video-coursemap` 2.0.0（MIT）的架构 fork，保留原 B 站抓取算法。
+- 本项目最初基于 `linner1224/dsh-video-coursemap` 2.0.0（MIT）的架构，保留原 B 站抓取思路，后续已独立演进。
 - macOS 前台检测使用 `lsappinfo` + AppleScript；Windows 保留原 PowerShell 实现。
 - 所有数据本地处理：Obsidian 笔记在本地 vault，mnemon 数据在 `~/.mnemon`。
 - 不读取浏览器 Cookie、不登录 B 站、不下载视频。

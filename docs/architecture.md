@@ -56,7 +56,7 @@
 ```
 
 - `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用插件的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
-- `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口；不需要 DSH 也能调用模型。
+- `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
 - 多个 Seen 实例共用同一状态目录与 `instance.lock`：后启动的为只读，停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
 - AI 字幕缓存写入 `~/.seen/cache/transcripts/<bvid>.json`，默认保留 7 天；`force` 扫描会跳过缓存。
@@ -91,7 +91,7 @@
 
 - 使用 `mnemon remember --store default` 写入本地 mnemon 记忆库。
 - 内容为精简版（标题/学科/摘要/前 5 条知识点/笔记路径/B站链接），≤800 字。
-- 若本机装有 dsh-mnemon，它调用同一 CLI 与 `~/.mnemon/data/default/mnemon.db`，DSH 对话里可以检索到同一批记录。
+- 其它使用 mnemon 的工具调用同一 CLI 与 `~/.mnemon/data/default/mnemon.db`，可以检索到同一批记录。
 - 写入失败不影响 Obsidian 笔记生成。
 
 ## 模块边界

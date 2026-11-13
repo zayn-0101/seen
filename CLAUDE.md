@@ -22,7 +22,7 @@ seen/
 │   ├── acceptance.md         验收清单与记录
 │   ├── icon-concepts/        图标探索稿（本地保留，不入库）
 │   ├── brand/                松鼠品牌规范与预览（完整交付包本地生成，不入库）
-├── server/                   独立本地服务（不依赖 DSH）
+├── server/                   本地服务（HTTP API + SSE + 静态页面）
 │   ├── index.js              HTTP API + SSE + 静态页面
 │   └── llm.js                Magpie / OpenAI-compatible LLM 适配
 ├── web/                      前端页面（原生 HTML/CSS/JS）
@@ -94,9 +94,9 @@ mnemon recall "视频课程"
 - 视频处理完成后通过 macOS 通知提醒（SEEN_DISABLE_NOTIFY=1 可关）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站章节与知识点带 t= 时间链接。
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
-- 应用完全独立运行：不依赖 DSH Desktop，也不是 DSH 插件；`core/` 只是本地引擎。
-- 原版 `dsh-video-coursemap 2.0.0` 仅支持 Windows 前台窗口 + Word 输出；本项目是其 macOS/Obsidian 方向的独立 fork。
+- 应用是独立桌面程序，`core/` 是本机引擎，不做网络服务依赖。
+- 上游参考：`linner1224/dsh-video-coursemap` 2.0.0（MIT，Windows 前台窗口 + Word 输出）；本项目保留其 B 站抓取思路，已独立演进为 macOS/Obsidian 方向。
 - macOS 前台窗口读取依赖 AppleScript；首次运行需要在「系统设置 → 隐私与安全性 → 辅助功能 / 自动化」里授权运行服务的程序（菜单栏应用 Seen.app，或你用来启动服务的终端）。
 - 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie。
 - 抖音当前只取评论/弹幕总数，不抓取正文；笔记会明确标注「暂未抓取」。
-- `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；如果本机装了 dsh-mnemon，DSH 对话里的 mnemon 工具读的是同一份数据。
+- `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；其它使用 mnemon 的工具读的是同一份数据。

@@ -659,7 +659,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     async execute(args) {
       if (!config.enabled) return { ok: false, message: 'Agent 未启用（config.enabled=false）' }
-      if (readOnly) return { ok: false, message: '另一个 DSH 实例正在运行本插件（instance.lock），当前实例为只读模式' }
+      if (readOnly) return { ok: false, message: '另一个实例正在运行（instance.lock），当前实例为只读模式' }
       let title = typeof args?.title === 'string' ? args.title.trim() : ''
       let url = typeof args?.url === 'string' ? args.url.trim() : ''
       if (!title && !url) {
