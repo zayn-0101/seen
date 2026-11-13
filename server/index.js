@@ -16,8 +16,21 @@ import { apply } from '../core/lib/index.js'
 import { resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { writeWeeklyReview } from '../core/lib/obsidian.js'
-import { createLlmClient, loadLlmConfig } from './llm.js'
+import { writeWeeklyReview, writeIndexNote } from '../core/lib/obsidian.js'
+import { buildIndexMarkdown } from '../core/lib/index-note.js'
+import { findMnemon } from '../core/lib/mnemon.js'
+import {
+  PROVIDERS,
+  PROVIDER_GROUPS,
+  createLlmClient,
+  detectMagpie,
+  fetchModels,
+  maskKey,
+  readSavedConfig,
+  resolveLlmConfig,
+  saveLlmConfig,
+  testLlmConfig,
+} from './llm.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const webRoot = join(here, '..', 'web')
@@ -53,9 +66,13 @@ const ui = {
 }
 if (!Number.isFinite(Number(ui.pollIntervalMs))) ui.pollIntervalMs = 15000
 
-const llmConfig = loadLlmConfig()
+const resolvedLlm = await resolveLlmConfig()
+let llmConfig = resolvedLlm.config
+let llmSource = resolvedLlm.source
 const llm = createLlmClient(llmConfig)
-const llmHealth = await llm.health()
+let llmHealth = await llm.health()
+const mnemonBin = await findMnemon({})
+const mnemonAvailable = Boolean(mnemonBin)
 
 const baseConfig = resolveConfig({
   pollIntervalMs: Number(ui.pollIntervalMs) || 15000,
@@ -63,7 +80,7 @@ const baseConfig = resolveConfig({
   exposeController: true,
   provider: llmConfig.provider,
   model: llmConfig.model,
-  enableMnemon: process.env.SEEN_DISABLE_MNEMON !== '1',
+  enableMnemon: mnemonAvailable && process.env.SEEN_DISABLE_MNEMON !== '1' && ui.mnemonEnabled !== false,
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
@@ -121,6 +138,7 @@ engine.onEvent((event) => {
   if (event.type === 'saved') {
     log('笔记已生成：' + event.data?.notePath)
     notifySaved(event.data)
+    rebuildIndexNote().catch(() => {})
   }
   if (event.type === 'error') log('处理失败：' + event.data?.message)
 })
@@ -142,8 +160,14 @@ async function snapshot() {
     llm: {
       ok: llmHealth.ok,
       detail: llmHealth.detail,
-      model: llmConfig.model,
-      baseURL: llmConfig.baseURL,
+      model: llm.model,
+      baseURL: llm.baseURL,
+      provider: llm.id,
+      source: llmSource,
+      configured: llmSource !== 'none',
+      maskedKey: maskKey(llmConfig.apiKey),
+      mnemonAvailable,
+      enableMnemon: Boolean(baseConfig.enableMnemon),
     },
   }
 }
@@ -256,6 +280,66 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    if (pathname === '/api/llm' && req.method === 'GET') {
+      const saved = readSavedConfig()
+      return json(res, 200, {
+        provider: llm.id,
+        baseURL: llm.baseURL,
+        model: llm.model,
+        source: llmSource,
+        health: llmHealth,
+        hasKey: Boolean(llmConfig.apiKey),
+        maskedKey: maskKey(llmConfig.apiKey),
+        saved: saved ? { provider: saved.provider, baseURL: saved.baseURL, model: saved.model, maskedKey: maskKey(saved.apiKey) } : null,
+        providers: PROVIDERS,
+        groups: PROVIDER_GROUPS,
+        mnemonAvailable,
+        enableMnemon: Boolean(baseConfig.enableMnemon),
+      })
+    }
+
+    if (pathname === '/api/llm/models' && req.method === 'GET') {
+      const providerId = url.searchParams.get('provider') || ''
+      const preset = PROVIDERS.find((item) => item.id === providerId)
+      const baseURL = url.searchParams.get('baseURL') || (preset ? preset.baseURL : '')
+      const apiKey = url.searchParams.get('apiKey') || llmConfig.apiKey || ''
+      return json(res, 200, await fetchModels({ baseURL, apiKey }))
+    }
+
+    if (pathname === '/api/llm/test' && req.method === 'POST') {
+      const body = await readBody(req)
+      return json(res, 200, await testLlmConfig(body))
+    }
+
+    if (pathname === '/api/llm' && req.method === 'POST') {
+      const body = await readBody(req)
+      const previous = readSavedConfig() || {}
+      const apiKey = body.apiKey ? String(body.apiKey) : String(previous.apiKey || '')
+      const saved = saveLlmConfig({ provider: body.provider, baseURL: body.baseURL, apiKey, model: body.model })
+      const tested = await testLlmConfig(saved)
+      llmConfig = saved
+      llmSource = 'settings'
+      llm.updateConfig(saved)
+      llmHealth = await llm.health()
+      let mnemonNote = ''
+      if (typeof body.enableMnemon === 'boolean' && mnemonAvailable) {
+        ui.mnemonEnabled = body.enableMnemon
+        await writeJson(uiPath, ui)
+        mnemonNote = '记忆库开关将在下次重启服务后生效'
+      }
+      return json(res, 200, {
+        ok: tested.ok,
+        saved: { provider: saved.provider, baseURL: saved.baseURL, model: saved.model, maskedKey: maskKey(saved.apiKey) },
+        test: tested,
+        health: llmHealth,
+        mnemonNote,
+      })
+    }
+
+    if (pathname === '/api/magpie' && req.method === 'GET') {
+      return json(res, 200, await detectMagpie())
+    }
+
     if (pathname === '/api/review' && req.method === 'POST') {
       const status = await engine.getStatus()
       const review = buildWeeklyReview({ videos: engine.getHistory(), now: new Date() })
@@ -276,6 +360,17 @@ const server = createServer(async (req, res) => {
     else res.end()
   }
 })
+
+async function rebuildIndexNote() {
+  try {
+    const status = await engine.getStatus()
+    if (!status.vaultPath) return
+    const markdown = buildIndexMarkdown(engine.getHistory(), { noteRoot: status.noteRoot })
+    writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown })
+  } catch (error) {
+    log('更新索引失败：' + String(error?.message || error))
+  }
+}
 
 // 启动时补生成上周回顾（本周文件已存在时自动跳过）
 async function ensureLastWeekReview() {
@@ -300,13 +395,14 @@ async function ensureLastWeekReview() {
 server.listen(PORT, HOST, () => {
   const url = 'http://' + HOST + ':' + PORT
   log('Seen 独立服务已启动：' + url)
-  log('LLM：' + llmConfig.model + ' @ ' + llmConfig.baseURL + (llmHealth.ok ? '' : '（不可用：' + llmHealth.detail + '）'))
+  log('模型：' + (llmSource === 'none' ? '未配置，请在面板里设置' : llm.id + ' / ' + llm.model + '（来源：' + llmSource + '）'))
   log('状态目录：' + baseConfig.stateDir)
   if (engine.isReadOnly()) log('注意：另一个 Seen 实例正在运行并持有状态锁，本服务为只读；停掉那个实例后重启本服务即可接管。')
   if (OPEN_BROWSER && process.platform === 'darwin') {
     spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
   }
   ensureLastWeekReview().catch(() => {})
+  rebuildIndexNote().catch(() => {})
 })
 
 function shutdown(code = 0) {

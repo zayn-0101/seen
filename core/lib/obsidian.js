@@ -307,3 +307,34 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   atomicWrite(absPath, markdown)
   return { ok: true, skipped: false, relPath, absPath }
 }
+
+/** 写入知识索引；已有文件只更新 AUTO 区块，保留用户内容。 */
+export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
+  if (!vaultPath) throw new Error('writeIndexNote: 缺少 vaultPath')
+  const root = normalizeNoteRoot(noteRoot)
+  const relPath = toPosix(join(root, '索引.md'))
+  const absPath = absoluteFromRel(vaultPath, relPath)
+  const body = autoBlock(String(markdown || ''))
+  if (existsSync(absPath)) {
+    const current = readFileSync(absPath, 'utf8')
+    const next = upsertAutoBlock(current, body)
+    if (next !== current) atomicWrite(absPath, next)
+    return { ok: true, relPath, absPath, created: false }
+  }
+  const content = [
+    '---',
+    'title: "知识索引"',
+    'type: index',
+    '---',
+    '',
+    '# 知识索引',
+    '',
+    body,
+    '',
+    '## 我的补充',
+    '',
+    '',
+  ].join('\n')
+  atomicWrite(absPath, content)
+  return { ok: true, relPath, absPath, created: true }
+}

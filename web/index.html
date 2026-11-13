@@ -22,6 +22,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <button id="openSettings" class="button quiet" type="button" title="模型设置">模型</button>
         <span id="llmPill" class="pill neutral" title="">LLM 检测中</span>
         <span id="readonlyPill" class="pill warn hidden" title="另一个 Seen 实例正在运行并持有状态锁">另一个实例占用中</span>
         <button id="toggle" class="toggle" type="button" aria-pressed="false">
@@ -122,5 +123,51 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form id="settingsForm" method="dialog">
+      <h2>模型设置</h2>
+      <p id="settingsStatus" class="hint"></p>
+
+      <label class="field">
+        <span>供应商</span>
+        <select id="providerSelect"></select>
+      </label>
+
+      <label class="field">
+        <span>API Key</span>
+        <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 API Key">
+      </label>
+
+      <label class="field">
+        <span>模型</span>
+        <select id="modelSelect"></select>
+      </label>
+      <div class="settings-row">
+        <button id="fetchModels" class="button ghost" type="button">获取模型列表</button>
+        <input id="customModel" type="text" placeholder="或直接输入模型 ID" spellcheck="false">
+      </div>
+
+      <label class="field">
+        <span>baseURL</span>
+        <input id="baseUrlInput" type="text" spellcheck="false" placeholder="https://…/v1">
+      </label>
+
+      <label class="switch-row">
+        <input id="mnemonToggle" type="checkbox">
+        <span>写入 mnemon 记忆库</span>
+        <span id="mnemonHint" class="hint"></span>
+      </label>
+
+      <p id="settingsResult" class="hint"></p>
+
+      <div class="settings-actions">
+        <button id="testLlm" class="button ghost" type="button">测试连接</button>
+        <span class="spacer"></span>
+        <button id="closeSettings" class="button quiet" type="button">关闭</button>
+        <button class="button primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

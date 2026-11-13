@@ -335,7 +335,10 @@ function renderSnapshot(snap) {
   state.events = Array.isArray(snap.events) ? snap.events.slice() : state.events
   renderToggle()
   const llm = snap.llm || {}
-  setPill($('llmPill'), llm.ok ? 'LLM 就绪' : 'LLM 不可用', llm.ok ? 'ok' : 'bad', llm.detail || '')
+  const llmConfigured = llm.configured !== false
+  const llmModel = String(llm.model || '').slice(0, 28)
+  const llmLabel = !llmConfigured ? '未配置模型' : (llm.ok ? llmModel || 'LLM 就绪' : 'LLM 不可用')
+  setPill($('llmPill'), llmLabel, llm.ok ? 'ok' : 'bad', (llm.detail || '') + (llm.source ? ' · 来源：' + llm.source : ''))
   $('footerPath').textContent = snap.status?.vaultPath ? snap.status.vaultPath : ''
   renderHistory(snap.history || [])
   renderEvents(state.events)
@@ -515,3 +518,169 @@ $('check').addEventListener('click', check)
 setInterval(updateStageClock, 1000)
 load()
 connect()
+
+// ---------------- 模型设置 ----------------
+const settingsState = { loaded: false, providers: [], groups: [] }
+
+function renderProviderOptions() {
+  const select = $('providerSelect')
+  select.replaceChildren()
+  const grouped = {}
+  for (const provider of settingsState.providers) {
+    const key = provider.group || '其它'
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(provider)
+  }
+  for (const name of settingsState.groups) {
+    const list = grouped[name] || []
+    if (!list.length) continue
+    const group = document.createElement('optgroup')
+    group.label = name
+    for (const provider of list) {
+      const option = document.createElement('option')
+      option.value = provider.id
+      option.textContent = provider.name
+      group.append(option)
+    }
+    select.append(group)
+  }
+}
+
+function setModelOptions(models, selected) {
+  const select = $('modelSelect')
+  select.replaceChildren()
+  const list = []
+  for (const item of Array.isArray(models) ? models : []) {
+    const text = String(item || '').trim()
+    if (text && !list.includes(text)) list.push(text)
+  }
+  if (selected && !list.includes(selected)) list.unshift(selected)
+  if (!list.length) {
+    const option = document.createElement('option')
+    option.value = ''
+    option.textContent = '（点「获取模型列表」或手动输入）'
+    select.append(option)
+  }
+  for (const text of list) {
+    const option = document.createElement('option')
+    option.value = text
+    option.textContent = text
+    select.append(option)
+  }
+  if (selected) select.value = selected
+}
+
+function applyPreset(id) {
+  const provider = settingsState.providers.find((item) => item.id === id)
+  if (!provider) return
+  const baseURL = $('baseUrlInput')
+  baseURL.value = provider.baseURL || ''
+  baseURL.readOnly = id !== 'custom'
+  setModelOptions(provider.models || [], '')
+  $('customModel').value = ''
+  $('settingsResult').textContent = provider.note || ''
+}
+
+function currentForm() {
+  return {
+    provider: $('providerSelect').value,
+    baseURL: $('baseUrlInput').value.trim(),
+    model: ($('modelSelect').value || $('customModel').value || '').trim(),
+    apiKey: $('apiKeyInput').value.trim(),
+  }
+}
+
+async function openSettings() {
+  try {
+    const data = await api('/api/llm')
+    settingsState.providers = data.providers || []
+    settingsState.groups = data.groups || []
+    renderProviderOptions()
+
+    $('settingsStatus').textContent = data.source === 'none'
+      ? '尚未配置模型，处理视频前请先设置'
+      : '当前：' + (data.provider || '') + ' / ' + (data.model || '') + '（来源：' + data.source + '）'
+
+    if (data.saved) {
+      $('providerSelect').value = data.saved.provider || 'custom'
+      $('baseUrlInput').value = data.saved.baseURL || ''
+      $('baseUrlInput').readOnly = (data.saved.provider || '') !== 'custom'
+      setModelOptions([data.saved.model], data.saved.model)
+      $('apiKeyInput').value = ''
+      $('apiKeyInput').placeholder = data.saved.maskedKey ? '已保存 ' + data.saved.maskedKey + '（留空不修改）' : '粘贴 API Key'
+    } else {
+      $('providerSelect').value = 'deepseek'
+      applyPreset('deepseek')
+    }
+
+    const mnemon = $('mnemonToggle')
+    mnemon.disabled = !data.mnemonAvailable
+    mnemon.checked = Boolean(data.mnemonAvailable && data.enableMnemon)
+    $('mnemonHint').textContent = data.mnemonAvailable ? '检测到本机 mnemon' : '未检测到 mnemon CLI，此开关不可用'
+
+    $('settingsDialog').showModal()
+  } catch (error) {
+    showToast('读取设置失败：' + error.message)
+  }
+}
+
+async function fetchModelList() {
+  const form = currentForm()
+  $('settingsResult').textContent = '正在获取模型列表…'
+  try {
+    const query = new URLSearchParams({ provider: form.provider, baseURL: form.baseURL })
+    if (form.apiKey) query.set('apiKey', form.apiKey)
+    const data = await api('/api/llm/models?' + query.toString())
+    if (!data.ok) {
+      $('settingsResult').textContent = '获取失败：' + (data.detail || '未知错误')
+      return
+    }
+    setModelOptions(data.models, form.model)
+    $('settingsResult').textContent = '获取到 ' + data.models.length + ' 个模型'
+  } catch (error) {
+    $('settingsResult').textContent = '获取失败：' + error.message
+  }
+}
+
+async function testCurrent() {
+  const form = currentForm()
+  if (!form.baseURL || !form.model) {
+    $('settingsResult').textContent = '先选择供应商并确定模型'
+    return
+  }
+  $('settingsResult').textContent = '测试中…'
+  try {
+    const data = await api('/api/llm/test', { method: 'POST', body: JSON.stringify(form) })
+    $('settingsResult').textContent = data.ok
+      ? '✓ 连接正常（' + data.latency + ' ms）'
+      : '✗ ' + (data.detail || '连接失败')
+  } catch (error) {
+    $('settingsResult').textContent = '✗ ' + error.message
+  }
+}
+
+async function saveSettings(event) {
+  if (event) event.preventDefault()
+  const form = currentForm()
+  if (!form.baseURL || !form.model) {
+    $('settingsResult').textContent = '请先确定 baseURL 和模型'
+    return
+  }
+  $('settingsResult').textContent = '保存并测试…'
+  try {
+    const payload = { ...form, enableMnemon: $('mnemonToggle').checked }
+    const data = await api('/api/llm', { method: 'POST', body: JSON.stringify(payload) })
+    $('settingsResult').textContent = (data.ok ? '已保存 ✓（' + data.test.latency + ' ms）' : '已保存，但测试未通过：' + data.test.detail) + (data.mnemonNote ? '　' + data.mnemonNote : '')
+    showToast(data.ok ? '模型已保存：' + data.saved.model : '模型已保存，但暂时连不上')
+    await load()
+  } catch (error) {
+    $('settingsResult').textContent = '保存失败：' + error.message
+  }
+}
+
+$('openSettings').addEventListener('click', openSettings)
+$('closeSettings').addEventListener('click', () => $('settingsDialog').close())
+$('settingsForm').addEventListener('submit', saveSettings)
+$('providerSelect').addEventListener('change', (event) => applyPreset(event.target.value))
+$('fetchModels').addEventListener('click', fetchModelList)
+$('testLlm').addEventListener('click', testCurrent)

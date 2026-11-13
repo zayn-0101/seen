@@ -328,3 +328,41 @@ button { cursor: pointer; }
   .manual-row { align-items: stretch; }
   .manual-row .button { flex: 0 0 auto; }
 }
+
+.settings-dialog {
+  width: min(460px, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.settings-dialog::backdrop { background: rgba(20, 24, 22, 0.42); }
+.settings-dialog h2 { margin: 0 0 6px; font-size: 16px; }
+.settings-dialog .field { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 13px; }
+.settings-dialog input, .settings-dialog select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--card-2);
+  color: var(--ink);
+  font: inherit;
+}
+.settings-dialog input:read-only { opacity: 0.7; }
+.settings-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.settings-row input { flex: 1; }
+.settings-row button { white-space: nowrap; }
+.switch-row { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 13px; }
+.switch-row input:disabled + span { opacity: 0.5; }
+.settings-actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
+
+.settings-dialog { text-align: left; }
+.settings-dialog .field > span:first-child { text-align: left; }
+.switch-row { flex-wrap: wrap; }
+.switch-row > span:first-of-type { white-space: nowrap; }
+#mnemonHint { flex-basis: 100%; margin-left: 24px; }
+
+.settings-dialog .field { align-items: flex-start; }
+.settings-dialog .field > span:first-child { width: 100%; text-align: left; }

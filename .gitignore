@@ -19,3 +19,6 @@ docs/brand/squirrel-icons-v1.zip
 # 本地环境变量
 .env
 .env.*
+
+# 浏览器自动化截图
+.playwright-mcp/
