@@ -518,6 +518,7 @@ $('check').addEventListener('click', check)
 setInterval(updateStageClock, 1000)
 load()
 connect()
+handleSettingsHash()
 
 // ---------------- 模型设置 ----------------
 const settingsState = { loaded: false, providers: [], groups: [] }
@@ -678,8 +679,25 @@ async function saveSettings(event) {
   }
 }
 
+function closeSettingsDialog() {
+  $('settingsDialog').close()
+  if (location.hash === '#settings') {
+    history.replaceState(null, '', location.pathname + location.search)
+  }
+}
+
+function handleSettingsHash() {
+  if (location.hash === '#settings') openSettings()
+}
+
 $('openSettings').addEventListener('click', openSettings)
-$('closeSettings').addEventListener('click', () => $('settingsDialog').close())
+$('closeSettings').addEventListener('click', closeSettingsDialog)
+$('settingsDialog').addEventListener('close', () => {
+  if (location.hash === '#settings') {
+    history.replaceState(null, '', location.pathname + location.search)
+  }
+})
+window.addEventListener('hashchange', handleSettingsHash)
 $('settingsForm').addEventListener('submit', saveSettings)
 $('providerSelect').addEventListener('change', (event) => applyPreset(event.target.value))
 $('fetchModels').addEventListener('click', fetchModelList)

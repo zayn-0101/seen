@@ -13,6 +13,7 @@ struct PanelView: View {
             header
             if let status = model.status {
                 statusCard(status)
+                if !status.llmConfigured { unconfiguredBanner }
             } else {
                 offlineCard
             }
@@ -33,6 +34,7 @@ struct PanelView: View {
             HStack(spacing: 8) {
                 ghostButton("网页面板", icon: "safari") { model.openPanel() }
                 ghostButton("笔记目录", icon: "folder") { model.openNotes() }
+                ghostButton("设置", icon: "gearshape") { model.openSettings() }
             }
             HStack(spacing: 8) {
                 ghostButton("本周回顾", icon: "calendar") { model.weeklyReview() }
@@ -127,6 +129,22 @@ struct PanelView: View {
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var unconfiguredBanner: some View {
+        Button(action: { model.openSettings() }) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11))
+                Text("尚未配置模型，点此设置").font(.system(size: 11.5, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(amber)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var offlineCard: some View {

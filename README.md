@@ -73,7 +73,7 @@ node scripts/install-whisper-model.mjs
 
 **模型配置（首次必做）**：
 
-打开面板右上角的「模型」按钮，选择供应商，粘贴 API Key，点「获取模型列表」挑一个模型，测试通过后保存。保存后立即生效。
+打开面板右上角的「模型」按钮（或菜单栏面板的「设置」），选择供应商，粘贴 API Key，点「获取模型列表」挑一个模型，测试通过后保存。保存后立即生效。
 
 - 预设按 国内 / 国际 / 本地 分组：DeepSeek、通义千问、Kimi、智谱 GLM、豆包、文心、混元、星火、MiniMax、阶跃星辰、硅基流动；OpenAI、Gemini、OpenRouter、Grok、Groq、Mistral、Together、Fireworks；Ollama、LM Studio、vLLM。
 - 都不合适就选「自定义」，手动填 baseURL 和模型 ID。

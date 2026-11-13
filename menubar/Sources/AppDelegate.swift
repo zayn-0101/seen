@@ -55,6 +55,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func openSettings() {
+        if let url = URL(string: "http://127.0.0.1:4780/#settings") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func openNotes() {
         guard let dir = status?.outputDir, !dir.isEmpty else {
             note = "还没有笔记目录信息，先让服务运行一次"

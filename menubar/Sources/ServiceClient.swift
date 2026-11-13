@@ -12,6 +12,7 @@ struct ServiceStatus {
     var vaultPath: String?
     var noteRoot: String?
     var subjects: [(name: String, videos: Int)] = []
+    var llmConfigured = true
 }
 
 enum ServiceError: LocalizedError {
@@ -105,6 +106,9 @@ enum API {
         result.lastTitle = status["lastTitle"] as? String
         if let ms = status["lastRunAt"] as? Double, ms > 0 {
             result.lastRunAt = Date(timeIntervalSince1970: ms / 1000)
+        }
+        if let llm = root["llm"] as? [String: Any] {
+            result.llmConfigured = llm["configured"] as? Bool ?? true
         }
         if let subjects = status["subjects"] as? [[String: Any]] {
             result.subjects = subjects.compactMap { item in
