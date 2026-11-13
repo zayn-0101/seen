@@ -98,8 +98,8 @@ struct PanelView: View {
 
     private var pollingLabel: String {
         if model.busy { return "处理中…" }
-        if model.status?.readOnly == true { return "另一个实例运行中" }
-        return model.status?.polling == true ? "暂停轮询" : "开始轮询"
+        if model.status?.readOnly == true { return "只读" }
+        return model.status?.polling == true ? "轮询中" : "已暂停"
     }
 
     private func statusCard(_ status: ServiceStatus) -> some View {
