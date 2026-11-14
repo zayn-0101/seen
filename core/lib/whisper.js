@@ -111,6 +111,9 @@ export function whisperModelPath(model = DEFAULT_MODEL) {
 export function findWhisperModel(config = {}) {
   return firstFile([
     config.whisperModel ? expandHome(config.whisperModel) : null,
+    // 用户手动装了更准的模型时优先用；模型越大越准，同名冲突按准确率排序。
+    join(MODEL_DIR, 'ggml-large-v3-turbo.bin'),
+    join(MODEL_DIR, 'ggml-medium.bin'),
     join(MODEL_DIR, 'ggml-small.bin'),
     join(MODEL_DIR, 'ggml-base.bin'),
     join(process.cwd(), 'models', 'ggml-small.bin'),
