@@ -512,8 +512,8 @@ function runWhisper(argv, { timeout = WHISPER_TIMEOUT_MS, totalSeconds = 0, onPr
 /**
  * 转写一段 wav 音频（调用前请确保模型已就绪，可用 ensureWhisperModel）。
  * @param {string} wav 16kHz 单声道 wav 绝对路径
- * @param {{ title?: string, author?: string, tags?: string[], config?: object, language?: string }} options
- * @returns {Promise<string>} 纯文本（可能多行）
+ * @param {{ title?: string, author?: string, tags?: string[], config?: object, language?: string, totalSeconds?: number, onProgress?: Function }} options
+ * @returns {Promise<{ text: string, timed: string }>} text 为纯文本（多行），timed 为「[mm:ss] 一句」的带时间戳文本（srt 缺失时为空串）
  */
 export async function transcribeAudio(wav, {
   title = '',
@@ -527,7 +527,7 @@ export async function transcribeAudio(wav, {
   const bin = findWhisperCli(config)
   if (!bin) throw new Error('未找到 whisper-cli：请运行 brew install whisper.cpp（官方没有免安装的预编译包）')
   const model = findWhisperModel(config)
-  if (!model) throw new Error('未找到 Whisper 模型；首次使用会自动下载，也可运行 node scripts/install-whisper-model.mjs')
+  if (!model) throw new Error('未找到 Whisper 模型：请在面板「诊断」里选择并下载，或运行 node scripts/install-whisper-model.mjs')
   const prompt = [title, author, ...(Array.isArray(tags) ? tags.slice(0, 8) : [])]
     .filter(Boolean).join(' ')
   const argv = buildWhisperArgs({ bin, model, wav, prompt, language })

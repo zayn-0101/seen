@@ -278,8 +278,9 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `WHISPER_MODELS`：按推荐力度排序的模型清单（`large-v3-turbo` 推荐 → `small` → `medium` → `base`），每项含 `id / label / sizeMb / recommended / note`；模型下载源按 `whisperModelUrls()` 依次尝试 HF_ENDPOINT → huggingface → hf-mirror。
 - `installFfmpeg({ force, onProgress })` / `installWhisperModel({ model, force, onProgress })`：单独执行下载，并发调用共享同一次任务；`onProgress` 收到 `{ stage, message, received, total, percent }`。
 - `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试。
-- `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`；**不传 `-np`**（需要分段输出才能算进度）。
-- `transcribeAudio(wav,{title,author,tags,config,language,totalSeconds,onProgress})`：用 `spawn` 流式跑 whisper-cli，转写 16kHz 单声道 wav 返回纯文本；`onProgress({percent})` 实时回调进度；调用方需先 `ensureWhisperModel`，whisper-cli 缺失时抛错（官方无预编译包，需 `brew install whisper.cpp`）。
+- `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`；**不传 `-np`**（需要分段输出才能算进度）；固定带 `-otxt` 与 `-osrt`（srt 用于还原时间戳）。
+- `parseSrtTimed(srtPath)`：把 whisper 的 srt 转成 `[mm:ss] 一句` 的逐行文本，多行 cue 合并成一行；文件缺失或解析不出内容返回空串，纯函数。
+- `transcribeAudio(wav,{title,author,tags,config,language,totalSeconds,onProgress})`：用 `spawn` 流式跑 whisper-cli，转写 16kHz 单声道 wav 返回 `{ text, timed }`（`timed` 是 `[mm:ss] 一句` 的带时间戳文本，来自 `-osrt` 产出的 srt，无章节视频靠它切逻辑段）；`onProgress({percent})` 实时回调进度；调用方需先 `ensureWhisperModel`，whisper-cli 缺失时抛错（官方无预编译包，需 `brew install whisper.cpp`）。
 - `parseWhisperProgress(chunk, totalSeconds, previous)`：从分段输出的时间戳推算百分比（stdout / stderr 都解析），无新进度返回 null，纯函数。
 - `estimateTranscribeMinutes(seconds)`：按实测约 3 倍速估算转写分钟数，用于通知和面板的耗时预期。
 - `findHomebrew()`：探测 `/opt/homebrew/bin/brew`、`/usr/local/bin/brew` 或 PATH；返回路径或 null。
