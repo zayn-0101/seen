@@ -76,6 +76,8 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 每次生成笔记后重建「索引.md」和「概念索引.md」（都是 AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖。
 - 视频笔记版式：内容来源标注 → `[!abstract]` 一句话总结 → `[!question]` 想回答 → `[!success]` 答案 → 视频信息表 + 封面 → 关键数字 → 章节 → 核心知识点（标所属章节）→ 核心概念（带 `^concept-xxx` 块引用）→ 相关笔记双链 → 讨论焦点 → 思维导图 → 我的补充 → 折叠的抓取统计。重写笔记时 mergeManualSection 保留「我的补充」。
 - 学科归类由 subject.js 的 alignSubject 归并：精确 → 包含且长度差≤2 → 共享≥2 连续汉字 → 已有 12 个学科时封顶取最接近。LLM 提示词要求输出 2~4 字宽泛领域名。
+- 推理型模型（如 magpie 的 deepseek）会把 maxTokens 全花在思考上、正文返回空串。callLlm 在拿到空正文时自动翻倍预算重试一次；分段这类短输出场景也别把预算压到 800 以下。
+- 无章节视频（B 站没设分 P 章节、抖音等）由 analyze.segmentTranscript 按时间轴采样让模型切 3~5 段；模型抄错几秒的起始时间会就近吸附到候选点（±8 秒），偏太远视为编造丢弃。B 站内容必须带 duration 才会触发（≥4 分钟）。
 - 跨笔记关联由 concept.js 负责：conceptKey 去标点空白归一概念名，findRelatedVideos 按「共享概念×2 + 共享关键词」打分取前 5，buildConceptIndex 供概念索引页与 `GET /api/concepts`（面板概念浏览）使用。学科手册的「本学科核心概念」只收出现在 ≥2 篇笔记里的概念。
 - 笔记目录有两种布局（paths.js）：`flat`（默认，`<noteRoot>/<学科>/`）与 `structured`（`视频笔记/<学科>/` + `手册/<学科>.md`）。迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
