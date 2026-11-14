@@ -125,14 +125,33 @@ final class ServiceProcess {
     private var process: Process?
     private(set) var spawnedByUs = false
 
+    /// 打包版的内置资源目录（Contents/Resources/app）；开发版返回 nil。
+    var bundledResourcePath: String? {
+        guard let res = Bundle.main.resourceURL else { return nil }
+        let dir = res.appendingPathComponent("app").path
+        guard FileManager.default.fileExists(atPath: dir + "/server/index.js") else { return nil }
+        return dir
+    }
+
     var repoPath: String {
         if let override = ProcessInfo.processInfo.environment["SEEN_REPO_PATH"], !override.isEmpty {
             return override
         }
+        // 打包版优先用 app 内自带的代码，不依赖仓库位置。
+        if let bundled = bundledResourcePath { return bundled }
         if let path = Bundle.main.object(forInfoDictionaryKey: "SeenRepoPath") as? String, !path.isEmpty, path != "__REPO_PATH__" {
             return path
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Code/seen").path
+    }
+
+    /// 优先用 app 内置的 Node 运行时；开发版回退到 PATH 里的 node。
+    var nodeBinary: String {
+        if let res = Bundle.main.resourceURL {
+            let candidate = res.appendingPathComponent("runtime/node").path
+            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+        }
+        return "node"
     }
 
     var isRunning: Bool { process?.isRunning ?? false }
@@ -148,7 +167,7 @@ final class ServiceProcess {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        proc.arguments = ["-lc", "cd \"\(repo)\" && exec node server/index.js --no-open"]
+        proc.arguments = ["-lc", "cd \"\(repo)\" && exec \"\(nodeBinary)\" server/index.js --no-open"]
         let out = FileHandle(forWritingAtPath: logURL.path) ?? {
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
             return FileHandle(forWritingAtPath: logURL.path)

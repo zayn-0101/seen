@@ -11,6 +11,10 @@ bin/
 menubar/build/
 menubar/dist/
 
+# 发布产物（dmg / 镜像暂存目录）
+dist/
+build/release/
+
 # 图标草稿与导出生成物（本地保留，不入库）
 docs/icon-concepts/
 docs/brand/squirrel-icons-v1/

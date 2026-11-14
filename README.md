@@ -47,14 +47,32 @@ Seen 在本机跑一个轻量服务，自动发现你在浏览器里看的 **B �
 
 ## 快速开始
 
-### 1. 获取代码
+### 方式一：下载安装包（推荐）
+
+从 [Releases](https://github.com/zayn-0101/seen/releases) 下载 `Seen-v0.1.0.dmg`，打开后把 `Seen.app` 拖进「应用程序」。
+
+应用未做开发者签名，首次打开需要绕过 Gatekeeper：在「应用程序」里**右键点 Seen → 打开**，弹窗里再点一次「打开」。或者执行：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Seen.app
+```
+
+之后菜单栏会出现松鼠图标，点开 → 「打开面板」，接着做下面的**配置模型**。
+
+安装包内置了 Node 运行时和服务代码，不需要另外装 Node。目前只提供 Apple Silicon（M 系列）版本。
+
+### 方式二：从源码运行（开发者）
+
+适合想改代码、或需要 Intel 版本的情况。
+
+**1. 获取代码**
 
 ```bash
 git clone https://github.com/zayn-0101/seen.git
 cd seen
 ```
 
-### 2. 启动
+**2. 启动**
 
 ```bash
 node server/index.js     # 前台运行，日志直接输出
@@ -64,7 +82,15 @@ open seen.command        # 在访达里双击
 
 服务监听 `127.0.0.1:4780`，浏览器面板会自动打开。
 
-### 3. 配置模型（首次必做）
+**3. 编译菜单栏应用（可选）**
+
+```bash
+cd menubar
+./build.sh --install    # 编译并安装到 ~/Applications/Seen.app
+./build.sh --bundle     # 或者构建含 Node 运行时的可分发包
+```
+
+### 配置模型（首次必做）
 
 在面板右上角点模型状态，或直接访问 <http://127.0.0.1:4780/#settings>：
 
@@ -76,19 +102,9 @@ open seen.command        # 在访达里双击
 
 保存后立即生效。如果本机装了 Magpie 网关，启动时会自动识别并使用，可以跳过这一步。
 
-### 4. 验证
+### 验证
 
 面板点「诊断」，全部正常会显示「一切正常」。然后打开一个视频页面，前台保持 30 秒左右，看是否生成笔记。
-
-### 5. 菜单栏应用（可选）
-
-```bash
-cd menubar
-./build.sh --install     # 编译并安装到 ~/Applications/Seen.app
-open ~/Applications/Seen.app
-```
-
-菜单栏应用提供轮询状态、启停、打开面板与笔记目录、生成每周回顾、运行诊断、登录自启。服务没在跑时会自动拉起，退出时停掉它启动的服务。
 
 ---
 
