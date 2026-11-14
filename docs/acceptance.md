@@ -35,6 +35,21 @@
 - [ ] 抖音评论/弹幕正文尚未抓取，仅显示总数（下一步）
 - [ ] 抖音标题/音频路径在不同视频上的稳定性待更多样本验证
 
+## YouTube（2026-11-14）
+
+- [x] `extractYoutubeId` 覆盖 watch / youtu.be / shorts / embed / live / 裸 ID
+- [x] `detectSource` 识别 YouTube URL 与「 - YouTube」标题，B站 / 抖音判定不变
+- [x] yt-dlp `-J` 取元数据：标题、频道、时长、简介、12 个章节、字幕轨道清单
+- [x] 人工字幕：`--sub-langs zh` 精确单条下载 SRT，19 分钟视频 6.5 秒拿到 5,417 字
+- [x] 自动字幕：实测 HTTP 429（tv / web_embedded / web_safari 三种 client 均失败），按预期降级
+- [x] 音频兜底：`-f bestaudio` + tv client 下载成功，ffmpeg 转 16kHz 单声道，whisper 转写 9 分钟视频 6,178 字（44.5 秒）
+- [x] 端到端：`POST /api/scan` 32.6 秒生成 `source: youtube` 笔记，学科自动归到「深度学习」，含 12 个带 `&t=秒s` 的章节链接
+- [x] 索引表「来源」列显示 YouTube；笔记含「YouTube 不提供弹幕」提示与 YouTube 来源统计
+- [x] 「诊断」新增 yt-dlp / YouTube 网络检查（改用 yt-dlp 真实探测，规避 Node fetch 在本机 TLS 中间人代理下的证书链失败）
+- [x] `cd core && node --test`：69 tests / 69 pass
+- [ ] 会员 / 年龄限制 / 直播视频的失败提示待真实样本验证
+- [ ] YouTube 评论未接入（需要 OAuth，暂不做）
+
 ## 独立服务与前端
 
 - [x] `node server/index.js` 启动，默认 `http://127.0.0.1:4780`
