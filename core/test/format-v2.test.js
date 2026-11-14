@@ -139,3 +139,19 @@ test('renderVideoNote renders cover image after info table', () => {
   assert.ok(md.includes('![封面|360](https://example.com/c.jpg)'))
   assert.ok(md.includes('cover: https://example.com/c.jpg') || md.includes('cover: "https://example.com/c.jpg"'))
 })
+
+test('renderVideoNote renders related notes with wiki links', () => {
+  const md = renderVideoNote({
+    title: '当前视频',
+    subject: '写作',
+    summary: 's',
+    noteRoot: '课程知识地图',
+    relatedNotes: [
+      { title: '旧视频', notePath: '课程知识地图/写作/旧视频.md', reason: '共同概念：责任前置' },
+      { title: '无路径视频', notePath: '', reason: '' },
+    ],
+  })
+  assert.ok(md.includes('## 相关笔记'))
+  assert.ok(md.includes('[[课程知识地图/写作/旧视频|旧视频]] — 共同概念：责任前置'))
+  assert.ok(md.includes('- 无路径视频'))
+})

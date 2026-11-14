@@ -9,6 +9,8 @@
  * frontmatter 的值一律使用 JSON 双引号字符串；Mermaid 节点一律经 mermaidSafe 处理。
  */
 
+import { conceptKey } from './concept.js'
+
 export const AUTO_START = '<!-- AUTO:START -->'
 export const AUTO_END = '<!-- AUTO:END -->'
 
@@ -338,6 +340,14 @@ export function renderVideoNote(input = {}) {
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
   const cover = String(source.cover ?? '').trim()
+  const relatedNotes = (Array.isArray(source.relatedNotes) ? source.relatedNotes : [])
+    .map((item) => ({
+      title: cleanInline(item?.title),
+      notePath: String(item?.notePath ?? '').trim(),
+      reason: cleanInline(item?.reason),
+    }))
+    .filter((item) => item.title)
+    .slice(0, 5)
 
   const frontmatterData = {
     title,
@@ -438,9 +448,22 @@ export function renderVideoNote(input = {}) {
     lines.push('## 核心概念', '')
     for (const concept of concepts) {
       const aliasText = concept.aliases.length ? `（别称：${concept.aliases.join('、')}）` : ''
-      lines.push(concept.brief
+      const slug = conceptKey(concept.name).slice(0, 40)
+      const blockId = slug ? ` ^concept-${slug}` : ''
+      const body = concept.brief
         ? `- **${concept.name}** — ${concept.brief}${aliasText}`
-        : `- **${concept.name}**${aliasText}`)
+        : `- **${concept.name}**${aliasText}`
+      lines.push(body + blockId)
+    }
+    lines.push('')
+  }
+
+  if (relatedNotes.length > 0) {
+    lines.push('## 相关笔记', '')
+    for (const item of relatedNotes) {
+      const target = item.notePath ? item.notePath.replace(/\.md$/i, '') : ''
+      const link = target ? `[[${target}|${item.title}]]` : item.title
+      lines.push(item.reason ? `- ${link} — ${item.reason}` : `- ${link}`)
     }
     lines.push('')
   }

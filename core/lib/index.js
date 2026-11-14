@@ -30,6 +30,7 @@ import { fetchDouyinContent, findChrome, findFfmpeg } from './douyin.js'
 import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
+import { findRelatedVideos } from './concept.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
@@ -307,6 +308,13 @@ export function apply(ctx, rawConfig = {}) {
       const contentQuality = transcript ? 'full' : 'metadata-only'
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
+      const historyVideos = Object.entries(state.subjects || {}).flatMap(([subjectName, entry]) =>
+        (Array.isArray(entry?.videos) ? entry.videos : []).map((item) => ({ ...item, subject: subjectName })))
+      const relatedNotes = findRelatedVideos(
+        { title: finalTitle, bvid: content?.bvid || inputBvid || '', videoId: content?.videoId || inputVideoId || '', url: content?.url || input?.url || '', concepts: summary.concepts, keywords },
+        historyVideos,
+        { limit: 5 },
+      )
 
       const note = renderVideoNote({
         title: finalTitle,
@@ -327,6 +335,7 @@ export function apply(ctx, rawConfig = {}) {
         discussion: summary.discussion,
         duration: Number(content?.duration) || 0,
         cover: String(content?.cover || ''),
+        relatedNotes,
         fetchStats: content?.fetchStats || null,
         tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
         chapters: content?.chapters || [],
