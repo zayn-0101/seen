@@ -32,7 +32,6 @@ import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual,
 import { findMnemon, rememberVideo } from './mnemon.js'
 
 export const name = 'seen-core'
-export const inject = ['llm', 'tools']
 
 const TITLE_SUFFIXES = [
   ' - Google Chrome', ' - Microsoft Edge', ' - Mozilla Firefox',

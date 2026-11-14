@@ -252,7 +252,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 ## lib/index.js
 
-引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。`inject` 字段保留以兼容宿主环境；独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。
+引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
