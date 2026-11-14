@@ -21,7 +21,7 @@ import {
 import { observeForeground, isBrowserName } from './foreground.js'
 import { probeDarwinPermission } from './foreground-darwin.js'
 import { fetchContent, fetchComments, cleanBiliTitle, extractBvid } from './bilibili.js'
-import { classify, summarize, resolveModel } from './analyze.js'
+import { classify, segmentTranscript, summarize, resolveModel } from './analyze.js'
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
 import { findYtDlp } from './ytdlp.js'
@@ -309,6 +309,15 @@ export function apply(ctx, rawConfig = {}) {
       const contentQuality = transcript ? 'full' : 'metadata-only'
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
+      let noteChapters = Array.isArray(content?.chapters) ? content.chapters : []
+      if (noteChapters.length === 0 && content?.timedTranscript) {
+        const segments = await segmentTranscript(ctx, config, {
+          title: finalTitle,
+          timedTranscript: content.timedTranscript,
+          duration: Number(content?.duration) || 0,
+        })
+        if (segments.length > 0) noteChapters = segments
+      }
       const historyVideos = Object.entries(state.subjects || {}).flatMap(([subjectName, entry]) =>
         (Array.isArray(entry?.videos) ? entry.videos : []).map((item) => ({ ...item, subject: subjectName })))
       const relatedNotes = findRelatedVideos(
@@ -339,7 +348,7 @@ export function apply(ctx, rawConfig = {}) {
         relatedNotes,
         fetchStats: content?.fetchStats || null,
         tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
-        chapters: content?.chapters || [],
+        chapters: noteChapters,
         contentSource: transcriptSource || 'metadata',
         contentQuality,
         noteRoot: config.noteRoot,

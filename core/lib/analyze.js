@@ -1064,3 +1064,110 @@ export default {
   normalizeClassify,
   normalizeSummary,
 }
+
+
+/* ------------------------------------------------------------------ */
+/* 无章节视频：按时间轴切逻辑段                                         */
+/* ------------------------------------------------------------------ */
+
+/** 秒 → mm:ss / hh:mm:ss。 */
+export function formatClock(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0))
+  const hh = Math.floor(total / 3600)
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
+  const ss = String(total % 60).padStart(2, '0')
+  return hh > 0 ? `${String(hh).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+/** 解析 [mm:ss] / [hh:mm:ss] 开头的带时间戳转写文本。 */
+export function parseTimedLines(text) {
+  const rows = []
+  for (const raw of String(text ?? '').split('\n')) {
+    const match = raw.match(/^\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*(.*)$/)
+    if (!match) continue
+    const [, a, b, c, body] = match
+    const seconds = c === undefined ? Number(a) * 60 + Number(b) : Number(a) * 3600 + Number(b) * 60 + Number(c)
+    const content = body.trim()
+    if (!Number.isFinite(seconds) || !content) continue
+    rows.push({ seconds, text: content })
+  }
+  return rows
+}
+
+/** 按固定间隔抽样时间点，作为段落边界的候选（避免模型编时间）。 */
+export function sampleTimedPoints(lines, options = {}) {
+  const step = Number(options.stepSeconds) > 0 ? Number(options.stepSeconds) : 45
+  const maxPoints = Number(options.maxPoints) > 0 ? Number(options.maxPoints) : 60
+  const points = []
+  let last = -Infinity
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (line.seconds - last < step) continue
+    points.push(line)
+    last = line.seconds
+    if (points.length >= maxPoints) break
+  }
+  return points
+}
+
+/**
+ * 校验模型给的段落：起始时间必须落在候选点上，按时间排序、去重、最多 6 段。
+ * 少于 2 段视为无效（没有切分意义）。
+ */
+export function normalizeSegments(value, candidates = []) {
+  const allowed = new Map()
+  for (const point of Array.isArray(candidates) ? candidates : []) {
+    allowed.set(formatClock(point.seconds), Number(point.seconds))
+  }
+  const list = Array.isArray(value) ? value : (Array.isArray(value?.segments) ? value.segments : [])
+  const seen = new Set()
+  const result = []
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue
+    const at = String(item.at ?? '').trim()
+    const title = cleanText(item.title)
+    if (!allowed.has(at) || !title || seen.has(at)) continue
+    seen.add(at)
+    result.push({ from: allowed.get(at), content: title })
+  }
+  result.sort((a, b) => a.from - b.from)
+  const limited = result.slice(0, 6)
+  return limited.length >= 2 ? limited : []
+}
+
+function buildSegmentPrompt(title, points) {
+  const timeline = points.map((point) => `[${formatClock(point.seconds)}] ${truncateText(point.text, 40)}`).join('\n')
+  return [
+    '下面是一段视频的时间轴采样，每行是「[分:秒] 该时刻的讲解内容开头」。',
+    '请把整段视频切成 3~5 个逻辑段落，每段给一个 6~14 个字的中文小标题。',
+    '',
+    '规则：',
+    '1. 每个段落的起始时间必须从下面出现的时间点里原样选，不要自己编造时间；',
+    '2. 段落要按时间顺序，覆盖整段视频，不要重叠；',
+    '3. 标题写这一段「在讲什么」，不要写「第一部分」这类空话；',
+    '4. 只输出 JSON，不要解释：{"segments":[{"at":"mm:ss","title":"..."}]}',
+    '',
+    '视频标题：' + title,
+    '',
+    '时间轴：',
+    timeline,
+  ].join('\n')
+}
+
+/** 让模型按时间轴切段落；失败返回空数组，交给调用方降级。 */
+export async function segmentTranscript(ctx, config, { title, timedTranscript, duration } = {}) {
+  const seconds = Number(duration) || 0
+  if (seconds > 0 && seconds < 240) return []
+  const points = sampleTimedPoints(parseTimedLines(timedTranscript))
+  if (points.length < 3) return []
+  try {
+    const text = await callLlm(ctx, config, {
+      system: '你是视频编辑，只输出严格 JSON。',
+      messages: [{ role: 'user', content: buildSegmentPrompt(String(title ?? ''), points) }],
+      maxTokens: 800,
+    })
+    return normalizeSegments(parseJson(text), points)
+  } catch {
+    return []
+  }
+}
+
