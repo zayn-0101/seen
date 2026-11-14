@@ -8,7 +8,7 @@
       → lsappinfo 取前台 App
       → 支持浏览器：osascript 读取 active tab {title, url}
       → 失败：System Events 窗口标题
-      → 再失败：返回错误（course_map_check 提示授权）
+      → 再失败：返回错误（诊断会提示缺少「自动化」权限）
   → cleanTitle + extractBvid
   → 去重（state.seen，bvid 优先）
   → 稳定计数（stablePolls=2）
@@ -117,4 +117,4 @@
 | render.js | 三类 Markdown 渲染、Mermaid 转义 |
 | obsidian.js | vault 路径、原子写、AUTO 区、冲突处理 |
 | mnemon.js | CLI 探测与 remember 调用 |
-| index.js | 插件入口、轮询、编排、工具注册 |
+| index.js | 引擎入口、轮询、编排、内部工具注册 |

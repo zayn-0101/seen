@@ -17,7 +17,7 @@ export const DEFAULTS: {
   maxTokens: 4096,
   titleMinLen: 4,
   fetchContent: true,
-  enableMnemon: true,
+  enableMnemon: false,
   mnemonBin: null,
   mnemonStore: 'default',
   openInObsidian: false,
@@ -252,7 +252,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 ## lib/index.js
 
-插件入口：`export const name`、`export const inject = ['llm','tools']`、`export function apply(ctx, rawConfig)`。
+引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。`inject` 字段保留但只在插件宿主中生效；独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
@@ -260,5 +260,5 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 事件类型：`foreground / stable / detected / fetching / content / classified / transcript / summarizing / summarized / saved / skipped / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。
-- 工具名：`course_map_status`、`course_map_scan`、`course_map_check`。
+- 内部工具名：`course_map_status`、`course_map_scan`、`course_map_check`，由服务构造的 ctx.tools 注册表调用（对应 /api/status、/api/scan、/api/check），不是对外公开 API。
 - 工具返回 schema 与原插件风格一致（raw JSON schema + output.schema + render）。

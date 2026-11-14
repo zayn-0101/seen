@@ -31,7 +31,7 @@
 - [x] 真实抖音长视频生成笔记：`source: douyin`、`videoId`、`contentSource: whisper`
 - [x] 抖音视频笔记包含核心知识点、来源统计、Obsidian 链接
 - [x] 字幕/转写缓存命中，第二次扫描不重复下载/转写
-- [x] `course_map_check` 新增 douyin-chrome / douyin-ffmpeg / douyin-whisper 检查，全部通过
+- [x] 「诊断」包含 douyin-chrome / douyin-ffmpeg / douyin-whisper 检查，全部通过
 - [ ] 抖音评论/弹幕正文尚未抓取，仅显示总数（下一步）
 - [ ] 抖音标题/音频路径在不同视频上的稳定性待更多样本验证
 
