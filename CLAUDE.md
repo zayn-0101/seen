@@ -78,7 +78,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 菜单栏应用是独立 Swift 客户端，只通过 HTTP 调服务；登录自启优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
 - 应用是独立桌面程序，`core/` 是本机引擎，不做网络服务依赖。
-- 分发形态：`menubar/build.sh --bundle` 把 Node 运行时和服务代码塞进 app（约 116MB），`scripts/make-release.sh` 打成 dmg（约 43MB）；运行时优先用 app 内置的 `Contents/Resources/runtime/node`，开发版回退系统 node。未做开发者签名，首次打开需右键或去 quarantine。
+- 分发形态：`menubar/build.sh --bundle` 编译通用二进制（arm64 + x86_64，lipo 合并）并把两份 Node 运行时与服务代码塞进 app（约 233MB），`scripts/make-release.sh` 打成 dmg（约 85MB）；启动时按 CPU 架构选 `runtime/node-arm64` 或 `node-x64`，开发版回退系统 node。可用 `--arch=arm64|x64` 单独出包。未做开发者签名，首次打开需右键或去 quarantine。
 - 上游参考：`linner1224/dsh-video-coursemap` 2.0.0（MIT）；保留其 B 站抓取思路，已独立演进为 macOS / Obsidian 方向。
 - macOS 前台窗口读取依赖 AppleScript，需要「系统设置 → 隐私与安全性 → 自动化」授权；macOS 27 已移除独立的「辅助功能」分类，诊断要按实际调用能力判断，不能查 UI elements enabled 标志。
 - 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie；只取评论/弹幕总数，不抓正文。

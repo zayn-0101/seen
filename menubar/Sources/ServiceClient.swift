@@ -145,11 +145,27 @@ final class ServiceProcess {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Code/seen").path
     }
 
-    /// 优先用 app 内置的 Node 运行时；开发版回退到 PATH 里的 node。
+    /// 当前机器 CPU 架构对应的运行时后缀（arm64 / x64）。
+    private var runtimeArchSuffix: String {
+        var info = utsname()
+        uname(&info)
+        let machine = withUnsafePointer(to: &info.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
+        }
+        return machine == "arm64" ? "arm64" : "x64"
+    }
+
+    /// 优先用 app 内置的 Node 运行时（按架构挑）；开发版回退到 PATH 里的 node。
     var nodeBinary: String {
         if let res = Bundle.main.resourceURL {
-            let candidate = res.appendingPathComponent("runtime/node").path
-            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+            let runtimeDir = res.appendingPathComponent("runtime")
+            let candidates = [
+                runtimeDir.appendingPathComponent("node-\(runtimeArchSuffix)").path,
+                runtimeDir.appendingPathComponent("node").path,
+            ]
+            for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
         }
         return "node"
     }

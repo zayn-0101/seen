@@ -59,7 +59,7 @@ xattr -dr com.apple.quarantine /Applications/Seen.app
 
 之后菜单栏会出现松鼠图标，点开 → 「打开面板」，接着做下面的**配置模型**。
 
-安装包内置了 Node 运行时和服务代码，不需要另外装 Node。目前只提供 Apple Silicon（M 系列）版本。
+安装包内置了 Node 运行时和服务代码，不需要另外装 Node。同一份安装包同时支持 Apple Silicon 和 Intel Mac。
 
 ### 方式二：从源码运行（开发者）
 
