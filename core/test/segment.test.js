@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  callLlm,
   formatClock,
   normalizeSegments,
   parseTimedLines,
@@ -62,4 +63,29 @@ test('segmentTranscript parses model JSON into chapters', async () => {
   const result = await segmentTranscript(ctx, {}, { title: '长片', timedTranscript: timed, duration: 600 })
   assert.equal(result.length, 2)
   assert.equal(result[1].from, 90)
+})
+
+test('normalizeSegments snaps near-miss timestamps to candidates', () => {
+  const points = [{ seconds: 0 }, { seconds: 90 }, { seconds: 180 }]
+  const result = normalizeSegments([
+    { at: '00:00', title: '开场' },
+    { at: '01:34', title: '差 4 秒' },
+    { at: '05:00', title: '差太远' },
+  ], points)
+  assert.deepEqual(result.map((item) => item.from), [0, 90])
+})
+
+test('callLlm retries with a bigger budget when the model returns nothing', async () => {
+  const budgets = []
+  const ctx = {
+    llm: {
+      stream: ({ maxTokens }) => {
+        budgets.push(maxTokens)
+        return budgets.length === 1 ? '' : ['{"ok":true}']
+      },
+    },
+  }
+  const text = await callLlm(ctx, {}, { system: 's', messages: [{ role: 'user', content: 'x' }], maxTokens: 100 })
+  assert.equal(text, '{"ok":true}')
+  assert.deepEqual(budgets, [100, 200])
 })

@@ -463,13 +463,13 @@ export async function callLlm(ctx, config, { system, messages, maxTokens } = {})
   const normalizedMessages = normalizeMessages(messages)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(new Error('LLM 调用超时')), LLM_TIMEOUT_MS)
-  try {
+  const collect = async (tokens) => {
     let stream = ctx.llm.stream({
       provider: resolved.provider,
       model: resolved.model,
       system,
       messages: normalizedMessages,
-      maxTokens: maxTokens ?? config?.maxTokens ?? DEFAULT_MAX_TOKENS,
+      maxTokens: tokens,
       signal: ac.signal,
     })
     if (stream && typeof stream.then === 'function') stream = await stream
@@ -491,6 +491,14 @@ export async function callLlm(ctx, config, { system, messages, maxTokens } = {})
     if (stream && typeof stream.content === 'string') return stream.content
     if (stream && typeof stream.output === 'string') return stream.output
     return text
+  }
+  try {
+    const budget = maxTokens ?? config?.maxTokens ?? DEFAULT_MAX_TOKENS
+    const first = await collect(budget)
+    if (String(first ?? '').trim()) return first
+    // 推理型模型可能把预算全花在思考上、正文返回空串；翻倍预算重试一次
+    const retry = await collect(budget * 2)
+    return String(retry ?? '').trim() ? retry : first
   } finally {
     clearTimeout(timer)
   }
@@ -1080,6 +1088,18 @@ export function formatClock(seconds) {
 }
 
 /** 解析 [mm:ss] / [hh:mm:ss] 开头的带时间戳转写文本。 */
+/** 把 mm:ss / hh:mm:ss 解析成秒；格式不合法返回 null。 */
+export function clockToSeconds(value) {
+  const match = String(value ?? '').trim().match(/^(?:(\d{1,2}):)?(\d{1,3}):(\d{1,2})$/)
+  if (!match) return null
+  const hh = Number(match[1] || 0)
+  const mm = Number(match[2])
+  const ss = Number(match[3])
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null
+  if (mm > 59 || ss > 59) return null
+  return hh * 3600 + mm * 60 + ss
+}
+
 export function parseTimedLines(text) {
   const rows = []
   for (const raw of String(text ?? '').split('\n')) {
@@ -1115,8 +1135,12 @@ export function sampleTimedPoints(lines, options = {}) {
  */
 export function normalizeSegments(value, candidates = []) {
   const allowed = new Map()
+  const candidateSeconds = []
   for (const point of Array.isArray(candidates) ? candidates : []) {
-    allowed.set(formatClock(point.seconds), Number(point.seconds))
+    const seconds = Number(point?.seconds)
+    if (!Number.isFinite(seconds)) continue
+    allowed.set(formatClock(seconds), seconds)
+    candidateSeconds.push(seconds)
   }
   const list = Array.isArray(value) ? value : (Array.isArray(value?.segments) ? value.segments : [])
   const seen = new Set()
@@ -1125,9 +1149,22 @@ export function normalizeSegments(value, candidates = []) {
     if (!item || typeof item !== 'object') continue
     const at = String(item.at ?? '').trim()
     const title = cleanText(item.title)
-    if (!allowed.has(at) || !title || seen.has(at)) continue
-    seen.add(at)
-    result.push({ from: allowed.get(at), content: title })
+    if (!title) continue
+    let seconds = allowed.get(at)
+    if (seconds === undefined) {
+      // 模型抄错几秒很常见，就近吸附到最近的候选点，偏太远才算编造
+      const parsed = clockToSeconds(at)
+      if (parsed === null) continue
+      let best = null
+      for (const candidate of candidateSeconds) {
+        if (best === null || Math.abs(candidate - parsed) < Math.abs(best - parsed)) best = candidate
+      }
+      if (best === null || Math.abs(best - parsed) > 8) continue
+      seconds = best
+    }
+    if (seen.has(seconds)) continue
+    seen.add(seconds)
+    result.push({ from: seconds, content: title })
   }
   result.sort((a, b) => a.from - b.from)
   const limited = result.slice(0, 6)
@@ -1163,10 +1200,16 @@ export async function segmentTranscript(ctx, config, { title, timedTranscript, d
     const text = await callLlm(ctx, config, {
       system: '你是视频编辑，只输出严格 JSON。',
       messages: [{ role: 'user', content: buildSegmentPrompt(String(title ?? ''), points) }],
-      maxTokens: 800,
+      // 推理型模型会先花掉一批 token 思考，给太少会返回空串
+      maxTokens: 2000,
     })
-    return normalizeSegments(parseJson(text), points)
-  } catch {
+    const segments = normalizeSegments(parseJson(text), points)
+    if (segments.length === 0) {
+      console.log('[segment] 未能切段：候选 ' + points.length + ' 个时间点，模型返回长度 ' + String(text ?? '').length)
+    }
+    return segments
+  } catch (error) {
+    console.log('[segment] 分段失败：' + (error?.message || error))
     return []
   }
 }
