@@ -82,7 +82,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 笔记目录有两种布局（paths.js）：`flat`（默认，`<noteRoot>/<学科>/`）与 `structured`（`视频笔记/<学科>/` + `手册/<学科>.md`）。迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
 - 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
-- B 站与 YouTube 的章节和知识点带 `t=` 时间链接；抖音无章节。
+- B 站与 YouTube 的原生章节和知识点带 `t=` 时间链接；抖音没有原生章节，只有 AI 切出来的逻辑段。本地转写（whisper `-osrt`）会产出带时间戳的 `timedTranscript`，所以抖音/YouTube 的长视频同样能切段。
 - 菜单栏应用是独立 Swift 客户端，只通过 HTTP 调服务；登录自启优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
 - 应用是独立桌面程序，`core/` 是本机引擎，不做网络服务依赖。
