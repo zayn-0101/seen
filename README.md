@@ -55,7 +55,7 @@ Seen 在本机跑一个轻量服务，自动发现你在浏览器里看的 **B �
 
 ### 方式一：下载安装包（推荐）
 
-从 [Releases](https://github.com/zayn-0101/seen/releases) 下载 `Seen-v0.1.0.dmg`，打开后把 `Seen.app` 拖进「应用程序」。
+从 [Releases](https://github.com/zayn-0101/seen/releases) 下载最新的 `Seen-v<版本>.dmg`，打开后把 `Seen.app` 拖进「应用程序」。
 
 应用未做开发者签名，首次打开需要绕过 Gatekeeper：在「应用程序」里**右键点 Seen → 打开**，弹窗里再点一次「打开」。或者执行：
 
@@ -95,6 +95,12 @@ cd menubar
 ./build.sh --install    # 编译并安装到 ~/Applications/Seen.app
 ./build.sh --bundle     # 或者构建含 Node 运行时的可分发包
 ```
+
+### 如何更新
+
+安装包里内嵌了服务代码，所以**升级要重新下载 dmg 覆盖安装**（直接把新的 `Seen.app` 拖进「应用程序」替换旧的；源码运行的话 `git pull` 后重启服务即可）。
+
+应用每次启动会查一次 GitHub 最新版本，落后时面板顶部出现提示条。
 
 ### 配置模型（首次必做）
 
