@@ -15,8 +15,9 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { resolveConfig } from '../core/lib/config.js'
+import { loadState, saveState } from '../core/lib/state.js'
 import { resolveVaultPath, toPosix } from '../core/lib/obsidian.js'
-import { MANUAL_DIR, MANUAL_SUFFIX, VIDEO_DIR } from '../core/lib/paths.js'
+import { MANUAL_DIR, MANUAL_SUFFIX, VIDEO_DIR, remapStateNotePaths } from '../core/lib/paths.js'
 
 const apply = process.argv.includes('--apply')
 
@@ -51,6 +52,19 @@ function backupRoot(noteRootAbs) {
   return target
 }
 
+/**
+ * 同步 state.json 里记录的 notePath。
+ * 索引.md、概念索引.md 和相关笔记双链都是从 state 里的路径生成的，不同步就会全指到旧位置。
+ */
+function rewriteState(config, moves) {
+  const statePath = join(config.stateDir, 'state.json')
+  if (!existsSync(statePath)) return 0
+  const state = loadState(statePath)
+  const changed = remapStateNotePaths(state, new Map(moves.map((move) => [move.oldRel, move.newRel])))
+  if (changed > 0) saveState(statePath, state)
+  return changed
+}
+
 function main() {
   const config = readConfig()
   const vaultPath = resolveVaultPath(config)
@@ -77,7 +91,9 @@ function main() {
       const dest = isManual
         ? join(noteRootAbs, MANUAL_DIR, subject + '.md')
         : join(noteRootAbs, VIDEO_DIR, subject, name)
-      moves.push({ from: file, to: dest, isManual })
+      // oldRel/newRel 是相对 vault 的路径，用来同步 state.json 里记录的 notePath
+      const relToVault = (abs) => toPosix(abs).slice(toPosix(vaultPath).length + 1)
+      moves.push({ from: file, to: dest, isManual, oldRel: relToVault(file), newRel: relToVault(dest) })
     }
   }
 
@@ -124,6 +140,8 @@ function main() {
     }
   }
   console.log('重写链接的笔记：' + rewritten + ' 个')
+  const updatedPaths = rewriteState(config, moves)
+  console.log('同步状态里的笔记路径：' + updatedPaths + ' 条')
   console.log('迁移完成。把配置里的 noteLayout 改成 structured 后，新笔记会写入新结构。')
 }
 

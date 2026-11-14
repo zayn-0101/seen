@@ -127,6 +127,6 @@
 - [x] 概念索引页与面板概念浏览：`GET /api/concepts` 返回 3 个概念（双向链接 4 / 知识管理 3 / 卡片笔记 1），面板点概念列出跨学科笔记
 - [x] 学科手册核心概念门槛：只收出现在 ≥2 篇笔记里的概念，单篇概念不再刷屏
 - [x] 知识库按学科分组展示；全文搜索 `GET /api/search` 命中文件名权重 3、正文权重 1
-- [x] 两种目录布局与迁移脚本：`flat`（默认）/`structured`，`scripts/migrate-vault.mjs` 默认预演、`--apply` 先备份再移动并重写链接
+- [x] 两种目录布局与迁移脚本：`flat`（默认）/`structured`，`scripts/migrate-vault.mjs` 默认预演、`--apply` 先备份再移动，并重写笔记里的手册双链与 state.json 里的 notePath（路径不同步会让索引、概念索引、相关笔记全指到旧位置）；假库实测 2 个文件迁移、1 处链接、1 条状态路径全部正确
 - [x] 服务自检十二项全绿（平台 / 前台 / vault / state / mnemon / yt-dlp / 抖音 Chrome / ffmpeg / whisper-cli / 模型 / B 站 / YouTube）
 - [ ] 阶段 5 实际目录迁移：脚本已验证，等用户确认后在真实 vault 执行

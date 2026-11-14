@@ -49,3 +49,24 @@ export function manualNoteRelPath({ noteRoot, subject, layout } = {}) {
 export function manualNoteLinkTarget({ noteRoot, subject, layout } = {}) {
   return manualNoteRelPath({ noteRoot, subject, layout }).replace(/\.md$/i, '')
 }
+
+/**
+ * 按「旧路径 → 新路径」映射改写状态里记的 notePath，返回改写条数。
+ * 目录迁移后索引、概念索引与相关笔记双链都从 state 里的路径生成，不同步就会全指到旧位置。
+ * state 结构：{ subjects: { <学科>: { videos: [{ notePath }] } } }；只认 Map/普通对象。
+ */
+export function remapStateNotePaths(state, pathMap) {
+  const resolve =
+    pathMap instanceof Map ? (key) => pathMap.get(key) : (key) => pathMap?.[key]
+  let changed = 0
+  for (const entry of Object.values(state?.subjects || {})) {
+    for (const video of entry?.videos || []) {
+      const next = resolve(video?.notePath)
+      if (typeof next === 'string' && next && next !== video.notePath) {
+        video.notePath = next
+        changed += 1
+      }
+    }
+  }
+  return changed
+}
