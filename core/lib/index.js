@@ -326,6 +326,7 @@ export function apply(ctx, rawConfig = {}) {
         numbers: summary.numbers,
         discussion: summary.discussion,
         duration: Number(content?.duration) || 0,
+        cover: String(content?.cover || ''),
         fetchStats: content?.fetchStats || null,
         tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
         chapters: content?.chapters || [],

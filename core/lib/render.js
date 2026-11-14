@@ -337,6 +337,7 @@ export function renderVideoNote(input = {}) {
   const publishedAt = cleanInline(source.publishedAt)
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
+  const cover = String(source.cover ?? '').trim()
 
   const frontmatterData = {
     title,
@@ -351,6 +352,7 @@ export function renderVideoNote(input = {}) {
     contentQuality,
     type: 'video-note',
   }
+  if (cover) frontmatterData.cover = cover
   if (bvid) frontmatterData.bvid = bvid
   if (videoId) frontmatterData.videoId = videoId
   const frontmatter = renderFrontmatter(frontmatterData)
@@ -395,6 +397,7 @@ export function renderVideoNote(input = {}) {
   lines.push('## 视频信息', '', '| 项目 | 内容 |', '| --- | --- |')
   for (const [metaKey, metaValue] of metaRows) lines.push(`| ${metaKey} | ${metaValue.replace(/\|/g, '\\|')} |`)
   lines.push('')
+  if (cover) lines.push(`![封面|360](${cover})`, '')
 
   if (numbers.length > 0) {
     lines.push('## 关键数字', '', '| 数字 | 含义 |', '| --- | --- |')
@@ -464,7 +467,7 @@ export function renderVideoNote(input = {}) {
   // 手写保护区：重新生成笔记时由 mergeManualSection 原样搬回
   lines.push('## 我的补充', '', MANUAL_BEGIN, '', MANUAL_END, '')
 
-  lines.push('## 来源统计', '')
+  lines.push('## 来源统计', '', '<details>', '<summary>展开技术细节</summary>', '')
   if (platform === 'douyin') {
     lines.push(`- 抖音精选：${url || '（未匹配到抖音视频）'}`)
     lines.push(`- 视频 ID：${videoId || '（无）'}`)
@@ -505,6 +508,8 @@ export function renderVideoNote(input = {}) {
     lines.push(`- 弹幕：抓取 ${stats.danmaku} 条 / 全站 ${stats.totalDanmaku || '未知'} 条`)
     lines.push(`- 评论：抓取 ${stats.comments} 条 / 全站 ${stats.totalComments || '未知'} 条`, '')
   }
+
+  lines.push('</details>', '')
 
   return lines.join('\n')
 }

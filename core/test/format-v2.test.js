@@ -127,3 +127,15 @@ test('renderVideoNote adds nested concept tags to frontmatter', () => {
   assert.ok(md.includes('"概念/责任前置"'))
   assert.ok(md.includes('"概念/被动语态"'))
 })
+
+test('renderVideoNote renders cover image after info table', () => {
+  const md = renderVideoNote({
+    title: '封面测试',
+    subject: '写作',
+    summary: 's',
+    cover: 'https://example.com/c.jpg',
+    noteRoot: '课程知识地图',
+  })
+  assert.ok(md.includes('![封面|360](https://example.com/c.jpg)'))
+  assert.ok(md.includes('cover: https://example.com/c.jpg') || md.includes('cover: "https://example.com/c.jpg"'))
+})
