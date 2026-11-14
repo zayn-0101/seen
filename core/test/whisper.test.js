@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import {
   buildWhisperArgs,
   ensureFfmpeg,
+  estimateTranscribeMinutes,
   findHomebrew,
   WHISPER_MODELS,
   installWhisperCli,
+  parseWhisperProgress,
   ffmpegAssetName,
   ffmpegInstallPath,
   ffmpegReleaseUrl,
@@ -22,7 +24,7 @@ test('buildWhisperArgs produces whisper-cli argv with language', () => {
   assert.equal(argv[argv.indexOf('-l') + 1], 'zh')
   assert.equal(argv[argv.indexOf('-of') + 1], '/tmp/a')
   assert.ok(argv.includes('-otxt'))
-  assert.ok(argv.includes('-np'))
+  assert.ok(!argv.includes('-np'), '不能再传 -np：需要保留分段输出用于计算转写进度')
   assert.ok(!argv.includes('--prompt'))
 })
 
@@ -119,6 +121,27 @@ test('ensureFfmpeg reuses an installed binary without downloading', async () => 
   assert.equal(result.ok, true)
   assert.equal(result.path, process.execPath)
   assert.equal(result.skipped, true)
+})
+
+test('parseWhisperProgress derives percent from segment timestamps', () => {
+  // 45 分钟音频，跑到 15 分钟时约 33%
+  assert.equal(parseWhisperProgress('[00:14:58.000 --> 00:15:02.500]  文字', 2700), 33)
+  // 同一位置重复输出不重复上报
+  assert.equal(parseWhisperProgress('[00:14:58.000 --> 00:15:02.500]  文字', 2700, 33), null)
+  // 无时间戳、无总长、非法输入都返回 null
+  assert.equal(parseWhisperProgress('loading model', 2700), null)
+  assert.equal(parseWhisperProgress('[00:00:01.000 --> 00:00:02.000]  hi', 0), null)
+  assert.equal(parseWhisperProgress(null, 100), null)
+  // 结束时间超过总长时封顶 99
+  assert.equal(parseWhisperProgress('[00:00:10.000 --> 00:00:12.000]  hi', 5), 99)
+})
+
+test('estimateTranscribeMinutes assumes about 3x realtime', () => {
+  assert.equal(estimateTranscribeMinutes(0), 0)
+  assert.equal(estimateTranscribeMinutes(60), 1)
+  assert.equal(estimateTranscribeMinutes(9 * 60), 3)
+  assert.equal(estimateTranscribeMinutes(45 * 60), 15)
+  assert.equal(estimateTranscribeMinutes(60 * 60), 20)
 })
 
 test('findHomebrew returns an absolute brew path or null', () => {

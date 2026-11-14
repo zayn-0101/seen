@@ -418,6 +418,16 @@ export async function installWhisperCli({ onProgress, timeout = 15 * 60 * 1000 }
   })
 }
 
+/**
+ * 估算转写耗时（分钟），只用于给用户一个心理预期。
+ * 实测 large-v3-turbo 在 M3 上约 3 倍速：45 分钟音频约 15 分钟。
+ */
+export function estimateTranscribeMinutes(seconds) {
+  const total = Number(seconds) || 0
+  if (total <= 0) return 0
+  return Math.max(1, Math.round(total / 180))
+}
+
 /* ------------------------------------------------------------------ */
 /* 转写                                                                 */
 /* ------------------------------------------------------------------ */
@@ -428,17 +438,73 @@ export async function installWhisperCli({ onProgress, timeout = 15 * 60 * 1000 }
  */
 export function buildWhisperArgs({ bin, model, wav, prompt = '', language = 'zh' } = {}) {
   const base = String(wav ?? '').replace(/\.wav$/i, '')
+  // 不加 -np：保留分段输出，才能解析时间戳算转写进度。
   const args = [
     '-m', String(model ?? ''),
     '-f', String(wav ?? ''),
     '-l', String(language || 'zh'),
     '-otxt',
     '-of', base,
-    '-np',
   ]
   const text = String(prompt ?? '').trim()
   if (text) args.push('--prompt', text.slice(0, 500))
   return [String(bin ?? ''), ...args]
+}
+
+/**
+ * 从 whisper-cli 的 stderr 片段里解析进度百分比。
+ * 时间戳形如「[00:00:05.000 --> 00:00:08.000]」，用结束时间 / 音频总长估算。
+ * 没有新进度时返回 null。
+ */
+export function parseWhisperProgress(chunk, totalSeconds, previous = 0) {
+  if (!(Number(totalSeconds) > 0)) return null
+  const matches = String(chunk ?? '').match(/-->\s*(\d{2}):(\d{2}):(\d{2})\.\d{3}/g)
+  if (!matches || matches.length === 0) return null
+  const last = matches[matches.length - 1].match(/-->\s*(\d{2}):(\d{2}):(\d{2})/)
+  if (!last) return null
+  const end = Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3])
+  const percent = Math.max(0, Math.min(99, Math.round((end / Number(totalSeconds)) * 100)))
+  return percent > previous ? percent : null
+}
+
+/**
+ * 跑 whisper-cli，同时从 stderr 的分段输出里解析进度。
+ */
+function runWhisper(argv, { timeout = WHISPER_TIMEOUT_MS, totalSeconds = 0, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(argv[0], argv.slice(1), { windowsHide: true })
+    let stderrTail = ''
+    let lastPercent = 0
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* 忽略 */ }
+      reject(new Error('Whisper 转写超时'))
+    }, timeout)
+    const handleOutput = (chunk) => {
+      const text = String(chunk ?? '')
+      stderrTail = (stderrTail + text).slice(-4000)
+      if (!onProgress) return
+      // 分段文本可能走 stdout，进度日志走 stderr，两边都解析。
+      const percent = parseWhisperProgress(text, totalSeconds, lastPercent)
+      if (percent !== null) {
+        lastPercent = percent
+        onProgress({ percent })
+      }
+    }
+    child.stdout.on('data', handleOutput)
+    child.stderr.on('data', handleOutput)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code !== 0) {
+        const detail = stderrTail.trim().split(/\r?\n/).filter(Boolean).slice(-2).join(' / ')
+        return reject(new Error('whisper-cli 退出码 ' + code + (detail ? '：' + detail.slice(0, 200) : '')))
+      }
+      resolve()
+    })
+  })
 }
 
 /**
@@ -447,7 +513,15 @@ export function buildWhisperArgs({ bin, model, wav, prompt = '', language = 'zh'
  * @param {{ title?: string, author?: string, tags?: string[], config?: object, language?: string }} options
  * @returns {Promise<string>} 纯文本（可能多行）
  */
-export async function transcribeAudio(wav, { title = '', author = '', tags = [], config = {}, language = 'zh' } = {}) {
+export async function transcribeAudio(wav, {
+  title = '',
+  author = '',
+  tags = [],
+  config = {},
+  language = 'zh',
+  totalSeconds = 0,
+  onProgress,
+} = {}) {
   const bin = findWhisperCli(config)
   if (!bin) throw new Error('未找到 whisper-cli：请运行 brew install whisper.cpp（官方没有免安装的预编译包）')
   const model = findWhisperModel(config)
@@ -455,7 +529,7 @@ export async function transcribeAudio(wav, { title = '', author = '', tags = [],
   const prompt = [title, author, ...(Array.isArray(tags) ? tags.slice(0, 8) : [])]
     .filter(Boolean).join(' ')
   const argv = buildWhisperArgs({ bin, model, wav, prompt, language })
-  await execFileP(argv[0], argv.slice(1), { timeout: WHISPER_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 })
+  await runWhisper(argv, { timeout: WHISPER_TIMEOUT_MS, totalSeconds, onProgress })
   const txt = String(wav).replace(/\.wav$/i, '') + '.txt'
   if (!existsSync(txt)) throw new Error('Whisper 没有生成转写文本')
   const text = readFileSync(txt, 'utf8')

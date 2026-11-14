@@ -16,7 +16,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ensureYtDlp, findYtDlp } from './ytdlp.js'
 import { buildTimedTranscript, parseSrtSegments } from './transcript.js'
-import { ensureFfmpeg, ensureWhisperModel, findFfmpeg, transcribeAudio } from './whisper.js'
+import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, findFfmpeg, transcribeAudio } from './whisper.js'
 import { extractYoutubeId, sourceLabel } from './source.js'
 
 const execFileP = promisify(execFile)
@@ -356,13 +356,31 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
       if (onProgress) onProgress({ stage: 'audio', message: '没有可用字幕，下载音频后本地转写', videoId: id })
       const audio = await downloadAudio({ url: watchUrl, config, onProgress })
       try {
-        if (onProgress) onProgress({ stage: 'transcribe', message: '本地 Whisper 转写中', videoId: id })
+        const estimateMinutes = estimateTranscribeMinutes(meta.duration)
+        if (onProgress) {
+          onProgress({
+            stage: 'transcribe',
+            message: estimateMinutes > 0
+              ? '本地 Whisper 转写中，预计约 ' + estimateMinutes + ' 分钟'
+              : '本地 Whisper 转写中',
+            videoId: id,
+            duration: meta.duration,
+            estimateMinutes,
+          })
+        }
         transcript = await transcribeAudio(audio.wav, {
           title: meta.title,
           author: meta.author,
           tags: meta.tags,
           config,
           language: guessLanguage(meta),
+          totalSeconds: meta.duration,
+          onProgress: (progress) => onProgress && onProgress({
+            stage: 'transcribe-progress',
+            message: '本地 Whisper 转写中 ' + progress.percent + '%',
+            videoId: id,
+            percent: progress.percent,
+          }),
         })
         transcriptSource = 'whisper'
       } finally {

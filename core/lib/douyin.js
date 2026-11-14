@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDouyinId, sourceLabel } from './source.js'
-import { ensureFfmpeg, ensureWhisperModel, findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
+import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
 
 const execFileP = promisify(execFile)
 const CACHE_DIR = join(homedir(), '.seen', 'cache', 'douyin')
@@ -286,12 +286,30 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
   try {
     const modelReady = await ensureWhisperModel(config)
     if (!modelReady.ok) throw new Error(modelReady.error || '未找到可用的 Whisper 模型')
-    if (onProgress) onProgress({ stage: 'transcribe', message: '本地 Whisper 转写中', videoId: id, duration: meta.duration })
+    const estimateMinutes = estimateTranscribeMinutes(meta.duration)
+    if (onProgress) {
+      onProgress({
+        stage: 'transcribe',
+        message: estimateMinutes > 0
+          ? '本地 Whisper 转写中，预计约 ' + estimateMinutes + ' 分钟'
+          : '本地 Whisper 转写中',
+        videoId: id,
+        duration: meta.duration,
+        estimateMinutes,
+      })
+    }
     const transcript = await transcribeAudio(audio.wav, {
       title: meta.title,
       author: meta.author,
       tags: meta.tags,
       config,
+      totalSeconds: meta.duration,
+      onProgress: (progress) => onProgress && onProgress({
+        stage: 'transcribe-progress',
+        message: '本地 Whisper 转写中 ' + progress.percent + '%',
+        videoId: id,
+        percent: progress.percent,
+      }),
     })
     const content = buildContent(detail, { url, id, transcript })
     writeCache(id, content)

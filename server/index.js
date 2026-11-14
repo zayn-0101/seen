@@ -130,23 +130,60 @@ let installingWhisperCli = false
 // 面板「下载 Whisper 模型」触发的下载，同一时间只允许一个。
 let installingWhisperModel = false
 
+function platformName(source) {
+  if (source === 'douyin') return '抖音'
+  if (source === 'youtube') return 'YouTube'
+  return 'B站'
+}
+
 function notifySaved(data = {}) {
-  const platform = data.source === 'douyin' ? '抖音' : data.source === 'youtube' ? 'YouTube' : 'B站'
   notifier.notify({
     title: '拾影 · 笔记已生成',
-    subtitle: [data.subject, platform].filter(Boolean).join(' · '),
+    subtitle: [data.subject, platformName(data.source)].filter(Boolean).join(' · '),
     body: data.title || '新视频',
+  })
+}
+
+/** 识别到视频、开始处理时提醒一次，避免用户以为没反应。 */
+function notifyStarted(data = {}) {
+  const title = data.title || data.videoId || data.bvid || '新视频'
+  notifier.notify({
+    title: '拾影 · 开始整理',
+    subtitle: platformName(data.source),
+    body: String(title).slice(0, 120),
+  })
+}
+
+/** 进入本地转写（最慢的一步）时提醒，并给出预计耗时。 */
+function notifyTranscribing(data = {}) {
+  const minutes = Number(data.estimateMinutes) || 0
+  notifier.notify({
+    title: '拾影 · 本地转写中',
+    subtitle: String(data.title || '').slice(0, 60),
+    body: minutes > 0 ? '没有可用字幕，预计约 ' + minutes + ' 分钟' : '没有可用字幕，正在转写音频',
+  })
+}
+
+function notifyFailed(data = {}) {
+  notifier.notify({
+    title: '拾影 · 处理失败',
+    body: String(data.message || '未知错误').slice(0, 160),
   })
 }
 
 engine.onEvent((event) => {
   broadcast(event)
+  if (event.type === 'detected') notifyStarted(event.data)
+  if (event.type === 'progress' && event.data?.stage === 'transcribe') notifyTranscribing(event.data)
   if (event.type === 'saved') {
     log('笔记已生成：' + event.data?.notePath)
     notifySaved(event.data)
     rebuildIndexNote().catch(() => {})
   }
-  if (event.type === 'error') log('处理失败：' + event.data?.message)
+  if (event.type === 'error') {
+    log('处理失败：' + event.data?.message)
+    notifyFailed(event.data)
+  }
 })
 
 if (ui.started && !engine.isReadOnly()) {
