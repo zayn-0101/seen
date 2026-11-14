@@ -347,6 +347,8 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
     if (subtitle?.text) {
       transcript = subtitle.text
       transcriptSource = subtitle.source
+      // 字幕自带时间轴，一并带上：没有原生章节的 YouTube 视频靠它切逻辑段
+      timedTranscript = subtitle.timed || ''
       if (onProgress) onProgress({ stage: 'subtitle-ok', message: '已获取 YouTube 字幕', videoId: id, length: transcript.length })
     }
   }
