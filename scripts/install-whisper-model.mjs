@@ -16,7 +16,7 @@ import {
 } from '../core/lib/whisper.js'
 
 const modelIndex = process.argv.indexOf('--model')
-const model = modelIndex !== -1 ? process.argv[modelIndex + 1] : 'small'
+const model = modelIndex !== -1 ? process.argv[modelIndex + 1] : 'large-v3-turbo'
 const force = process.argv.includes('--force')
 const allowed = new Set(['base', 'small', 'medium', 'large-v3-turbo'])
 if (!allowed.has(model)) {

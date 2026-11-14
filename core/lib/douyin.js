@@ -284,8 +284,8 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
   if (onProgress) onProgress({ stage: 'audio', message: '下载并提取音频', videoId: id, duration: meta.duration })
   const audio = await downloadAudio(playUrl, config, onProgress)
   try {
-    const modelReady = await ensureWhisperModel(config, { onProgress })
-    if (!modelReady.ok) throw new Error('未找到 Whisper 模型，自动下载也失败：' + (modelReady.error || '未知原因'))
+    const modelReady = await ensureWhisperModel(config)
+    if (!modelReady.ok) throw new Error(modelReady.error || '未找到可用的 Whisper 模型')
     if (onProgress) onProgress({ stage: 'transcribe', message: '本地 Whisper 转写中', videoId: id, duration: meta.duration })
     const transcript = await transcribeAudio(audio.wav, {
       title: meta.title,

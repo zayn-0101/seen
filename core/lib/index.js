@@ -757,7 +757,7 @@ export function apply(ctx, rawConfig = {}) {
       add('douyin-chrome', '抖音解析所需的 Chrome', Boolean(chromePath), chromePath || '未找到 Chrome（抖音页面解析需要）')
       add('ffmpeg', 'ffmpeg（音频预处理）', Boolean(ffmpegPath), ffmpegPath || '未安装：首次需要时自动下载到 ~/.seen/bin（也可 brew install ffmpeg）')
       add('whisper-cli', 'whisper-cli（本地语音转写）', Boolean(whisperPath), whisperPath || '未安装：运行 brew install whisper.cpp（官方没有预编译包）')
-      add('whisper-model', 'Whisper 模型（抖音 / YouTube 无字幕）', Boolean(whisperModel), whisperModel || '未安装：首次需要时自动下载到 ~/.seen/models（约 465MB）')
+      add('whisper-model', 'Whisper 模型（抖音 / YouTube 无字幕）', Boolean(whisperModel), whisperModel || '未安装：在下方按推荐选择一个下载（推荐 Large v3 Turbo）')
       let biliOk = false
       let biliDetail = ''
       try {

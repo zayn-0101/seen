@@ -266,7 +266,9 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 ## lib/whisper.js
 
 - `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置 → `~/.seen/bin`」探测，返回绝对路径或 null；只探测不安装。
-- `ensureFfmpeg(config, { onProgress })` / `ensureWhisperModel(config, { model, onProgress })`：有就返回 `{ ok, path, skipped }`，没有则自动下载一次。ffmpeg 取 ffmpeg-static 静态二进制（`ffmpegReleaseUrl()`），模型按 `whisperModelUrls()` 依次尝试 HF_ENDPOINT → huggingface → hf-mirror。失败返回 `{ ok:false, error }`，不抛错。
+- `ensureFfmpeg(config, { onProgress })`：有就返回 `{ ok, path, skipped }`，没有则自动下载 ffmpeg-static 静态二进制（`ffmpegReleaseUrl()`）。失败返回 `{ ok:false, error }`，不抛错。
+- `ensureWhisperModel(config)`：有就返回 `{ ok, path, skipped }`；**缺失时不静默下载**，返回 `{ ok:false, needsChoice:true, models: WHISPER_MODELS, error }`，由面板让用户按推荐选一个（135MB–1.6GB 差异太大）。
+- `WHISPER_MODELS`：按推荐力度排序的模型清单（`large-v3-turbo` 推荐 → `small` → `medium` → `base`），每项含 `id / label / sizeMb / recommended / note`；模型下载源按 `whisperModelUrls()` 依次尝试 HF_ENDPOINT → huggingface → hf-mirror。
 - `installFfmpeg({ force, onProgress })` / `installWhisperModel({ model, force, onProgress })`：单独执行下载，并发调用共享同一次任务；`onProgress` 收到 `{ stage, message, received, total, percent }`。
 - `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试。
 - `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`。

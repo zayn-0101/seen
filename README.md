@@ -52,7 +52,7 @@
 |---|---|---|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube 解析、B 站 AI 字幕 | 首次需要时自动下载到 `~/.seen/bin` |
 | [ffmpeg](https://ffmpeg.org/) | 音频预处理（抖音、YouTube 无字幕） | 首次需要时自动下载静态二进制到 `~/.seen/bin` |
-| Whisper 模型 | 无字幕时本地转写 | 首次需要时自动下载到 `~/.seen/models`（约 465MB，可用 `HF_ENDPOINT` 换源） |
+| Whisper 模型 | 无字幕时本地转写 | 面板「诊断」里按推荐选一个下载（推荐 Large v3 Turbo，1.6GB；可用 `HF_ENDPOINT` 换源） |
 | whisper-cli | 无字幕时本地转写 | 诊断面板里点「安装 whisper-cli」（自动跑 brew）；也可自己 `brew install whisper.cpp` |
 | Chrome | 抖音页面解析 | 需自行安装 |
 
@@ -205,7 +205,9 @@ open ~/Applications/Seen.app
 
 | 日期 | 标题 | 学科 | 来源 |
 |---|---|---|---|
-| 2026-11-13 | 一天只吃一顿，为什么体重还是不往下掉？ | 医学科普 | 抖音 |
+| 2026-11-13 | 梯度下降为什么有效 | 机器学习 | B站 |
+| 2026-11-14 | 线性代数的本质 | 数学 | YouTube |
+| 2026-11-14 | 三分钟看懂相对论 | 物理 | 抖音 |
 
 ### 每周回顾
 
@@ -317,14 +319,12 @@ macOS 读取浏览器窗口需要 AppleScript 自动化权限：
 
 ### 抖音视频没有笔记
 
-抖音精选依赖 Chrome（页面解析）和 whisper-cli（音频转写）。ffmpeg 与 Whisper 模型缺失时会自动下载，需要手动准备的只有：
+抖音精选依赖 Chrome（页面解析）和 whisper-cli（音频转写）。ffmpeg 缺失时会自动下载，需要手动准备的是 Chrome、whisper-cli 和转写模型：
 
-```bash
-brew install --cask google-chrome   # 页面解析
-brew install whisper.cpp            # 本地转写（官方没有预编译包）
-```
+- **whisper-cli**：诊断面板里点「安装 whisper-cli」，应用会代跑 `brew install whisper.cpp`，进度显示在面板上（也可以自己 `brew install whisper.cpp`）。
+- **Chrome**：需要自己装，`brew install --cask google-chrome`。
 
-诊断里对应的项如果标红，就是缺组件；whisper-cli 那一项可以直接点「安装 whisper-cli」，应用会代跑 `brew install whisper.cpp` 并把进度显示在面板上。
+诊断里的项如果标红，就是缺组件。
 
 ### YouTube 视频没有笔记
 

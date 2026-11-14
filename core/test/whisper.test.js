@@ -4,6 +4,7 @@ import {
   buildWhisperArgs,
   ensureFfmpeg,
   findHomebrew,
+  WHISPER_MODELS,
   installWhisperCli,
   ffmpegAssetName,
   ffmpegInstallPath,
@@ -88,6 +89,25 @@ test('whisperModelUrls prefers HF_ENDPOINT, then official, then mirror', () => {
 test('whisperModelPath points at ggml-<model>.bin', () => {
   assert.match(whisperModelPath('small'), /\/\.seen\/models\/ggml-small\.bin$/)
   assert.match(whisperModelPath('base'), /ggml-base\.bin$/)
+  // 默认模型是 turdo → 不传参数时指向 large-v3-turbo
+  assert.match(whisperModelPath(), /ggml-large-v3-turbo\.bin$/)
+})
+
+test('WHISPER_MODELS lists models by recommendation with metadata', () => {
+  assert.ok(Array.isArray(WHISPER_MODELS))
+  assert.equal(WHISPER_MODELS.length, 4)
+  assert.equal(WHISPER_MODELS[0].recommended, true)
+  assert.equal(WHISPER_MODELS[0].id, 'large-v3-turbo')
+  assert.equal(WHISPER_MODELS.filter((m) => m.recommended).length, 1)
+  const ids = new Set()
+  for (const model of WHISPER_MODELS) {
+    assert.ok(model.id)
+    assert.ok(model.label)
+    assert.ok(Number(model.sizeMb) > 0)
+    assert.ok(model.note && model.note.length > 8)
+    assert.equal(ids.has(model.id), false)
+    ids.add(model.id)
+  }
 })
 
 test('findFfmpeg honours a configured binary', () => {

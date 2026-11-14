@@ -348,8 +348,8 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
 
   if (!transcript && config.fetchTranscript !== false) {
     try {
-      const modelReady = await ensureWhisperModel(config, { onProgress })
-      if (!modelReady.ok) throw new Error('未找到 Whisper 模型，自动下载也失败：' + (modelReady.error || '未知原因'))
+      const modelReady = await ensureWhisperModel(config)
+      if (!modelReady.ok) throw new Error(modelReady.error || '未找到可用的 Whisper 模型')
       if (onProgress) onProgress({ stage: 'audio', message: '没有可用字幕，下载音频后本地转写', videoId: id })
       const audio = await downloadAudio({ url: watchUrl, config, onProgress })
       try {

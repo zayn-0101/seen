@@ -25,7 +25,42 @@ const WHISPER_TIMEOUT_MS = 30 * 60 * 1000
 const VERIFY_TIMEOUT_MS = 20000
 const BINARY_DOWNLOAD_TIMEOUT_MS = 300000
 const MODEL_DOWNLOAD_TIMEOUT_MS = 900000
-const DEFAULT_MODEL = 'small'
+const DEFAULT_MODEL = 'large-v3-turbo'
+
+/**
+ * 可选转写模型，按推荐力度排序。
+ * 面板上「缺少模型」时按这个顺序给用户选。
+ */
+export const WHISPER_MODELS = Object.freeze([
+  {
+    id: 'large-v3-turbo',
+    label: 'Large v3 Turbo',
+    sizeMb: 1550,
+    recommended: true,
+    note: '准确率接近最强的 large-v3，速度约为它的 6 倍。中文长视频首选，20 分钟视频约 3–4 分钟。',
+  },
+  {
+    id: 'small',
+    label: 'Small',
+    sizeMb: 445,
+    recommended: false,
+    note: '速度约为 turbo 的两倍；同音字和专业术语容易出错，适合短视频或只求能看的场景。',
+  },
+  {
+    id: 'medium',
+    label: 'Medium',
+    sizeMb: 1450,
+    recommended: false,
+    note: '比 small 准，但更慢更占空间；已有 turbo 的情况下一般不需要选它。',
+  },
+  {
+    id: 'base',
+    label: 'Base',
+    sizeMb: 135,
+    recommended: false,
+    note: '只适合快速验证链路，中文准确率明显不足，不建议用它生成课程笔记。',
+  },
+])
 
 function expandHome(value) {
   const text = String(value ?? '').trim()
@@ -250,7 +285,6 @@ export async function ensureFfmpeg(config = {}, { onProgress } = {}) {
 }
 
 let modelTask = null
-let modelTried = false
 
 /** 下载 Whisper 模型到 ~/.seen/models；HF_ENDPOINT → huggingface → hf-mirror 依次尝试。 */
 export async function installWhisperModel({ model = DEFAULT_MODEL, force = false, onProgress } = {}) {
@@ -289,16 +323,19 @@ export async function installWhisperModel({ model = DEFAULT_MODEL, force = false
   }
 }
 
-/** 确保有可用的 Whisper 模型：已安装直接用，缺失时自动下载一次。 */
-export async function ensureWhisperModel(config = {}, { model, onProgress } = {}) {
+/**
+ * 确保有可用的 Whisper 模型。
+ * 不再静默下载：缺失时返回 needsChoice，由面板让用户按推荐选一个（模型从 135MB 到 1.6GB，体积差异大）。
+ */
+export async function ensureWhisperModel(config = {}) {
   const found = findWhisperModel(config)
   if (found) return { ok: true, path: found, skipped: true }
-  if (modelTried) return { ok: false, error: 'Whisper 模型不可用（本次运行已尝试过自动下载）' }
-  modelTried = true
-  const result = await installWhisperModel({ model: model || DEFAULT_MODEL, onProgress })
-  if (!result.ok) return result
-  const after = findWhisperModel(config)
-  return after ? { ok: true, path: after } : { ok: false, error: '下载完成但找不到 Whisper 模型' }
+  return {
+    ok: false,
+    needsChoice: true,
+    models: WHISPER_MODELS,
+    error: '还没有转写模型：请在面板「诊断」里选择并下载（推荐 Large v3 Turbo）',
+  }
 }
 
 /** 仅测试用：重置自动安装状态。 */
@@ -306,7 +343,6 @@ export function resetWhisperState() {
   ffmpegTask = null
   ffmpegTried = false
   modelTask = null
-  modelTried = false
 }
 
 /* ------------------------------------------------------------------ */

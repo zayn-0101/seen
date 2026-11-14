@@ -62,6 +62,8 @@
 - [x] 系统里已装的优先：brew 的 `/opt/homebrew/bin/yt-dlp`、`/opt/homebrew/bin/ffmpeg` 仍被选中，自动下载的副本不覆盖
 - [x] whisper-cli 官方无预编译包：诊断面板提供「安装」按钮，服务端代为执行 `brew install whisper.cpp`，进度走 SSE；接口实测返回 202，已装时直接跳过
 - [x] Web 诊断从 toast 改为可交互面板：逐项显示 ✓/✕ 与详情，缺 whisper-cli 时出现安装按钮
+- [x] 缺转写模型时不再静默下载：面板按推荐力度列出 turbo / small / medium / base，每项带体积与说明，点了才下载（`GET /api/whisper-models`、`POST /api/install/whisper-model`）
+- [x] 默认推荐模型改为 large-v3-turbo（1.6GB），`findWhisperModel` 按 turbo → medium → small → base 优先级选已装的最准模型
 - [x] `cd core && node --test`：81 tests / 81 pass
 
 ## 独立服务与前端

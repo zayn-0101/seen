@@ -353,6 +353,21 @@ a { color: inherit; }
 .check-list li.bad .check-label { color: var(--red); }
 .check-detail { color: var(--muted); flex: 1 1 240px; word-break: break-word; }
 
+/* 转写模型选择卡片 */
+.model-picker { display: grid; gap: 8px; flex: 1 1 100%; margin-top: 8px; }
+.model-option {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.model-option.recommended { border-color: var(--accent); }
+.model-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.model-size { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.model-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }

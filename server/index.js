@@ -19,7 +19,7 @@ import { buildWeeklyReview } from '../core/lib/review.js'
 import { writeWeeklyReview, writeIndexNote } from '../core/lib/obsidian.js'
 import { buildIndexMarkdown } from '../core/lib/index-note.js'
 import { findMnemon } from '../core/lib/mnemon.js'
-import { installWhisperCli } from '../core/lib/whisper.js'
+import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
 import {
   PROVIDERS,
   PROVIDER_GROUPS,
@@ -127,6 +127,8 @@ const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '
 
 // 面板「安装 whisper-cli」按钮触发的 Homebrew 安装，同一时间只允许一个。
 let installingWhisperCli = false
+// 面板「下载 Whisper 模型」触发的下载，同一时间只允许一个。
+let installingWhisperModel = false
 
 function notifySaved(data = {}) {
   const platform = data.source === 'douyin' ? '抖音' : data.source === 'youtube' ? 'YouTube' : 'B站'
@@ -290,6 +292,51 @@ const server = createServer(async (req, res) => {
         installingWhisperCli = false
       })
       return json(res, 202, { ok: true, message: '已开始安装 whisper-cli（brew install whisper.cpp），进度会显示在面板上' })
+    }
+
+    // 转写模型的可选清单与当前状态（面板缺模型时按推荐顺序展示）
+    if (pathname === '/api/whisper-models' && req.method === 'GET') {
+      return json(res, 200, {
+        models: WHISPER_MODELS,
+        current: findWhisperModel(baseConfig),
+      })
+    }
+
+    // 用户点「下载」后才会执行，进度通过 SSE progress 事件推送。
+    if (pathname === '/api/install/whisper-model' && req.method === 'POST') {
+      const body = await readBody(req)
+      const modelId = String(body?.model || '').trim()
+      const entry = WHISPER_MODELS.find((item) => item.id === modelId)
+      if (!entry) return json(res, 400, { ok: false, error: '不支持的模型：' + (modelId || '（空）') })
+      if (installingWhisperModel) return json(res, 409, { ok: false, error: '已有模型正在下载，请稍候' })
+      installingWhisperModel = true
+      log('开始下载 Whisper 模型：' + entry.id + '（' + entry.sizeMb + 'MB）')
+      installWhisperModel({
+        model: entry.id,
+        onProgress: (progress) => broadcast({
+          type: 'progress',
+          data: { stage: 'install', message: 'Whisper 模型：' + (progress.message || ''), percent: progress.percent ?? null },
+          at: Date.now(),
+        }),
+      }).then((result) => {
+        log('Whisper 模型' + (result.ok ? '下载完成：' + result.path : '下载失败：' + result.error))
+        broadcast({
+          type: 'progress',
+          data: {
+            stage: 'install',
+            message: result.ok
+              ? 'Whisper 模型下载完成（' + entry.label + '），可以重新诊断'
+              : 'Whisper 模型下载失败：' + (result.error || '未知原因'),
+          },
+          at: Date.now(),
+        })
+        return snapshot().then((data) => broadcast({ type: 'snapshot', data, at: Date.now() }))
+      }).catch((error) => {
+        log('Whisper 模型下载异常：' + (error?.message || error))
+      }).finally(() => {
+        installingWhisperModel = false
+      })
+      return json(res, 202, { ok: true, message: '已开始下载 ' + entry.label + '（' + entry.sizeMb + 'MB），进度会显示在面板上' })
     }
 
     if (pathname === '/api/events' && req.method === 'GET') {

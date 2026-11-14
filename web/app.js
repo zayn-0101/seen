@@ -441,8 +441,8 @@ function handleEvent(event) {
   if (event.type === 'summarized' && event.data && !state.summary) renderSummary({ ...event.data, chapters: [], fetchStats: null }, '总结完成')
   if (event.type === 'progress' && event.data?.stage === 'install') {
     const message = String(event.data.message || '')
-    if (message.includes('安装完成')) setTimeout(check, 500)
-    else if (message.includes('安装失败')) showToast(message, true)
+    if (/安装完成|下载完成/.test(message)) setTimeout(check, 500)
+    else if (/安装失败|下载失败/.test(message)) showToast(message, true)
   }
   if (event.type === 'snapshot') {
     renderSnapshot(event.data)
@@ -542,9 +542,45 @@ function renderCheckPanel(data) {
       install.addEventListener('click', () => installWhisperCli(install))
       row.append(install)
     }
+    if (!item.ok && item.id === 'whisper-model') renderModelPicker(row)
     list.append(row)
   }
   panel.hidden = false
+}
+
+async function renderModelPicker(row) {
+  try {
+    const data = await api('/api/whisper-models')
+    const box = el('div', 'model-picker')
+    for (const model of data.models || []) {
+      const card = el('div', 'model-option' + (model.recommended ? ' recommended' : ''))
+      const head = el('div', 'model-head')
+      head.append(el('strong', '', model.label))
+      if (model.recommended) head.append(el('span', 'chip accent', '推荐'))
+      head.append(el('span', 'model-size', String(model.sizeMb) + ' MB'))
+      card.append(head)
+      if (model.note) card.append(el('p', 'model-note', model.note))
+      const button = el('button', 'button text-button', '下载')
+      button.type = 'button'
+      button.addEventListener('click', () => installWhisperModel(button, model))
+      card.append(button)
+      box.append(card)
+    }
+    row.append(box)
+  } catch { /* 取不到列表时保持纯文本提示 */ }
+}
+
+async function installWhisperModel(button, model) {
+  button.disabled = true
+  button.textContent = '下载中…'
+  try {
+    const data = await api('/api/install/whisper-model', { method: 'POST', body: JSON.stringify({ model: model.id }) })
+    showToast(data.message || '已开始下载', true)
+  } catch (error) {
+    showToast(error.message)
+    button.disabled = false
+    button.textContent = '下载'
+  }
 }
 
 async function installWhisperCli(button) {
