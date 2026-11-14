@@ -342,11 +342,13 @@ export function apply(ctx, rawConfig = {}) {
         contentSource: transcriptSource || 'metadata',
         contentQuality,
         noteRoot: config.noteRoot,
+        layout: config.noteLayout,
       })
 
       const writeResult = writeVideoNote({
         vaultPath,
         noteRoot: config.noteRoot,
+        layout: config.noteLayout,
         subject,
         title: finalTitle,
         bvid: content?.bvid || inputBvid || '',
@@ -380,8 +382,8 @@ export function apply(ctx, rawConfig = {}) {
       else videos.push(videoRecord)
       state.subjects[subject].updatedAt = createdAt
 
-      updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject) })
-      updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects) })
+      updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
+      updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), layout: config.noteLayout })
       if (config.openInObsidian) {
         const opened = openInObsidian({ vaultPath, notePath: writeResult.relPath })
         if (!opened.ok) logger.log('obsidian.open.error msg=' + (opened.error || 'unknown'))

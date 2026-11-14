@@ -10,6 +10,7 @@
  */
 
 import { conceptKey } from './concept.js'
+import { manualNoteLinkTarget, normalizeNoteLayout } from './paths.js'
 
 export const AUTO_START = '<!-- AUTO:START -->'
 export const AUTO_END = '<!-- AUTO:END -->'
@@ -389,7 +390,7 @@ export function renderVideoNote(input = {}) {
   } else if (platform === 'youtube') {
     lines.push('> [!note] YouTube 不提供弹幕，评论暂未抓取，下方讨论焦点为基于主题的推演。', '')
   }
-  const manualTarget = `${noteRoot}/${subject}/${subject} 学习手册`
+  const manualTarget = manualNoteLinkTarget({ noteRoot, subject, layout: normalizeNoteLayout(source.layout) })
   lines.push(`> 所属学科：[[${manualTarget}|${subject} 学习手册]]`, '')
 
   // 元数据统一收进表格，正文只留结论与知识点
@@ -565,6 +566,7 @@ export function subjectManualAutoBody(input = {}) {
 export function overviewAutoBody(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const noteRoot = cleanNoteRoot(source.noteRoot)
+  const layout = normalizeNoteLayout(source.layout)
   const subjects = normalizeSubjects(source.subjects)
   const lines = ['## 学科总览', '', '```mermaid', 'mindmap', '  root((课程知识地图))']
   if (subjects.length === 0) {
@@ -577,7 +579,7 @@ export function overviewAutoBody(input = {}) {
     lines.push('- （暂无，开始观看视频课程后会自动生成）')
   } else {
     for (const subject of subjects) {
-      const target = `${noteRoot}/${subject.name}/${subject.name} 学习手册`
+      const target = manualNoteLinkTarget({ noteRoot, subject: subject.name, layout })
       const count = subject.count === null ? '' : ` — ${subject.count} 个视频`
       lines.push(`- [[${target}|${subject.name}]]${count}`)
     }
@@ -612,7 +614,7 @@ export function renderOverview(input = {}) {
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const updatedAt = formatDate(source.updatedAt ?? Date.now())
   const frontmatter = renderFrontmatter({ title: '课程知识地图', created: updatedAt, updated: updatedAt, type: 'course-overview' })
-  const body = overviewAutoBody({ subjects: source.subjects, noteRoot })
+  const body = overviewAutoBody({ subjects: source.subjects, noteRoot, layout: source.layout })
   return [
     frontmatter.trimEnd(),
     '',

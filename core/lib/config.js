@@ -17,6 +17,7 @@ export const DEFAULTS = Object.freeze({
   stablePolls: 2,
   vaultPath: null,
   noteRoot: '课程知识地图',
+  noteLayout: 'flat',
   stateDir: null,
   provider: null,
   model: null,
@@ -44,6 +45,7 @@ export const DEFAULTS = Object.freeze({
   browserNames: null,
 })
 
+const NOTE_LAYOUTS = ['flat', 'structured']
 const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays', 'youtubeCacheDays']
 const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian']
 const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin', 'chromePath', 'ffmpegBin', 'whisperBin', 'whisperModel']
@@ -175,6 +177,7 @@ export function resolveConfig(raw = {}) {
 
   requireNonEmptyString(config.noteRoot, 'noteRoot')
   config.noteRoot = config.noteRoot.trim()
+  if (!NOTE_LAYOUTS.includes(config.noteLayout)) config.noteLayout = DEFAULTS.noteLayout
 
   if (typeof config.mnemonStore !== 'string' || config.mnemonStore.trim() === '') {
     throw new Error('seen-core: mnemonStore 必须是非空字符串')

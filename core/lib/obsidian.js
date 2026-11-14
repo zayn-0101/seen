@@ -23,6 +23,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
+import { manualNoteRelPath, normalizeNoteLayout, videoNoteRelPath } from './paths.js'
 import {
   autoBlock,
   mergeManualSection,
@@ -108,12 +109,12 @@ export function ensureVaultDirs({ vaultPath, noteRoot, stateDir } = {}) {
   if (stateDir) mkdirSync(String(stateDir), { recursive: true })
 }
 
-/** 视频笔记路径：<noteRoot>/<学科>/<标题>.md。 */
-export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid } = {}) {
+/** 视频笔记路径：扁平 <noteRoot>/<学科>/<标题>.md；结构化 <noteRoot>/视频笔记/<学科>/<标题>.md。 */
+export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const subjectName = safeFilename(subject || DEFAULT_SUBJECT, 80)
   const noteName = safeFilename(title || bvid || '未命名视频', 80)
-  const relPath = toPosix(join(root, subjectName, `${noteName}.md`))
+  const relPath = toPosix(videoNoteRelPath({ noteRoot: root, subject: subjectName, noteName, layout }))
   return { absPath: absoluteFromRel(vaultPath, relPath), relPath }
 }
 
@@ -166,8 +167,8 @@ function backupFile(file) {
  *  - 不同 bvid：文件名追加 " (BVxxxx)"
  *  - force：备份 .bak-<timestamp> 后覆盖
  */
-export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false } = {}) {
-  const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid })
+export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout } = {}) {
+  const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout })
   const targetBvid = String(bvid ?? '').trim()
   let target = base
 
@@ -220,18 +221,18 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, cont
   return { relPath: target.relPath, absPath: target.absPath, skipped: false }
 }
 
-function manualNotePath({ vaultPath, noteRoot, subject }) {
+function manualNotePath({ vaultPath, noteRoot, subject, layout }) {
   const root = normalizeNoteRoot(noteRoot)
   const subjectName = safeFilename(subject || DEFAULT_SUBJECT, 80)
-  const relPath = toPosix(join(root, subjectName, `${subjectName}${MANUAL_SUFFIX}`))
+  const relPath = toPosix(manualNoteRelPath({ noteRoot: root, subject: subjectName, layout }))
   return { absPath: absoluteFromRel(vaultPath, relPath), relPath }
 }
 
 /** 更新/创建学科学习手册：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
-export function updateSubjectManual({ vaultPath, noteRoot, subject, videos } = {}) {
-  const target = manualNotePath({ vaultPath, noteRoot, subject })
+export function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout } = {}) {
+  const target = manualNotePath({ vaultPath, noteRoot, subject, layout })
   if (!existsSync(target.absPath)) {
-    atomicWrite(target.absPath, renderSubjectManual({ subject, videos, noteRoot, updatedAt: Date.now() }))
+    atomicWrite(target.absPath, renderSubjectManual({ subject, videos, noteRoot, layout, updatedAt: Date.now() }))
   } else {
     const current = readFileSync(target.absPath, 'utf8')
     const next = upsertAutoBlock(current, autoBlock(subjectManualAutoBody({ subject, videos })))
@@ -241,15 +242,15 @@ export function updateSubjectManual({ vaultPath, noteRoot, subject, videos } = {
 }
 
 /** 更新/创建课程总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
-export function updateOverview({ vaultPath, noteRoot, subjects } = {}) {
+export function updateOverview({ vaultPath, noteRoot, subjects, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, OVERVIEW_FILENAME))
   const target = { absPath: absoluteFromRel(vaultPath, relPath), relPath }
   if (!existsSync(target.absPath)) {
-    atomicWrite(target.absPath, renderOverview({ subjects, noteRoot: root, updatedAt: Date.now() }))
+    atomicWrite(target.absPath, renderOverview({ subjects, noteRoot: root, layout, updatedAt: Date.now() }))
   } else {
     const current = readFileSync(target.absPath, 'utf8')
-    const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, noteRoot: root })))
+    const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, noteRoot: root, layout })))
     atomicWrite(target.absPath, next)
   }
   return target
