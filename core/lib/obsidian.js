@@ -25,6 +25,7 @@ import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
 import {
   autoBlock,
+  mergeManualSection,
   overviewAutoBody,
   renderOverview,
   renderSubjectManual,
@@ -205,7 +206,17 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, cont
     }
   }
 
-  atomicWrite(target.absPath, content)
+  // force 重写时把旧笔记里的手写内容搬回来，避免整篇覆盖丢掉
+  let finalContent = content
+  try {
+    if (existsSync(target.absPath)) {
+      finalContent = mergeManualSection(readFileSync(target.absPath, 'utf8'), content)
+    }
+  } catch {
+    finalContent = content
+  }
+
+  atomicWrite(target.absPath, finalContent)
   return { relPath: target.relPath, absPath: target.absPath, skipped: false }
 }
 

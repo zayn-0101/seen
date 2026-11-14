@@ -319,8 +319,13 @@ export function apply(ctx, rawConfig = {}) {
         author: content?.owner || content?.author || '',
         createdAt,
         summary: summary.summary,
+        question: summary.question,
+        answer: summary.answer,
         keyPoints: summary.keyPoints,
+        concepts: summary.concepts,
+        numbers: summary.numbers,
         discussion: summary.discussion,
+        duration: Number(content?.duration) || 0,
         fetchStats: content?.fetchStats || null,
         tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
         chapters: content?.chapters || [],
@@ -352,6 +357,7 @@ export function apply(ctx, rawConfig = {}) {
         notePath: writeResult.relPath,
         keywords,
         summary: summary.summary.slice(0, 120),
+        concepts: summary.concepts.map((item) => item.name),
         createdAt,
       }
       const videos = state.subjects[subject].videos

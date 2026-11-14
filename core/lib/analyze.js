@@ -504,6 +504,10 @@ function userMessage(text) {
 /* 分类                                                                 */
 /* ------------------------------------------------------------------ */
 
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function cleanText(value) {
   return String(value ?? '')
     .replace(/<[^>]*>/g, '')
@@ -723,19 +727,84 @@ function normalizeDiscussion(value) {
 /**
  * 归一化总结结果；raw 非法时返回 fallback 对象。
  */
+// 泛化到没有区分度的概念词，抽出来只会污染标签体系
+const GENERIC_CONCEPTS = new Set([
+  '视频', '内容', '作者', '观点', '结论', '方法', '问题', '知识', '学习',
+  '总结', '介绍', '讲解', '分析', '案例', '故事', '话题', '主题', '讨论', '分享',
+])
+
+/** 规范化核心概念：过滤泛化词、限长、去重，最多 8 个。 */
+export function normalizeConcepts(value) {
+  if (!Array.isArray(value)) return []
+  const result = []
+  const seen = new Set()
+  for (const item of value) {
+    const raw = typeof item === 'string' ? { name: item } : (isPlainObject(item) ? item : null)
+    if (!raw) continue
+    const name = cleanText(raw.name ?? raw.title ?? raw.concept ?? '')
+    if (!name) continue
+    const plain = name.replace(/[\s\p{P}]+/gu, '')
+    if (plain.length < 2 || plain.length > 12) continue
+    if (GENERIC_CONCEPTS.has(plain)) continue
+    if (seen.has(plain)) continue
+    seen.add(plain)
+    const brief = truncateText(cleanText(raw.brief ?? raw.desc ?? raw.explanation ?? ''), 80)
+    const aliases = Array.isArray(raw.aliases)
+      ? raw.aliases.map((alias) => cleanText(alias)).filter(Boolean).slice(0, 3)
+      : []
+    result.push({ name, brief, aliases })
+    if (result.length >= 8) break
+  }
+  return result
+}
+
+/** 规范化关键数字：值必须具体，含义不能为空，最多 6 条。 */
+export function normalizeNumbers(value) {
+  if (!Array.isArray(value)) return []
+  const result = []
+  const seen = new Set()
+  for (const item of value) {
+    const raw = typeof item === 'string' ? { value: item } : (isPlainObject(item) ? item : null)
+    if (!raw) continue
+    const figure = cleanText(raw.value ?? raw.number ?? raw.figure ?? '')
+    const meaning = truncateText(cleanText(raw.meaning ?? raw.desc ?? raw.note ?? ''), 60)
+    if (!figure || !meaning) continue
+    const key = figure + '|' + meaning
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push({ value: truncateText(figure, 30), meaning })
+    if (result.length >= 6) break
+  }
+  return result
+}
+
 export function normalizeSummary(raw, fallbackTitle) {
   const title = cleanText(fallbackTitle)
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { summary: title, keyPoints: [], discussion: [], mnemonSummary: title }
+    return {
+      summary: title,
+      question: '',
+      answer: '',
+      keyPoints: [],
+      concepts: [],
+      numbers: [],
+      discussion: [],
+      mnemonSummary: title,
+    }
   }
 
   const summary = truncateText(
     pickString(raw.summary, raw.abstract, raw.overview, raw.brief) || title,
     120
   )
+  // 这期想解决什么、给出了什么答案，比平铺知识点更能体现论证结构
+  const question = truncateText(cleanText(pickString(raw.question, raw.coreQuestion, raw.core_question) || ''), 120)
+  const answer = truncateText(cleanText(pickString(raw.answer, raw.coreAnswer, raw.core_answer) || ''), 200)
   const keyPoints = normalizeKeyPoints(
     raw.keyPoints ?? raw.key_points ?? raw.keypoints ?? raw.topics ?? raw.points
   )
+  const concepts = normalizeConcepts(raw.concepts ?? raw.coreConcepts ?? raw.core_concepts)
+  const numbers = normalizeNumbers(raw.numbers ?? raw.keyNumbers ?? raw.key_numbers ?? raw.figures)
   const discussion = normalizeDiscussion(
     raw.discussion ?? raw.discussions ?? raw.discussionPoints ?? raw.discussion_points
   )
@@ -744,7 +813,7 @@ export function normalizeSummary(raw, fallbackTitle) {
       summary,
     800
   )
-  return { summary, keyPoints, discussion, mnemonSummary }
+  return { summary, question, answer, keyPoints, concepts, numbers, discussion, mnemonSummary }
 }
 
 /** 把长文本切成带少量重叠的块，避免长视频字幕超过单次上下文。 */
@@ -793,7 +862,42 @@ async function digestTranscript(ctx, config, { title, transcript }) {
       if (cleaned) parts.push('【第 ' + (i + 1) + ' 段】' + cleaned)
     } catch { /* 单块失败不阻塞其他块 */ }
   }
-  return parts.length ? parts.join('\n\n') : truncateText(transcript, 14000)
+  if (!parts.length) return truncateText(transcript, 14000)
+  // 分块压缩只解决了长度问题，块之间仍会重复、断裂；再合并一次才能理出主线
+  return await mergeDigests(ctx, config, { title, parts })
+}
+
+/** 把各块压缩结果合并成一份去重、有主线的纪要。失败时退回直接拼接。 */
+async function mergeDigests(ctx, config, { title, parts = [] }) {
+  const list = Array.isArray(parts) ? parts.filter(Boolean) : []
+  if (list.length === 0) return ''
+  if (list.length === 1) return list[0]
+  const prompt = [
+    '下面是同一期视频按时间顺序分块压缩出的多段要点。',
+    '视频标题：' + cleanText(title),
+    '',
+    '【分段要点开始】',
+    list.join('\n\n'),
+    '【分段要点结束】',
+    '',
+    '请合并成一份不重复、有主线的纪要。',
+    '要求：',
+    '- 同一件事在多段里出现时只保留一次，合并同类项。',
+    '- 严格按原片的推进顺序排列，不要重新组织。',
+    '- 用 8~20 条短句输出，保留关键术语、数字、结论。',
+    '- 不要输出 JSON、标题或额外说明。',
+  ].join('\n')
+  try {
+    const text = await callLlm(ctx, config, {
+      system: '你是课程纪要编辑，只做去重与主线整理，不补充原文之外的内容。',
+      messages: [userMessage(prompt)],
+      maxTokens: 3000,
+    })
+    const cleaned = cleanText(text)
+    return cleaned || list.join('\n\n')
+  } catch {
+    return list.join('\n\n')
+  }
 }
 
 function buildMaterialBlock(content, { transcriptText = null } = {}) {
@@ -882,15 +986,18 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
-    '{"summary":"不超过120字的一句话总结","keyPoints":[{"title":"主题","time":123,"points":["要点1","要点2"]}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
+    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","keyPoints":[{"title":"主题","time":123,"points":["要点1"]}],"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
     '',
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
-    '2. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。',
-    '3. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
-    '4. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
-    '5. 全部使用中文。',
-    '6. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
+    '2. question / answer：用一到两句话说清「这期试图回答什么问题」和「最终给出了什么答案」。若视频只是知识罗列、没有明确问题，两者都留空字符串。',
+    '3. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。',
+    '4. concepts：3~8 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；同一概念如有别称，写进 aliases。',
+    '5. numbers：3~6 个带有量级的关键数字，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；没有真实数字时输出空数组，不要编造。',
+    '6. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
+    '7. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
+    '8. 全部使用中文。',
+    '9. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
   ].join('\n')
 }
 

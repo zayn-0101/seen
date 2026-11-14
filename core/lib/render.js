@@ -174,6 +174,83 @@ function normalizeFetchStats(raw) {
   }
 }
 
+// 「我的补充」手写保护区：整篇重写时保留用户自己写的内容
+const MANUAL_BEGIN = '<!-- MANUAL:START -->'
+const MANUAL_END = '<!-- MANUAL:END -->'
+
+// 和 analyze 侧一致：泛化词不进概念区，否则标签体系会被稀释
+const GENERIC_CONCEPTS = new Set([
+  '视频', '内容', '作者', '观点', '结论', '方法', '问题', '知识', '学习',
+  '总结', '介绍', '讲解', '分析', '案例', '故事', '话题', '主题', '讨论', '分享',
+])
+
+export function normalizeConcepts(value) {
+  if (!Array.isArray(value)) return []
+  const result = []
+  const seen = new Set()
+  for (const item of value) {
+    const raw = typeof item === 'string' ? { name: item } : (isPlainObject(item) ? item : null)
+    if (!raw) continue
+    const name = cleanInline(raw.name ?? raw.title ?? raw.concept ?? '')
+    if (!name) continue
+    const plain = name.replace(/[\s\p{P}]+/gu, '')
+    if (plain.length < 2 || plain.length > 12) continue
+    if (GENERIC_CONCEPTS.has(plain)) continue
+    if (seen.has(plain)) continue
+    seen.add(plain)
+    const brief = cleanInline(raw.brief ?? raw.desc ?? raw.explanation ?? '')
+    const aliases = Array.isArray(raw.aliases)
+      ? raw.aliases.map((alias) => cleanInline(alias)).filter(Boolean).slice(0, 3)
+      : []
+    result.push({ name, brief, aliases })
+    if (result.length >= 8) break
+  }
+  return result
+}
+
+export function normalizeNumbers(value) {
+  if (!Array.isArray(value)) return []
+  const result = []
+  const seen = new Set()
+  for (const item of value) {
+    const raw = typeof item === 'string' ? { value: item } : (isPlainObject(item) ? item : null)
+    if (!raw) continue
+    const figure = cleanInline(raw.value ?? raw.number ?? raw.figure ?? '')
+    const meaning = cleanInline(raw.meaning ?? raw.desc ?? raw.note ?? '')
+    if (!figure || !meaning) continue
+    const key = figure + '|' + meaning
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push({ value: figure.slice(0, 30), meaning })
+    if (result.length >= 6) break
+  }
+  return result
+}
+
+/** 提取「我的补充」区块里的手写内容。 */
+export function extractManualSection(text) {
+  const source = String(text ?? '')
+  const start = source.indexOf(MANUAL_BEGIN)
+  if (start < 0) return ''
+  const end = source.indexOf(MANUAL_END, start + MANUAL_BEGIN.length)
+  if (end < 0) return ''
+  return source.slice(start + MANUAL_BEGIN.length, end).trim()
+}
+
+/** 把旧笔记里的手写内容搬进新生成的笔记，避免整篇覆盖时丢掉。 */
+export function mergeManualSection(existingText, nextText) {
+  const manual = extractManualSection(existingText)
+  const next = String(nextText ?? '')
+  if (!manual) return next
+  const start = next.indexOf(MANUAL_BEGIN)
+  const end = start >= 0 ? next.indexOf(MANUAL_END, start + MANUAL_BEGIN.length) : -1
+  if (start < 0 || end < 0) {
+    const body = next.trimEnd()
+    return body + '\n\n## 我的补充\n\n' + MANUAL_BEGIN + '\n' + manual + '\n' + MANUAL_END + '\n'
+  }
+  return next.slice(0, start + MANUAL_BEGIN.length) + '\n' + manual + '\n' + next.slice(end)
+}
+
 function normalizeVideos(videos) {
   if (!Array.isArray(videos)) return []
   const result = []
@@ -233,10 +310,16 @@ export function renderVideoNote(input = {}) {
   const createdAt = formatDate(source.createdAt ?? Date.now())
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const summary = oneLine(source.summary)
+  const question = oneLine(source.question)
+  const answer = oneLine(source.answer)
   const keyPoints = normalizeKeyPoints(source.keyPoints)
+  const concepts = normalizeConcepts(source.concepts)
+  const numbers = normalizeNumbers(source.numbers)
   const discussion = normalizeStringList(source.discussion)
   const stats = normalizeFetchStats(source.fetchStats)
   const chapters = normalizeChapters(source.chapters)
+  const duration = toCount(source.duration)
+  const publishedAt = cleanInline(source.publishedAt)
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
 
@@ -271,7 +354,9 @@ export function renderVideoNote(input = {}) {
   } else if (contentSource === 'whisper') {
     lines.push('> [!info] 内容来源：音频，本地 Whisper 转写（自动识别，可能存在同音错字）', '')
   }
-  lines.push(`> ${summary || '（暂无摘要）'}`, '')
+  lines.push('> [!abstract] 一句话总结', `> ${summary || '（暂无摘要）'}`, '')
+  if (question) lines.push('> [!question] 这期想回答', `> ${question}`, '')
+  if (answer) lines.push('> [!success] 给出的答案', `> ${answer}`, '')
   if (platform === 'douyin') {
     lines.push('> [!note] 抖音评论/弹幕正文暂未抓取，下方讨论焦点为基于主题的推演。', '')
   } else if (platform === 'youtube') {
@@ -279,6 +364,30 @@ export function renderVideoNote(input = {}) {
   }
   const manualTarget = `${noteRoot}/${subject}/${subject} 学习手册`
   lines.push(`> 所属学科：[[${manualTarget}|${subject} 学习手册]]`, '')
+
+  // 元数据统一收进表格，正文只留结论与知识点
+  const platformLabel = platform === 'youtube' ? 'YouTube' : platform === 'douyin' ? '抖音精选' : 'B站'
+  const metaRows = [['平台', platformLabel]]
+  if (author) {
+    const authorLabel = platform === 'youtube' ? '频道' : platform === 'douyin' ? '作者' : 'UP 主'
+    metaRows.push([authorLabel, author])
+  }
+  if (duration > 0) metaRows.push(['时长', formatDuration(duration)])
+  if (publishedAt) metaRows.push(['发布', publishedAt])
+  if (url) metaRows.push(['链接', url])
+  if (bvid) metaRows.push(['BV 号', bvid])
+  if (videoId && !bvid) metaRows.push(['视频 ID', videoId])
+  lines.push('## 视频信息', '', '| 项目 | 内容 |', '| --- | --- |')
+  for (const [metaKey, metaValue] of metaRows) lines.push(`| ${metaKey} | ${metaValue.replace(/\|/g, '\\|')} |`)
+  lines.push('')
+
+  if (numbers.length > 0) {
+    lines.push('## 关键数字', '', '| 数字 | 含义 |', '| --- | --- |')
+    for (const item of numbers) {
+      lines.push(`| ${item.value.replace(/\|/g, '\\|')} | ${item.meaning.replace(/\|/g, '\\|')} |`)
+    }
+    lines.push('')
+  }
 
   if (chapters.length > 0) {
     lines.push('## 章节', '')
@@ -303,6 +412,17 @@ export function renderVideoNote(input = {}) {
     }
   }
 
+  if (concepts.length > 0) {
+    lines.push('## 核心概念', '')
+    for (const concept of concepts) {
+      const aliasText = concept.aliases.length ? `（别称：${concept.aliases.join('、')}）` : ''
+      lines.push(concept.brief
+        ? `- **${concept.name}** — ${concept.brief}${aliasText}`
+        : `- **${concept.name}**${aliasText}`)
+    }
+    lines.push('')
+  }
+
   lines.push(platform === 'youtube' ? '## 讨论焦点' : '## 弹幕与评论讨论焦点', '')
   if (discussion.length === 0) lines.push('- （暂无讨论数据）')
   else for (const item of discussion) lines.push(`- ${item}`)
@@ -321,6 +441,9 @@ export function renderVideoNote(input = {}) {
     }
   }
   lines.push('```', '')
+
+  // 手写保护区：重新生成笔记时由 mergeManualSection 原样搬回
+  lines.push('## 我的补充', '', MANUAL_BEGIN, '', MANUAL_END, '')
 
   lines.push('## 来源统计', '')
   if (platform === 'douyin') {
