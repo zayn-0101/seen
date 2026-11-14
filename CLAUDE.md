@@ -102,7 +102,7 @@ mnemon recall "视频课程"
 ## 重要事实
 
 - 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 ~/.seen/llm.json（600）。
-- 视频处理完成后通过 macOS 通知提醒（SEEN_DISABLE_NOTIFY=1 可关）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站与 YouTube 的章节和知识点带 t= 时间链接。
+- macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示，不逐条弹；SEEN_DISABLE_NOTIFY=1 可关；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站与 YouTube 的章节和知识点带 t= 时间链接。
 - 每次生成笔记后重建课程知识地图/索引.md（AUTO 区块）；每周回顾写入 每周回顾/，已存在不覆盖。
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
