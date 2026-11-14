@@ -16,7 +16,7 @@ import {
 } from './config.js'
 import {
   loadState, saveState, seenKey, isSeen, markSeen, pruneSeen,
-  resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure,
+  resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure, listFailures,
 } from './state.js'
 import { observeForeground, isBrowserName } from './foreground.js'
 import { probeDarwinPermission } from './foreground-darwin.js'
@@ -430,7 +430,13 @@ export function apply(ctx, rawConfig = {}) {
     } catch (error) {
       const msg = String(error?.message || error)
       if (activeKey || key) {
-        recordFailure(state, activeKey || key, msg)
+        recordFailure(state, activeKey || key, msg, {
+          title: rawTitle,
+          url: input?.url || '',
+          source,
+          bvid: inputBvid || null,
+          videoId: inputVideoId || null,
+        })
         state.stats.failed += 1
         save()
       }
@@ -523,6 +529,7 @@ export function apply(ctx, rawConfig = {}) {
       lastError,
       mnemonReady,
       subjects,
+      failures: listFailures(state, 10),
       message,
     }
   }
@@ -624,6 +631,30 @@ export function apply(ctx, rawConfig = {}) {
     let waited = 0
     while (running && waited < 90000) { await new Promise((r) => setTimeout(r, 500)); waited += 500 }
     return await processTitle(input)
+  }
+
+  /** 重试一条失败记录：先清掉失败计数，再用保存的链接重新处理。 */
+  async function retryFailure(key) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    const failures = state.failures && typeof state.failures === 'object' ? state.failures : {}
+    const record = failures[key]
+    if (!record || typeof record !== 'object') return { ok: false, message: '这条失败记录已经不存在了' }
+    const meta = record.meta && typeof record.meta === 'object' ? record.meta : {}
+    const input = {}
+    if (meta.url) input.url = meta.url
+    if (meta.title) input.title = meta.title
+    if (meta.source) input.source = meta.source
+    if (!input.url && !input.title) {
+      return { ok: false, message: '这条记录是旧版本产生的，没有保存视频链接，请手动粘贴链接重试' }
+    }
+    clearFailure(state, key)
+    save()
+    return await processTitle(input)
+  }
+
+  /** 最近的失败记录（面板展示用） */
+  function getFailures(limit = 20) {
+    return listFailures(state, limit)
   }
 
   async function getSnapshot() {
@@ -807,6 +838,8 @@ export function apply(ctx, rawConfig = {}) {
     stop,
     setPollInterval,
     scan,
+    retryFailure,
+    getFailures,
     getStatus: buildStatus,
     getSnapshot,
     getHistory,

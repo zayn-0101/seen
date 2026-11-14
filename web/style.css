@@ -372,3 +372,17 @@ a { color: inherit; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+
+/* 失败记录 */
+.failures { max-height: 220px; overflow: auto; margin: 0; padding: 0; list-style: none; scrollbar-width: thin; }
+.failures::-webkit-scrollbar { width: 5px; }
+.failures::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+.failure-item { padding: 9px 0; border-top: 1px solid var(--live-line); }
+.failure-item:first-child { border-top: 0; }
+.failure-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.failure-head strong { font-size: 12.5px; font-weight: 600; color: var(--live-ink); overflow-wrap: anywhere; }
+.failure-meta { flex: 0 0 auto; color: var(--live-muted); font-family: var(--mono); font-size: 10px; }
+.failure-error { margin: 4px 0 0; color: #ffb7a8; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.failure-actions { display: flex; gap: 8px; margin-top: 7px; }
+.failure-actions .button { min-height: 30px; padding: 0 10px; font-size: 11.5px; }

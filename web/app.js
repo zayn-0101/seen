@@ -354,6 +354,70 @@ function stopStageClock() {
   state.processingStarted = 0
 }
 
+function renderFailures(failures) {
+  const card = $('failuresCard')
+  const list = $('failures')
+  if (!card || !list) return
+  const rows = Array.isArray(failures) ? failures : []
+  card.hidden = rows.length === 0
+  if (rows.length === 0) {
+    list.innerHTML = ''
+    return
+  }
+  const count = $('failuresCount')
+  if (count) count.textContent = rows.length + ' 条待处理'
+  list.innerHTML = ''
+  for (const row of rows) {
+    const item = el('li', 'failure-item')
+    const head = el('div', 'failure-head')
+    head.appendChild(el('strong', '', row.meta?.title || row.key))
+    const metaText = [
+      row.meta?.source || '',
+      row.count > 1 ? '失败 ' + row.count + ' 次' : '',
+      formatClock(row.at),
+    ].filter(Boolean).join(' · ')
+    head.appendChild(el('span', 'failure-meta', metaText))
+    item.appendChild(head)
+    item.appendChild(el('p', 'failure-error', row.lastError || '未知错误'))
+    const actions = el('div', 'failure-actions')
+    if (row.meta?.url || row.meta?.title) {
+      const retry = el('button', 'button text-button', '重试')
+      retry.type = 'button'
+      retry.addEventListener('click', () => retryFailure(row.key, retry))
+      actions.appendChild(retry)
+    }
+    if (row.meta?.url) {
+      const link = el('a', 'button text-button', '打开原视频')
+      link.href = row.meta.url
+      link.target = '_blank'
+      link.rel = 'noreferrer'
+      actions.appendChild(link)
+    }
+    item.appendChild(actions)
+    list.appendChild(item)
+  }
+}
+
+async function retryFailure(key, button) {
+  const label = button ? button.textContent : ''
+  if (button) {
+    button.disabled = true
+    button.textContent = '重试中…'
+  }
+  try {
+    const data = await api('/api/retry', { method: 'POST', body: JSON.stringify({ key }) })
+    renderSnapshot(data)
+    showToast(data.result?.ok ? '重试完成' : '仍然失败：' + String(data.result?.message || '').slice(0, 80))
+  } catch (error) {
+    showToast('重试失败：' + (error?.message || error))
+  } finally {
+    if (button) {
+      button.disabled = false
+      button.textContent = label || '重试'
+    }
+  }
+}
+
 function renderSnapshot(snap) {
   state.snapshot = snap
   stopStageClock()
@@ -367,6 +431,7 @@ function renderSnapshot(snap) {
   const vaultPath = snap.status?.vaultPath ? String(snap.status.vaultPath) : ''
   $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
   renderHistory(snap.history || [])
+  renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
   if (snap.status?.lastForeground) renderForeground({ ...snap.status.lastForeground, isBrowser: snap.status.lastForeground.isBrowser !== false })
   const saved = [...state.events].reverse().find((event) => event.type === 'saved')

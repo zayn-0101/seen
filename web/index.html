@@ -99,6 +99,14 @@
             </div>
             <div class="timeline"><div class="timeline-head"><span>最近活动</span><span id="lastPoll">尚未轮询</span></div><ol id="events" class="events"></ol></div>
           </section>
+
+          <section id="failuresCard" class="live-card" aria-labelledby="failuresTitle" hidden>
+            <div class="card-head">
+              <div><p class="section-kicker">FAILED</p><h2 id="failuresTitle">失败记录</h2></div>
+              <span id="failuresCount" class="state stopped"></span>
+            </div>
+            <ul id="failures" class="failures"></ul>
+          </section>
         </div>
 
         <section id="knowledge" class="history-card" aria-labelledby="knowledgeTitle" tabindex="-1">

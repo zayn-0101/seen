@@ -295,6 +295,17 @@ const server = createServer(async (req, res) => {
       return json(res, result.ok ? 200 : 500, { ...data, result })
     }
 
+    // 重试一条失败记录：用保存的链接重新走一遍处理流程。
+    if (pathname === '/api/retry' && req.method === 'POST') {
+      const body = await readBody(req)
+      const key = String(body.key || '').trim()
+      if (!key) return json(res, 400, { ok: false, error: '缺少 key' })
+      log('重试失败任务：' + key)
+      const result = await engine.retryFailure(key)
+      const data = await snapshot()
+      return json(res, result.ok ? 200 : 500, { ...data, result })
+    }
+
     if (pathname === '/api/check' && req.method === 'POST') {
       const check = tools.get('course_map_check')
       if (!check) return json(res, 500, { error: 'check tool missing' })

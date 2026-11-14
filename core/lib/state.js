@@ -150,17 +150,48 @@ export function resolveSubjectName(subject, existing = []) {
   return normalized
 }
 
-/** 记录失败：count 累加，记录时间和最后一次错误 */
-export function recordFailure(state, key, error) {
+/**
+ * 记录失败：count 累加、记录时间与最后一次错误。
+ * meta 保留视频信息（title / url / source / bvid / videoId），用于面板展示与一键重试。
+ */
+export function recordFailure(state, key, error, meta = null) {
   if (!state || typeof state !== 'object') return
   if (!isPlainObject(state.failures)) state.failures = {}
   const previous = isPlainObject(state.failures[key]) ? state.failures[key] : null
   const count = previous && typeof previous.count === 'number' && Number.isFinite(previous.count) ? previous.count : 0
-  state.failures[key] = {
+  const record = {
     count: count + 1,
     at: Date.now(),
     lastError: String(error ?? '').slice(0, 500),
   }
+  if (isPlainObject(meta)) {
+    const clean = {}
+    for (const field of ['title', 'url', 'source', 'bvid', 'videoId']) {
+      const value = meta[field]
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        clean[field] = String(value).slice(0, 500)
+      }
+    }
+    if (Object.keys(clean).length > 0) record.meta = clean
+  } else if (previous && isPlainObject(previous.meta)) {
+    record.meta = previous.meta
+  }
+  state.failures[key] = record
+}
+
+/** 列出最近失败记录（按时间倒序），供面板展示与重试 */
+export function listFailures(state, limit = 20) {
+  if (!state || !isPlainObject(state.failures)) return []
+  const entries = Object.entries(state.failures).map(([key, record]) => ({
+    key,
+    count: isPlainObject(record) && Number.isFinite(record.count) ? record.count : 0,
+    at: isPlainObject(record) && Number.isFinite(record.at) ? record.at : 0,
+    lastError: isPlainObject(record) && typeof record.lastError === 'string' ? record.lastError : '',
+    meta: isPlainObject(record) && isPlainObject(record.meta) ? record.meta : null,
+  }))
+  entries.sort((a, b) => b.at - a.at)
+  const max = Number.isFinite(limit) && limit >= 0 ? Math.floor(limit) : 20
+  return entries.slice(0, max)
 }
 
 /** 连续失败 >= 3 次且仍在冷却期内 → 跳过 */

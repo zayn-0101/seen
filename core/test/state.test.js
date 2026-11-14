@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   defaultState, loadState, saveState, seenKey, isSeen, markSeen, pruneSeen,
-  resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure,
+  resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure, listFailures,
 } from '../lib/state.js'
 
 test('state save/load roundtrip and corrupt fallback', () => {
@@ -49,6 +49,40 @@ test('subject resolution and failure cooldown', () => {
   assert.equal(shouldSkipFailure(state, key, Date.now() + 120_000, 60_000), false)
   clearFailure(state, key)
   assert.equal(state.failures[key], undefined)
+})
+
+test('recordFailure keeps video meta so the task can be retried', () => {
+  const state = defaultState()
+  recordFailure(state, 'bvid:BV1abc', 'yt-dlp 超时', {
+    title: '梯度下降',
+    url: 'https://www.bilibili.com/video/BV1abc',
+    source: 'bilibili',
+    bvid: 'BV1abc',
+  })
+  const first = state.failures['bvid:BV1abc']
+  assert.equal(first.count, 1)
+  assert.equal(first.meta.title, '梯度下降')
+  assert.equal(first.meta.source, 'bilibili')
+  assert.ok(first.at > 0)
+
+  // 不带 meta 时保留上一次的视频信息，避免重试时丢链接
+  recordFailure(state, 'bvid:BV1abc', '又失败了')
+  assert.equal(state.failures['bvid:BV1abc'].count, 2)
+  assert.equal(state.failures['bvid:BV1abc'].meta.url, 'https://www.bilibili.com/video/BV1abc')
+})
+
+test('listFailures returns newest first and honours the limit', () => {
+  const state = defaultState()
+  state.failures = {
+    old: { count: 1, at: 1000, lastError: 'a', meta: { title: 'old' } },
+    mid: { count: 2, at: 2000, lastError: 'b', meta: { title: 'mid' } },
+    new: { count: 1, at: 3000, lastError: 'c', meta: { title: 'new' } },
+  }
+  const all = listFailures(state)
+  assert.deepEqual(all.map((row) => row.key), ['new', 'mid', 'old'])
+  assert.deepEqual(listFailures(state, 2).map((row) => row.key), ['new', 'mid'])
+  assert.deepEqual(listFailures(defaultState()), [])
+  assert.deepEqual(listFailures(null), [])
 })
 
 test('markSeen and pruneSeen keep newest', () => {
