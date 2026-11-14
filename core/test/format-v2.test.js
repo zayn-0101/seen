@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeSummary, normalizeConcepts, normalizeNumbers } from '../lib/analyze.js'
-import { renderVideoNote, mergeManualSection, extractManualSection } from '../lib/render.js'
+import { renderVideoNote, mergeManualSection, extractManualSection, subjectManualAutoBody } from '../lib/render.js'
 import { buildConceptIndexMarkdown } from '../lib/index-note.js'
 
 test('normalizeConcepts filters generic words, dedupes and caps', () => {
@@ -165,4 +165,17 @@ test('buildConceptIndexMarkdown lists concepts with note links', () => {
   assert.ok(md.includes('### 责任前置'))
   assert.ok(md.includes('[[课程知识地图/写作/视频A|视频A]]'))
   assert.ok(!md.includes('空概念'))
+})
+
+test('subjectManualAutoBody lists core concepts with counts', () => {
+  const body = subjectManualAutoBody({
+    subject: '写作',
+    videos: [
+      { title: '甲', notePath: 'a/甲.md', concepts: ['责任前置'] },
+      { title: '乙', notePath: 'a/乙.md', concepts: ['责任 前置'] },
+      { title: '丙', notePath: 'a/丙.md' },
+    ],
+  })
+  assert.ok(body.includes('## 本学科核心概念'))
+  assert.ok(body.includes('**责任前置**（2）'))
 })

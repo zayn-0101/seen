@@ -282,6 +282,7 @@ function normalizeVideos(videos) {
       bvid: String(item.bvid ?? '').trim(),
       notePath: String(item.notePath ?? '').trim(),
       summary: oneLine(item.summary),
+      concepts: Array.isArray(item.concepts) ? item.concepts.map((c) => String(c ?? '').trim()).filter(Boolean) : [],
       createdAt: item.createdAt,
     })
   }
@@ -557,6 +558,29 @@ export function subjectManualAutoBody(input = {}) {
       const target = toLinkPath(video.notePath || video.title)
       const summary = video.summary ? ` — ${video.summary}` : ''
       lines.push(`- [[${target}|${video.title}]]${summary}`)
+    }
+  }
+
+  const conceptMap = new Map()
+  for (const video of videos) {
+    for (const name of video.concepts || []) {
+      const key = conceptKey(name)
+      if (!key) continue
+      if (!conceptMap.has(key)) conceptMap.set(key, { name, videos: [] })
+      conceptMap.get(key).videos.push(video)
+    }
+  }
+  const concepts = [...conceptMap.values()]
+    .sort((a, b) => b.videos.length - a.videos.length || a.name.localeCompare(b.name))
+    .slice(0, 20)
+  if (concepts.length > 0) {
+    lines.push('', '## 本学科核心概念', '')
+    for (const item of concepts) {
+      const links = item.videos
+        .slice(0, 3)
+        .map((video) => `[[${toLinkPath(video.notePath || video.title)}|${video.title}]]`)
+        .join('、')
+      lines.push(`- **${item.name}**（${item.videos.length}） — ${links}`)
     }
   }
   return lines.join('\n')

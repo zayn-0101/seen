@@ -83,6 +83,7 @@ function summarizeVideosForManual(state, subject) {
     bvid: v.bvid || '',
     notePath: v.notePath,
     summary: v.summary || '',
+    concepts: Array.isArray(v.concepts) ? v.concepts : [],
     createdAt: v.createdAt || Date.now(),
   }))
 }
