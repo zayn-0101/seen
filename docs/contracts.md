@@ -109,7 +109,7 @@ export async function probeDarwinPermission(): Promise<{ ok: boolean, detail: st
 - 所有子进程 `timeout: 5000`，失败不抛错，返回 error/permission。
 
 ### lib/foreground-win32.js
-保留原插件 PowerShell 逻辑，导出：
+保留原有的 PowerShell 前台检测逻辑，导出：
 ```js
 export async function observeWin32(config = {}): Promise<ForegroundResult>
 ```
@@ -252,7 +252,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 ## lib/index.js
 
-引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。`inject` 字段保留但只在插件宿主中生效；独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。
+引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。`inject` 字段保留以兼容宿主环境；独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
@@ -261,4 +261,4 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。
 - 内部工具名：`course_map_status`、`course_map_scan`、`course_map_check`，由服务构造的 ctx.tools 注册表调用（对应 /api/status、/api/scan、/api/check），不是对外公开 API。
-- 工具返回 schema 与原插件风格一致（raw JSON schema + output.schema + render）。
+- 内部工具的返回 schema 保持原有风格（raw JSON schema + output.schema + render），供服务层调用。

@@ -42,7 +42,7 @@
 
 ## 独立运行模式
 
-`server/index.js` 把同一套插件核心包成一个本地服务：
+`server/index.js` 把同一套引擎核心包成一个本地服务：
 
 ```
 浏览器 http://127.0.0.1:4780
@@ -55,7 +55,7 @@
   └─ POST /api/check      前台权限、Obsidian、mnemon、B站、LLM 诊断
 ```
 
-- `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用插件的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
+- `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
 - 多个 Seen 实例共用同一状态目录与 `instance.lock`：后启动的为只读，停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
