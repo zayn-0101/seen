@@ -179,3 +179,24 @@ test('subjectManualAutoBody lists core concepts with counts', () => {
   assert.ok(body.includes('## 本学科核心概念'))
   assert.ok(body.includes('**责任前置**（2）'))
 })
+
+test('subjectManualAutoBody skips concepts seen in only one video', () => {
+  const body = subjectManualAutoBody({
+    subject: '写作',
+    videos: [
+      { title: '甲', notePath: 'a/甲.md', concepts: ['只出现一次'] },
+      { title: '乙', notePath: 'a/乙.md', concepts: ['只出现一次'] },
+      { title: '丙', notePath: 'a/丙.md', concepts: ['孤例'] },
+    ],
+  })
+  assert.ok(body.includes('**只出现一次**（2）'))
+  assert.ok(!body.includes('孤例'))
+})
+
+test('subjectManualAutoBody omits the section when no concept repeats', () => {
+  const body = subjectManualAutoBody({
+    subject: '写作',
+    videos: [{ title: '甲', notePath: 'a/甲.md', concepts: ['独一份'] }],
+  })
+  assert.ok(!body.includes('本学科核心概念'))
+})

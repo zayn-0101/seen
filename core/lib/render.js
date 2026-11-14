@@ -570,7 +570,9 @@ export function subjectManualAutoBody(input = {}) {
       conceptMap.get(key).videos.push(video)
     }
   }
+  // 只保留出现在两篇以上笔记里的概念才算「核心」；单篇出现的进不了学科列表
   const concepts = [...conceptMap.values()]
+    .filter((item) => item.videos.length >= 2)
     .sort((a, b) => b.videos.length - a.videos.length || a.name.localeCompare(b.name))
     .slice(0, 20)
   if (concepts.length > 0) {
