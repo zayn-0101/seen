@@ -20,6 +20,13 @@ docs/brand/squirrel-icons-v1.zip
 .env
 .env.*
 
+# 本机环境与 Agent / 编辑器本地配置
+CLAUDE.local.md
+.claude/
+.vscode/
+.idea/
+*.swp
+
 # 浏览器自动化截图
 .playwright-mcp/
 
