@@ -183,7 +183,7 @@ cd menubar
         └── ...
 ```
 
-改成 `noteLayout: structured`（先用 `node scripts/migrate-vault.mjs --apply` 迁移旧文件）：
+想换成下面这种结构，在工作台工具栏的「目录」里选「视频笔记 + 手册」（或设环境变量 `SEEN_NOTE_LAYOUT=structured`）。切换后先跑 `node scripts/migrate-vault.mjs --apply` 把旧文件迁过去：
 
 ```
 <你的 vault>/

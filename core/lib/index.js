@@ -31,6 +31,7 @@ import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
+import { normalizeNoteLayout } from './paths.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
@@ -570,6 +571,7 @@ export function apply(ctx, rawConfig = {}) {
       readOnly,
       vaultPath,
       noteRoot: config.noteRoot,
+      noteLayout: config.noteLayout,
       stateDir: config.stateDir,
       provider: config.provider,
       model: config.model,
@@ -653,6 +655,21 @@ export function apply(ctx, rawConfig = {}) {
     logger.log('polling.interval=' + value)
     emit('status', { polling: started, pollIntervalMs: value, readOnly })
     return { ok: true, message: '轮询间隔已更新', pollIntervalMs: value }
+  }
+
+  function setNoteLayout(layout) {
+    const next = normalizeNoteLayout(layout)
+    if (next === config.noteLayout) {
+      return { ok: true, message: '目录布局没有变化', noteLayout: next }
+    }
+    const previous = config.noteLayout
+    config.noteLayout = next
+    logger.log('note.layout=' + previous + '->' + next)
+    emit('status', { polling: started, pollIntervalMs: config.pollIntervalMs, readOnly })
+    const message = next === 'structured'
+      ? '已切到结构化布局。旧笔记还在原目录，先运行 node scripts/migrate-vault.mjs --apply 迁移'
+      : '已切回按学科平铺的布局。结构化目录里的旧笔记不会被自动移回'
+    return { ok: true, message, noteLayout: next }
   }
 
   async function scan(input) {
@@ -866,6 +883,7 @@ export function apply(ctx, rawConfig = {}) {
     start,
     stop,
     setPollInterval,
+    setNoteLayout,
     scan,
     retryFailure,
     getFailures,

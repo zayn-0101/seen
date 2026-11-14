@@ -161,6 +161,7 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 .input-wrap:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 13%, transparent); }
 .input-wrap input { width: 42px; padding: 0; border: 0; outline: 0; background: transparent; text-align: right; font-variant-numeric: tabular-nums; }
 .unit { margin-left: 4px; color: var(--muted); font-size: 11px; }
+.layout-select { min-height: 32px; padding: 0 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12px; }
 .text-button { min-height: 32px; padding: 0 6px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; }
 .text-button:hover { color: var(--accent-ink); }
 .utility-divider { width: 1px; height: 16px; margin: 0 3px; background: var(--line-strong); }

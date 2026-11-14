@@ -642,6 +642,8 @@ function renderSnapshot(snap) {
   const vaultPath = snap.status?.vaultPath ? String(snap.status.vaultPath) : ''
   $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
   renderUpdate(snap.update || null)
+  const layoutSelect = $('noteLayout')
+  if (layoutSelect && snap.config?.noteLayout) layoutSelect.value = snap.config.noteLayout
   renderHistory(snap.history || [])
   renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
@@ -779,6 +781,16 @@ async function saveInterval() {
     const snap = await api('/api/config', { method: 'POST', body: JSON.stringify({ pollIntervalMs: Math.round(seconds * 1000) }) })
     renderSnapshot(snap)
     showToast('轮询间隔已保存：' + seconds + ' 秒')
+  } catch (error) {
+    showToast(error.message)
+  }
+}
+
+async function saveNoteLayout(layout) {
+  try {
+    const snap = await api('/api/config', { method: 'POST', body: JSON.stringify({ noteLayout: layout }) })
+    renderSnapshot(snap)
+    showToast(snap.message || '目录布局已更新')
   } catch (error) {
     showToast(error.message)
   }
@@ -922,6 +934,7 @@ $('toggle').addEventListener('click', () => {
   setStarted(!polling)
 })
 $('saveInterval').addEventListener('click', saveInterval)
+$('noteLayout').addEventListener('change', (event) => saveNoteLayout(event.target.value))
 $('interval').addEventListener('keydown', (event) => { if (event.key === 'Enter') saveInterval() })
 $('scan').addEventListener('click', () => scan(false))
 $('updateClose').addEventListener('click', () => {

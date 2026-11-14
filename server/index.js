@@ -38,7 +38,8 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const webRoot = join(here, '..', 'web')
-const uiDir = join(homedir(), '.seen')
+// 临时实例（SEEN_STATE_DIR）把 ui.json 也放进去，避免跑测试时改到真实配置
+const uiDir = process.env.SEEN_STATE_DIR ? process.env.SEEN_STATE_DIR : join(homedir(), '.seen')
 const uiPath = join(uiDir, 'ui.json')
 const PORT = Number(process.env.SEEN_PORT || 4780)
 const HOST = process.env.SEEN_HOST || '127.0.0.1'
@@ -88,6 +89,7 @@ const baseConfig = resolveConfig({
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
+  noteLayout: process.env.SEEN_NOTE_LAYOUT || ui.noteLayout || 'flat',
 })
 
 const tools = new Map()
@@ -331,6 +333,12 @@ const server = createServer(async (req, res) => {
         const result = engine.setPollInterval(body.pollIntervalMs)
         if (!result.ok) return json(res, 400, { error: result.message })
         ui.pollIntervalMs = result.pollIntervalMs
+        message = result.message
+      }
+      if (body.noteLayout !== undefined) {
+        const result = engine.setNoteLayout(body.noteLayout)
+        if (!result.ok) return json(res, 400, { error: result.message })
+        ui.noteLayout = result.noteLayout
         message = result.message
       }
       if (body.started !== undefined) {
