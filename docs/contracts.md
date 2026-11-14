@@ -261,7 +261,8 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `ensureYtDlp(config, { onProgress })`：异步；有就返回 `{ ok, path, skipped }`，没有则自动下载一次官方二进制到 `~/.seen/bin` 并校验 `--version`。失败返回 `{ ok: false, error }`，不抛错。
 - `installYtDlp({ force, onProgress })`：单独执行下载安装；并发调用共享同一次下载。
 - `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform)` / `ytDlpReleaseUrl(platform)`：安装位置、官方资产名（darwin→`yt-dlp_macos`、linux→`yt-dlp_linux`、win32→`yt-dlp.exe`）与下载地址。
-- 下载优先用 Node `fetch`，证书链失败时回退系统 `curl`；写入先落 `.part` 临时文件再 `rename`，保证原子性。
+- `ytDlpChecksumUrl()` / `parseChecksums(text)`：官方 `SHA2-256SUMS` 地址与解析（每行「hash  文件名」，纯函数）。
+- 下载校验：官方地址下载后比对 SHA256，取不到校验文件时放行；**走镜像下载时必须有校验且通过**，否则中止安装。先落 `.part` 再 `rename`，保证原子性。
 
 ## lib/download.js
 

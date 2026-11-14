@@ -65,6 +65,8 @@ export SEEN_GH_MIRROR=https://ghproxy.net/     # 支持逗号分隔多个
 export HF_ENDPOINT=https://hf-mirror.com       # HuggingFace 镜像
 ```
 
+yt-dlp 下载完会用官方 `SHA2-256SUMS` 校验 SHA256：走镜像下载时如果拿不到校验文件或对不上，会直接中止，不会安装来路不明的二进制。ffmpeg-static 官方不提供校验文件，只能靠官方优先来降低风险。
+
 ### 1. 获取代码
 
 ```bash

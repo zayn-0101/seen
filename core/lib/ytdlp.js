@@ -5,9 +5,10 @@
  * 运行时通过 ensureYtDlp() 在缺失时自动下载官方二进制，用户不必先装 brew。
  * 只负责找到/安装可执行文件，不读取任何 Cookie。
  */
+import { createHash } from 'node:crypto'
 import { execFile, spawnSync } from 'node:child_process'
 import { promisify } from 'node:util'
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { downloadCandidates } from './download.js'
@@ -78,6 +79,52 @@ async function verifyYtDlp(file) {
   }
 }
 
+/** yt-dlp 官方 SHA256 校验文件地址。 */
+export function ytDlpChecksumUrl() {
+  return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'
+}
+
+/** 解析 SHA2-256SUMS（每行「hash  filename」）为 Map<文件名, hash>。 */
+export function parseChecksums(text) {
+  const map = new Map()
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const match = line.trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/i)
+    if (match) map.set(match[2].trim(), match[1].toLowerCase())
+  }
+  return map
+}
+
+async function fetchText(url) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'seen-ytdlp-installer' },
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    return await res.text()
+  } catch (error) {
+    try {
+      const result = await execFileP('curl', ['-fsSL', '--max-time', '30', url], { timeout: 40000, maxBuffer: 2 * 1024 * 1024 })
+      return String(result.stdout || '')
+    } catch {
+      throw error
+    }
+  }
+}
+
+/** 比对文件 SHA256；拿不到校验文件时返回 null。 */
+async function verifyChecksum(file, assetName) {
+  for (const candidate of downloadCandidates(ytDlpChecksumUrl())) {
+    try {
+      const expected = parseChecksums(await fetchText(candidate)).get(assetName)
+      if (!expected) continue
+      const actual = createHash('sha256').update(readFileSync(file)).digest('hex')
+      return actual === expected
+    } catch { /* 换下一个候选 */ }
+  }
+  return null
+}
+
 async function downloadOnce(url, tempPath) {
   try {
     const res = await fetch(url, {
@@ -107,7 +154,7 @@ async function downloadFile(url, tempPath) {
   for (const candidate of candidates) {
     try {
       await downloadOnce(candidate, tempPath)
-      return
+      return candidate
     } catch (error) {
       lastError = error
       try { rmSync(tempPath, { force: true }) } catch { /* 忽略 */ }
@@ -133,8 +180,15 @@ export async function installYtDlp({ force = false, onProgress } = {}) {
     try {
       if (onProgress) onProgress({ stage: 'download', message: '正在下载 yt-dlp（约 37MB）' })
       mkdirSync(dirname(target), { recursive: true })
-      await downloadFile(ytDlpReleaseUrl(), temp)
+      const officialUrl = ytDlpReleaseUrl()
+      const usedUrl = await downloadFile(officialUrl, temp)
       chmodSync(temp, 0o755)
+      // 校验下载文件：官方地址取不到校验文件时放行；走镜像时必须有校验，否则中止。
+      const checksum = await verifyChecksum(temp, ytDlpAssetName())
+      if (checksum === false) throw new Error('SHA256 校验失败：下载的文件与官方校验值不符，已中止安装')
+      if (checksum === null && usedUrl !== officialUrl) {
+        throw new Error('从镜像下载但取不到官方校验文件，为安全起见已中止；可换网络重试')
+      }
       renameSync(temp, target)
       if (!await verifyYtDlp(target)) throw new Error('下载的 yt-dlp 无法运行')
       return { ok: true, path: target }
