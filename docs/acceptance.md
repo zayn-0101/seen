@@ -58,7 +58,7 @@
 
 - [x] yt-dlp：缺失时从 GitHub releases 下载到 `~/.seen/bin/yt-dlp`（37.4MB），`--version` 校验通过
 - [x] ffmpeg：缺失时下载 ffmpeg-static 静态二进制到 `~/.seen/bin/ffmpeg`（45.5MB，arm64），`ffmpeg -version` 输出 6.0
-- [x] Whisper 模型：缺失时按 HF_ENDPOINT → huggingface → hf-mirror 下载到 `~/.seen/models`（实测 base 模型 141MB 从 huggingface 直连成功）
+- [x] Whisper 模型下载链路：HF_ENDPOINT → huggingface → hf-mirror 三源实测可用（base 模型 141MB 从 huggingface 直连成功）；后来改为面板选项下载，见下条
 - [x] 系统里已装的优先：brew 的 `/opt/homebrew/bin/yt-dlp`、`/opt/homebrew/bin/ffmpeg` 仍被选中，自动下载的副本不覆盖
 - [x] whisper-cli 官方无预编译包：诊断面板提供「安装」按钮，服务端代为执行 `brew install whisper.cpp`，进度走 SSE；接口实测返回 202，已装时直接跳过
 - [x] Web 诊断从 toast 改为可交互面板：逐项显示 ✓/✕ 与详情，缺 whisper-cli 时出现安装按钮
@@ -67,7 +67,7 @@
 - [x] 实测 turbo：同一段 9 分钟英文视频，small 44.5 秒 / 6,178 字 → turbo 84.6 秒 / 6,926 字（多 12%，含 `*music*` 段落标记）
 - [x] 国内下载通道：GitHub 直连失败自动换镜像（`ghproxy.net` / `gh-proxy.com`，可用 `SEEN_GH_MIRROR` 覆盖，实测两个镜像均可取到 release 文件）；模型走 HF_ENDPOINT → huggingface → hf-mirror
 - [x] yt-dlp 下载后 SHA256 校验：实测安装文件 hash 为 `0f922c15…`，与官方 `SHA2-256SUMS` 中 `yt-dlp_macos` 一致；镜像来源校验不通即中止
-- [x] `cd core && node --test`：81 tests / 81 pass
+- [x] `cd core && node --test`：91 tests / 91 pass
 
 ## 独立服务与前端
 

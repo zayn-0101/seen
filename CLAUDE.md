@@ -49,7 +49,7 @@ seen/
     ├── README.md
     ├── lib/                  index(编排) / source+douyin+bilibili+youtube(平台) / transcript+session+ytdlp(字幕)
     │                         analyze(总结) / render+obsidian+index-note+review(输出) / config+state+foreground*+notify+mnemon
-    │                         whisper(本地语音转写，抖音与 YouTube 无字幕时共用)
+    │                         whisper(本地语音转写，抖音与 YouTube 无字幕时共用) / download(GitHub 镜像候选)
     └── test/
 ```
 

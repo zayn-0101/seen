@@ -35,7 +35,8 @@ onEvent(fn) / isReadOnly() / isStarted()
 | `lib/render.js` | Markdown 渲染（笔记、手册、总览） |
 | `lib/obsidian.js` | vault 写入与 AUTO 区块更新 |
 | `lib/session.js` `ytdlp.js` | B 站登录态、yt-dlp 定位与自动安装 |
-| `lib/whisper.js` | 音频工具与本地转写：ffmpeg / Whisper 模型缺失时自动下载，调 whisper.cpp 转写 |
+| `lib/whisper.js` | 音频工具与本地转写：ffmpeg 缺失自动下载、模型按推荐选项下载，调 whisper.cpp 转写 |
+| `lib/download.js` | 下载候选地址：官方优先，GitHub release 追加镜像兜底 |
 | `lib/foreground*.js` | 前台窗口检测（macOS / Windows） |
 | `lib/state.js` | 状态持久化与去重记录 |
 | `lib/mnemon.js` | 可选的本地记忆库写入 |

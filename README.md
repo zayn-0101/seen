@@ -350,7 +350,7 @@ brew install yt-dlp                      # 或者用系统包管理器
 - 诊断里「yt-dlp」「YouTube 网络」两项都要是绿的；
 - 在中国大陆需要先开代理，系统级代理即可，应用会沿用；
 - 有人工字幕的视频通常几秒完成；没有字幕的视频会下载音频用本地 Whisper 转写，一般 1–3 分钟；
-- 无字幕视频还需要 ffmpeg 和 Whisper 模型，两者缺失时会自动下载（45MB / 465MB），whisper-cli 仍需 `brew install whisper.cpp`；
+- 无字幕视频还需要 ffmpeg、whisper-cli 和转写模型：ffmpeg 缺失会自动下载，whisper-cli 用诊断面板的「安装」按钮，模型在面板里按推荐选一个（推荐 Large v3 Turbo 1.6GB）；
 - 会员视频、私享视频、年龄限制视频会被 YouTube 拒绝，属于预期情况；
 - 如果自动下载的版本报证书错误（公司网络装了 HTTPS 代理时会这样），改用 `brew install yt-dlp` 装的那份即可。
 
@@ -405,7 +405,7 @@ Obsidian     vault 中的 Markdown
 ## 开发
 
 ```bash
-cd core && node --test          # 运行测试（74 项）
+cd core && node --test          # 运行测试（91 项）
 cd menubar && ./build.sh        # 编译菜单栏应用
 npm run check                   # 语法检查
 ```
