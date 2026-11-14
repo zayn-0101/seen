@@ -32,3 +32,7 @@ CLAUDE.local.md
 
 # 视觉升级的过程预览图（约 12MB，本地保留）
 docs/brand/squirrel-ui-*.png
+
+# 品牌设计过程文档（方案稿、提示词、验证记录，本地保留）
+docs/brand/validation-*.md
+docs/brand/visual-upgrade-*.md
