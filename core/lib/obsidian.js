@@ -320,11 +320,11 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   return { ok: true, skipped: false, relPath, absPath }
 }
 
-/** 写入知识索引；已有文件只更新 AUTO 区块，保留用户内容。 */
-export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
-  if (!vaultPath) throw new Error('writeIndexNote: 缺少 vaultPath')
+/** 写入 AUTO 区块型索引笔记：已有文件只更新 AUTO 区，保留用户内容。 */
+function writeAutoNote({ vaultPath, noteRoot, filename, title, type, markdown } = {}) {
+  if (!vaultPath) throw new Error('writeAutoNote: 缺少 vaultPath')
   const root = normalizeNoteRoot(noteRoot)
-  const relPath = toPosix(join(root, '索引.md'))
+  const relPath = toPosix(join(root, filename))
   const absPath = absoluteFromRel(vaultPath, relPath)
   const body = autoBlock(String(markdown || ''))
   if (existsSync(absPath)) {
@@ -335,11 +335,11 @@ export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
   }
   const content = [
     '---',
-    'title: "知识索引"',
-    'type: index',
+    'title: "' + title + '"',
+    'type: ' + type,
     '---',
     '',
-    '# 知识索引',
+    '# ' + title,
     '',
     body,
     '',
@@ -350,3 +350,15 @@ export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
   atomicWrite(absPath, content)
   return { ok: true, relPath, absPath, created: true }
 }
+
+/** 写入知识索引；已有文件只更新 AUTO 区块，保留用户内容。 */
+export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
+  return writeAutoNote({ vaultPath, noteRoot, filename: '索引.md', title: '知识索引', type: 'index', markdown })
+}
+
+/** 写入概念索引；已有文件只更新 AUTO 区块，保留用户内容。 */
+export function writeConceptIndexNote({ vaultPath, noteRoot, markdown } = {}) {
+  return writeAutoNote({ vaultPath, noteRoot, filename: '概念索引.md', title: '概念索引', type: 'concept-index', markdown })
+}
+
+

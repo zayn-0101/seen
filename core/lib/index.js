@@ -584,6 +584,7 @@ export function apply(ctx, rawConfig = {}) {
           notePath: video.notePath || '',
           summary: video.summary || '',
           keywords: video.keywords || [],
+          concepts: Array.isArray(video.concepts) ? video.concepts : [],
           createdAt: video.createdAt || 0,
         })
       }

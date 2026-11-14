@@ -72,3 +72,25 @@ export function buildIndexMarkdown(videos = [], { noteRoot = '课程知识地图
   lines.push('', '笔记根目录：' + noteRoot)
   return lines.join('\n')
 }
+
+/** 生成概念索引 Markdown：每个概念下列出出现过它的视频笔记。 */
+export function buildConceptIndexMarkdown(concepts = [], { noteRoot = '课程知识地图' } = {}) {
+  const items = (Array.isArray(concepts) ? concepts : [])
+    .filter((item) => item && item.name && Array.isArray(item.videos) && item.videos.length > 0)
+  const lines = ['## 全部概念', '']
+  if (items.length === 0) {
+    lines.push('（还没有概念，生成笔记后会自动出现）', '', '笔记根目录：' + noteRoot)
+    return lines.join('\n')
+  }
+  lines.push('共 ' + items.length + ' 个概念，按出现次数排序。', '')
+  for (const item of items) {
+    lines.push('### ' + escapeCell(item.name), '')
+    lines.push('出现 ' + item.videos.length + ' 次：')
+    for (const video of item.videos) {
+      lines.push('- ' + noteLink({ title: video.title, notePath: video.notePath }))
+    }
+    lines.push('')
+  }
+  lines.push('笔记根目录：' + noteRoot)
+  return lines.join('\n')
+}

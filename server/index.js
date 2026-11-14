@@ -16,8 +16,9 @@ import { apply } from '../core/lib/index.js'
 import { resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { writeWeeklyReview, writeIndexNote } from '../core/lib/obsidian.js'
-import { buildIndexMarkdown } from '../core/lib/index-note.js'
+import { writeWeeklyReview, writeIndexNote, writeConceptIndexNote } from '../core/lib/obsidian.js'
+import { buildConceptIndexMarkdown, buildIndexMarkdown } from '../core/lib/index-note.js'
+import { buildConceptIndex } from '../core/lib/concept.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
 import { compareVersions } from '../core/lib/version.js'
@@ -529,8 +530,13 @@ async function rebuildIndexNote() {
   try {
     const status = await engine.getStatus()
     if (!status.vaultPath) return
-    const markdown = buildIndexMarkdown(engine.getHistory(), { noteRoot: status.noteRoot })
-    writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown })
+    const history = engine.getHistory()
+    writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown: buildIndexMarkdown(history, { noteRoot: status.noteRoot }) })
+    writeConceptIndexNote({
+      vaultPath: status.vaultPath,
+      noteRoot: status.noteRoot,
+      markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot: status.noteRoot }),
+    })
   } catch (error) {
     log('更新索引失败：' + String(error?.message || error))
   }

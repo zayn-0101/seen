@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeSummary, normalizeConcepts, normalizeNumbers } from '../lib/analyze.js'
 import { renderVideoNote, mergeManualSection, extractManualSection } from '../lib/render.js'
+import { buildConceptIndexMarkdown } from '../lib/index-note.js'
 
 test('normalizeConcepts filters generic words, dedupes and caps', () => {
   const list = normalizeConcepts([
@@ -154,4 +155,14 @@ test('renderVideoNote renders related notes with wiki links', () => {
   assert.ok(md.includes('## 相关笔记'))
   assert.ok(md.includes('[[课程知识地图/写作/旧视频|旧视频]] — 共同概念：责任前置'))
   assert.ok(md.includes('- 无路径视频'))
+})
+
+test('buildConceptIndexMarkdown lists concepts with note links', () => {
+  const md = buildConceptIndexMarkdown([
+    { name: '责任前置', videos: [{ title: '视频A', notePath: '课程知识地图/写作/视频A.md' }] },
+    { name: '空概念', videos: [] },
+  ])
+  assert.ok(md.includes('### 责任前置'))
+  assert.ok(md.includes('[[课程知识地图/写作/视频A|视频A]]'))
+  assert.ok(!md.includes('空概念'))
 })
