@@ -10,6 +10,7 @@ import { promisify } from 'node:util'
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { downloadCandidates } from './download.js'
 
 const execFileP = promisify(execFile)
 const INSTALL_DIR = join(homedir(), '.seen', 'bin')
@@ -77,7 +78,7 @@ async function verifyYtDlp(file) {
   }
 }
 
-async function downloadFile(url, tempPath) {
+async function downloadOnce(url, tempPath) {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'seen-ytdlp-installer' },
@@ -97,6 +98,22 @@ async function downloadFile(url, tempPath) {
       throw error
     }
   }
+}
+
+/** 官方地址失败后按镜像重试（国内直连 GitHub 常常超时）。 */
+async function downloadFile(url, tempPath) {
+  const candidates = downloadCandidates(url)
+  let lastError = null
+  for (const candidate of candidates) {
+    try {
+      await downloadOnce(candidate, tempPath)
+      return
+    } catch (error) {
+      lastError = error
+      try { rmSync(tempPath, { force: true }) } catch { /* 忽略 */ }
+    }
+  }
+  throw lastError || new Error('下载失败')
 }
 
 let installTask = null

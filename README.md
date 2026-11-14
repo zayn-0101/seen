@@ -50,13 +50,20 @@
 
 | 工具 | 用在哪 | 没装时 |
 |---|---|---|
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube 解析、B 站 AI 字幕 | 首次需要时自动下载到 `~/.seen/bin` |
-| [ffmpeg](https://ffmpeg.org/) | 音频预处理（抖音、YouTube 无字幕） | 首次需要时自动下载静态二进制到 `~/.seen/bin` |
-| Whisper 模型 | 无字幕时本地转写 | 面板「诊断」里按推荐选一个下载（推荐 Large v3 Turbo，1.6GB；可用 `HF_ENDPOINT` 换源） |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube 解析、B 站 AI 字幕 | 首次需要时自动下载到 `~/.seen/bin`；GitHub 慢或失败会自动换镜像重试 |
+| [ffmpeg](https://ffmpeg.org/) | 音频预处理（抖音、YouTube 无字幕） | 首次需要时自动下载静态二进制到 `~/.seen/bin`；同样有镜像兜底 |
+| Whisper 模型 | 无字幕时本地转写 | 面板「诊断」里按推荐选一个下载（推荐 Large v3 Turbo，1.6GB）；HuggingFace 慢时自动回落 hf-mirror |
 | whisper-cli | 无字幕时本地转写 | 诊断面板里点「安装 whisper-cli」（自动跑 brew）；也可自己 `brew install whisper.cpp` |
 | Chrome | 抖音页面解析 | 需自行安装 |
 
 项目本身零 npm 依赖：不需要 `npm install`，克隆下来就能跑。
+
+**下载镜像**：GitHub 直连（yt-dlp、ffmpeg）失败时会自动换公共镜像重试；模型按 `HF_ENDPOINT` → huggingface.co → hf-mirror.com 依次尝试。想指定自己的 GitHub 加速地址：
+
+```bash
+export SEEN_GH_MIRROR=https://ghproxy.net/     # 支持逗号分隔多个
+export HF_ENDPOINT=https://hf-mirror.com       # HuggingFace 镜像
+```
 
 ### 1. 获取代码
 

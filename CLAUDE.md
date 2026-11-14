@@ -114,8 +114,8 @@ mnemon recall "视频课程"
 - YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频用 whisper.cpp 本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，也不用 YouTube Data API。
 - YouTube 自动字幕接口限制严格（实测多为 429），实际经常落到本地转写，耗时 1–3 分钟；不抓评论（YouTube 也无弹幕）；结果缓存 `~/.seen/cache/youtube/<id>.json`，有效期 youtubeCacheDays（默认 7 天）。
 - 外部工具统一策略：「配置 → PATH/系统安装 → `~/.seen/bin`（自动下载）→ 常见路径」，系统里已装的始终优先、不会被覆盖。缺失时的自动下载：
-  - yt-dlp：GitHub releases 官方二进制（37MB），Node fetch 失败回退系统 curl；
-  - ffmpeg：ffmpeg-static 对应平台的静态二进制（45MB）；
+  - yt-dlp：GitHub releases 官方二进制（37MB），Node fetch 失败回退系统 curl；官方失败后按 `SEEN_GH_MIRROR`（默认 ghproxy.net / gh-proxy.com）镜像重试；
+  - ffmpeg：ffmpeg-static 对应平台的静态二进制（45MB），同样官方 → 镜像依次尝试；
   - Whisper 模型：**不静默下载**（135MB–1.6GB 差异太大），面板按推荐力度列出 turbo / small / medium / base，用户点了才下，源按 HF_ENDPOINT → huggingface → hf-mirror 依次尝试；
   - whisper-cli：官方没有免安装包，面板诊断项提供「安装」按钮，点一下就代跑 `brew install whisper.cpp`（需要本机有 Homebrew），进度通过 SSE 推送；
   - Chrome（仅抖音页面解析）需要用户自行安装。

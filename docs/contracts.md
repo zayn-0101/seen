@@ -263,6 +263,12 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform)` / `ytDlpReleaseUrl(platform)`：安装位置、官方资产名（darwin→`yt-dlp_macos`、linux→`yt-dlp_linux`、win32→`yt-dlp.exe`）与下载地址。
 - 下载优先用 Node `fetch`，证书链失败时回退系统 `curl`；写入先落 `.part` 临时文件再 `rename`，保证原子性。
 
+## lib/download.js
+
+- `githubMirrors()`：读 `SEEN_GH_MIRROR`（逗号分隔，自动补尾斜杠），否则用内置镜像 `ghproxy.net` / `gh-proxy.com`。
+- `downloadCandidates(url)`：官方地址排第一；GitHub release 链接追加镜像前缀；非 GitHub 地址（HuggingFace 等）原样返回。纯函数，便于离线测试。
+- 只负责生成候选地址；实际下载（fetch / curl / 流式写盘、进度回调、`.part` 临时文件）由调用方负责。
+
 ## lib/whisper.js
 
 - `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置 → `~/.seen/bin`」探测，返回绝对路径或 null；只探测不安装。

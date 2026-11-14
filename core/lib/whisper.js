@@ -17,6 +17,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { downloadCandidates } from './download.js'
 
 const execFileP = promisify(execFile)
 const BIN_DIR = join(homedir(), '.seen', 'bin')
@@ -254,14 +255,24 @@ export async function installFfmpeg({ force = false, onProgress } = {}) {
     if (!url) return { ok: false, error: '当前平台没有可用的 ffmpeg 静态构建' }
     try {
       if (onProgress) onProgress({ stage: 'download', message: '正在下载 ffmpeg（约 45MB）' })
-      await downloadTo(url, target, {
-        timeout: BINARY_DOWNLOAD_TIMEOUT_MS,
-        minBytes: 1024 * 1024,
-        onProgress: (p) => onProgress && onProgress({ ...p, stage: 'download', message: '正在下载 ffmpeg' }),
-      })
-      chmodSync(target, 0o755)
-      if (!await verifyRuns(target)) throw new Error('下载的 ffmpeg 无法运行')
-      return { ok: true, path: target }
+      // 官方 GitHub 失败时按镜像重试（国内直连常常超时）
+      let lastError = null
+      for (const candidate of downloadCandidates(url)) {
+        try {
+          await downloadTo(candidate, target, {
+            timeout: BINARY_DOWNLOAD_TIMEOUT_MS,
+            minBytes: 1024 * 1024,
+            onProgress: (p) => onProgress && onProgress({ ...p, stage: 'download', message: '正在下载 ffmpeg' }),
+          })
+          chmodSync(target, 0o755)
+          if (!await verifyRuns(target)) throw new Error('下载的 ffmpeg 无法运行')
+          return { ok: true, path: target }
+        } catch (error) {
+          lastError = error
+          try { rmSync(target, { force: true }) } catch { /* 忽略 */ }
+        }
+      }
+      throw lastError || new Error('下载失败')
     } catch (error) {
       try { rmSync(target, { force: true }) } catch { /* 忽略 */ }
       return { ok: false, error: String(error?.message || error || '下载失败') }
