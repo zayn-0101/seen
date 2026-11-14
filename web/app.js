@@ -621,24 +621,56 @@ async function saveInterval() {
   }
 }
 
+/** 解析输入框：支持一行一个，也容忍空格 / 逗号分隔。 */
+function parseScanInput(raw) {
+  return String(raw || '')
+    .split(/[\s,，、]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+}
+
 async function scan(force) {
-  const url = $('manualUrl').value.trim()
-  if (!url) { showToast('先粘贴视频链接或 BV 号'); return }
+  const items = parseScanInput($('manualUrl').value)
+  if (!items.length) { showToast('先粘贴视频链接或 BV 号'); return }
   const button = force ? $('scanForce') : $('scan')
   button.disabled = true
-  $('summaryStage').textContent = '处理中'
   $('summaryStage').className = 'stage working'
-  try {
-    const data = await api('/api/scan', { method: 'POST', body: JSON.stringify({ url, force }) })
-    if (data.result?.message) showToast(data.result.message)
-    if (data.history) renderHistory(data.history)
-  } catch (error) {
-    showToast(error.message)
-    $('summaryStage').textContent = '处理失败'
-    $('summaryStage').className = 'stage error'
-  } finally {
-    button.disabled = false
+
+  if (items.length === 1) {
+    $('summaryStage').textContent = '处理中'
+    try {
+      const data = await api('/api/scan', { method: 'POST', body: JSON.stringify({ url: items[0], force }) })
+      if (data.result?.message) showToast(data.result.message)
+      if (data.history) renderHistory(data.history)
+    } catch (error) {
+      showToast(error.message)
+      $('summaryStage').textContent = '处理失败'
+      $('summaryStage').className = 'stage error'
+    } finally {
+      button.disabled = false
+    }
+    return
   }
+
+  // 多个链接：串行处理，避免同时跑多个转写/总结把机器拖死
+  let done = 0
+  let failed = 0
+  for (const url of items) {
+    done += 1
+    $('summaryStage').textContent = '批量处理 ' + done + ' / ' + items.length
+    try {
+      const data = await api('/api/scan', { method: 'POST', body: JSON.stringify({ url, force }) })
+      if (data.history) renderHistory(data.history)
+      if (!data.result?.ok) failed += 1
+    } catch {
+      failed += 1
+    }
+  }
+  const ok = items.length - failed
+  $('summaryStage').textContent = failed > 0 ? '批量完成 ' + ok + '/' + items.length : '批量完成'
+  $('summaryStage').className = 'stage ' + (failed > 0 ? 'error' : 'done')
+  showToast('批量处理完成：成功 ' + ok + ' 个' + (failed > 0 ? '，失败 ' + failed + ' 个（见失败记录）' : ''))
+  button.disabled = false
 }
 
 function renderCheckPanel(data) {
