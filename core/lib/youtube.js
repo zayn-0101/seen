@@ -267,7 +267,7 @@ async function downloadAudio({ url, config, onProgress }) {
 }
 
 /** 组装与 fetchContent 同形的内容对象。 */
-export function buildYoutubeContent({ meta = {}, id, url, transcript = '', transcriptSource = '' } = {}) {
+export function buildYoutubeContent({ meta = {}, id, url, transcript = '', timedTranscript = '', transcriptSource = '' } = {}) {
   const videoId = String(id || meta.videoId || '').trim()
   const text = String(transcript || '').trim()
   const desc = String(meta.desc || '')
@@ -289,6 +289,7 @@ export function buildYoutubeContent({ meta = {}, id, url, transcript = '', trans
     duration: Number(meta.duration) || 0,
     chapters,
     transcript: text,
+    timedTranscript: String(timedTranscript || ''),
     transcriptSource: text ? contentSource : '',
     contentSource,
     comments: [],
@@ -330,6 +331,7 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
   if (meta.isLive) throw new Error('该 YouTube 视频正在直播，暂不处理')
 
   let transcript = ''
+  let timedTranscript = ''
   let transcriptSource = ''
   const track = pickYoutubeSubtitle(meta)
   if (track) {
@@ -368,7 +370,7 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
             estimateMinutes,
           })
         }
-        transcript = await transcribeAudio(audio.wav, {
+        const transcription = await transcribeAudio(audio.wav, {
           title: meta.title,
           author: meta.author,
           tags: meta.tags,
@@ -382,6 +384,8 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
             percent: progress.percent,
           }),
         })
+        transcript = transcription.text
+        timedTranscript = transcription.timed
         transcriptSource = 'whisper'
       } finally {
         try { rmSync(audio.dir, { recursive: true, force: true }) } catch { /* 忽略 */ }
@@ -398,7 +402,7 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
     }
   }
 
-  const content = buildYoutubeContent({ meta, id, url: watchUrl, transcript, transcriptSource })
+  const content = buildYoutubeContent({ meta, id, url: watchUrl, transcript, timedTranscript, transcriptSource })
   writeCache(id, content)
   return content
 }

@@ -444,6 +444,8 @@ export function buildWhisperArgs({ bin, model, wav, prompt = '', language = 'zh'
     '-f', String(wav ?? ''),
     '-l', String(language || 'zh'),
     '-otxt',
+    // 同时出 srt，用来还原带时间戳的逐句文本（无章节视频要靠它切逻辑段）
+    '-osrt',
     '-of', base,
   ]
   const text = String(prompt ?? '').trim()
@@ -539,5 +541,31 @@ export async function transcribeAudio(wav, {
     .filter(Boolean)
     .join('\n')
   if (!text) throw new Error('Whisper 转写结果为空')
-  return text
+  const timed = parseSrtTimed(String(wav).replace(/\.wav$/i, '') + '.srt')
+  return { text, timed }
+}
+
+/**
+ * 把 whisper 的 srt 转成「[mm:ss] 一句」的逐行文本，供章节分段使用。
+ * srt 缺失或解析不出内容时返回空串。
+ */
+export function parseSrtTimed(srtPath) {
+  if (!srtPath || !existsSync(srtPath)) return ''
+  const raw = readFileSync(srtPath, 'utf8').replace(/\r/g, '')
+  const rows = []
+  for (const block of raw.split(/\n{2,}/)) {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (lines.length < 2) continue
+    const timeLine = lines.find((line) => line.includes('-->'))
+    if (!timeLine) continue
+    const match = timeLine.match(/(\d{2}):(\d{2}):(\d{2})/)
+    if (!match) continue
+    const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+    const text = lines.slice(lines.indexOf(timeLine) + 1).join(' ')
+    if (!text) continue
+    const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
+    const ss = String(seconds % 60).padStart(2, '0')
+    rows.push(`[${mm}:${ss}] ${text}`)
+  }
+  return rows.join('\n')
 }

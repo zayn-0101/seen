@@ -7,6 +7,7 @@ import {
   findHomebrew,
   WHISPER_MODELS,
   installWhisperCli,
+  parseSrtTimed,
   parseWhisperProgress,
   ffmpegAssetName,
   ffmpegInstallPath,
@@ -25,7 +26,21 @@ test('buildWhisperArgs produces whisper-cli argv with language', () => {
   assert.equal(argv[argv.indexOf('-of') + 1], '/tmp/a')
   assert.ok(argv.includes('-otxt'))
   assert.ok(!argv.includes('-np'), '不能再传 -np：需要保留分段输出用于计算转写进度')
+  assert.ok(argv.includes('-osrt'), '同时要出 srt，无章节视频要靠它还原时间戳')
   assert.ok(!argv.includes('--prompt'))
+})
+
+test('parseSrtTimed turns srt cues into [mm:ss] lines', async () => {
+  const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'seen-srt-'))
+  const file = join(dir, 'a.srt')
+  writeFileSync(file, '1\n00:00:00,000 --> 00:00:05,000\n第一句\n\n2\n00:01:05,000 --> 00:01:09,000\n第二句\n换行的一句\n')
+  const timed = parseSrtTimed(file)
+  assert.equal(timed, '[00:00] 第一句\n[01:05] 第二句 换行的一句')
+  assert.equal(parseSrtTimed(join(dir, 'missing.srt')), '')
+  rmSync(dir, { recursive: true, force: true })
 })
 
 test('buildWhisperArgs passes prompt only when present', () => {

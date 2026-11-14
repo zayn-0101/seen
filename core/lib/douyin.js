@@ -140,7 +140,7 @@ function normalizeTags(detail) {
   return [...new Set(tags)].slice(0, 20)
 }
 
-function buildContent(detail, { url, id, transcript, transcriptSource = 'whisper' } = {}) {
+function buildContent(detail, { url, id, transcript, timedTranscript = '', transcriptSource = 'whisper' } = {}) {
   const title = String(detail?.itemTitle || detail?.desc || '').split(/\n/)[0].trim() || '未命名抖音视频'
   const desc = String(detail?.desc || '').trim()
   const tags = normalizeTags(detail)
@@ -164,6 +164,7 @@ function buildContent(detail, { url, id, transcript, transcriptSource = 'whisper
     duration,
     chapters: [],
     transcript: text,
+    timedTranscript: String(timedTranscript || ''),
     transcriptSource: text ? transcriptSource : '',
     contentSource: text ? 'whisper' : 'metadata',
     comments: [],
@@ -298,7 +299,7 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
         estimateMinutes,
       })
     }
-    const transcript = await transcribeAudio(audio.wav, {
+    const transcription = await transcribeAudio(audio.wav, {
       title: meta.title,
       author: meta.author,
       tags: meta.tags,
@@ -311,7 +312,8 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
         percent: progress.percent,
       }),
     })
-    const content = buildContent(detail, { url, id, transcript })
+    const transcript = transcription.text
+    const content = buildContent(detail, { url, id, transcript, timedTranscript: transcription.timed })
     writeCache(id, content)
     if (onProgress) onProgress({ stage: 'transcribed', message: '转写完成', videoId: id, length: transcript.length })
     return content
