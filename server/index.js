@@ -314,6 +314,16 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { query, results })
     }
 
+    if (pathname === '/api/concepts' && req.method === 'GET') {
+      const history = engine.getHistory()
+      const concepts = buildConceptIndex(history).map((item) => ({
+        name: item.name,
+        count: item.videos.length,
+        videos: item.videos,
+      }))
+      return json(res, 200, { concepts })
+    }
+
     if (pathname === '/api/config' && req.method === 'POST') {
       const body = await readBody(req)
       let message = ''

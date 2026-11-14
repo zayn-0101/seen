@@ -415,3 +415,14 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 
 .history-group { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .history-group-title { margin: 6px 0 0; font-size: 11px; letter-spacing: 0.08em; color: var(--muted); grid-column: 1 / -1; }
+
+.concept-toggle { min-width: 64px; font-weight: 600; }
+.concept-browse { margin: 0 0 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft, rgba(0,0,0,0.02)); }
+.concept-head { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.concept-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+.concept-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 12px; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px; }
+.concept-chip:hover { border-color: var(--line-strong); }
+.concept-chip.active { color: var(--surface); background: var(--ink); border-color: var(--ink); }
+.concept-count { font-size: 11px; opacity: 0.6; }
+.concept-videos { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.concept-empty { margin: 0; font-size: 13px; color: var(--muted); }

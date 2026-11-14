@@ -356,6 +356,63 @@ function scheduleVaultSearch() {
   }, 260)
 }
 
+let conceptCache = null
+let conceptActive = ''
+
+/** 概念浏览：列出笔记里出现过的核心概念，点开看关联笔记。 */
+async function toggleConceptBrowse() {
+  const box = $('conceptBrowse')
+  const toggle = $('conceptToggle')
+  if (!box) return
+  const next = box.hidden
+  box.hidden = !next
+  toggle?.setAttribute('aria-expanded', next ? 'true' : 'false')
+  if (!next) return
+  if (conceptCache) {
+    renderConcepts(conceptCache)
+    return
+  }
+  box.replaceChildren(el('p', 'concept-empty', '正在整理概念…'))
+  try {
+    const response = await fetch('/api/concepts')
+    if (!response.ok) throw new Error('bad status')
+    const data = await response.json()
+    conceptCache = Array.isArray(data.concepts) ? data.concepts : []
+    renderConcepts(conceptCache)
+  } catch {
+    box.replaceChildren(el('p', 'concept-empty', '读取概念失败，确认服务已启动。'))
+  }
+}
+
+/** 概念标签云 + 选中概念的关联笔记。 */
+function renderConcepts(rows) {
+  const box = $('conceptBrowse')
+  if (!box) return
+  if (!rows.length) {
+    box.replaceChildren(el('p', 'concept-empty', '还没有概念。生成几篇笔记后这里会自动汇总。'))
+    return
+  }
+  const cloud = el('div', 'concept-cloud')
+  for (const item of rows) {
+    const chip = el('button', 'concept-chip' + (item.name === conceptActive ? ' active' : ''))
+    chip.type = 'button'
+    chip.append(document.createTextNode(item.name), el('span', 'concept-count', String(item.count)))
+    chip.addEventListener('click', () => {
+      conceptActive = conceptActive === item.name ? '' : item.name
+      renderConcepts(rows)
+    })
+    cloud.append(chip)
+  }
+  box.replaceChildren(el('p', 'concept-head', '共 ' + rows.length + ' 个概念，点一个看关联笔记'), cloud)
+  const active = rows.find((item) => item.name === conceptActive)
+  if (!active) return
+  const list = el('ul', 'concept-videos')
+  for (const video of active.videos) {
+    list.append(el('li', '', video.title + (video.subject ? ' · ' + video.subject : '')))
+  }
+  box.append(list)
+}
+
 /** 学科下拉只列出实际存在的学科，保持当前选中项。 */
 function renderSubjectOptions(rows) {
   const select = $('historySubject')
@@ -883,6 +940,7 @@ $('scanForce').addEventListener('click', () => scan(true))
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
 $('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })
+$('conceptToggle')?.addEventListener('click', toggleConceptBrowse)
 
 setInterval(updateStageClock, 1000)
 load()
