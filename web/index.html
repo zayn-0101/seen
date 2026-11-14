@@ -111,6 +111,12 @@
 
         <section id="knowledge" class="history-card" aria-labelledby="knowledgeTitle" tabindex="-1">
           <div class="card-head history-head"><div><p class="section-kicker">YOUR COLLECTION</p><h2 id="knowledgeTitle">知识库</h2><p class="sub">一点一滴，留给未来的自己</p></div><span id="historyCount" class="history-count">0 个视频</span></div>
+          <div class="history-tools">
+            <input id="historySearch" type="search" class="history-search" placeholder="搜索标题、学科、关键词…" autocomplete="off" />
+            <select id="historySubject" class="history-subject" aria-label="按学科筛选">
+              <option value="">全部学科</option>
+            </select>
+          </div>
           <div id="history" class="history-grid empty"><p class="empty-line">还没有笔记。打开 B站 / 抖音精选 / YouTube 课程视频，或在上方粘贴链接。</p></div>
         </section>
         <footer class="footer"><span>拾影 Seen</span><span class="dot-sep">·</span><span>笔记写入 Obsidian</span><span class="spacer"></span><span id="footerPath" class="muted"></span></footer>

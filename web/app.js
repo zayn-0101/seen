@@ -2,6 +2,7 @@
 const $ = (id) => document.getElementById(id)
 const state = {
   snapshot: null,
+  history: [],
   current: null,
   summary: null,
   events: [],
@@ -278,18 +279,66 @@ function obsidianUrl(notePath) {
   return 'obsidian://open?vault=' + encodeURIComponent(vault) + '&file=' + encodeURIComponent(file)
 }
 
+/** 按搜索词与学科筛选知识库；关键词里含学科与摘要，方便找回旧笔记。 */
+function filterHistory(rows) {
+  const query = String($('historySearch')?.value || '').trim().toLowerCase()
+  const subject = String($('historySubject')?.value || '')
+  return rows.filter((row) => {
+    if (subject && row.subject !== subject) return false
+    if (!query) return true
+    const haystack = [row.title, row.subject, row.summary, ...(row.keywords || [])]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(query)
+  })
+}
+
+/** 学科下拉只列出实际存在的学科，保持当前选中项。 */
+function renderSubjectOptions(rows) {
+  const select = $('historySubject')
+  if (!select) return
+  const current = select.value
+  const subjects = [...new Set(rows.map((row) => row.subject).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  select.replaceChildren()
+  const all = document.createElement('option')
+  all.value = ''
+  all.textContent = '全部学科'
+  select.appendChild(all)
+  for (const name of subjects) {
+    const option = document.createElement('option')
+    option.value = name
+    option.textContent = name
+    select.appendChild(option)
+  }
+  select.value = subjects.includes(current) ? current : ''
+}
+
 function renderHistory(history) {
   const box = $('history')
+  const all = Array.isArray(history) ? history : state.history || []
+  if (Array.isArray(history)) {
+    state.history = history
+    renderSubjectOptions(history)
+  }
   box.replaceChildren()
-  const rows = Array.isArray(history) ? history : []
-  $('historyCount').textContent = rows.length + ' 个视频'
-  if (!rows.length) {
+  const rows = filterHistory(all)
+  const filtering = rows.length !== all.length
+  $('historyCount').textContent = filtering ? rows.length + ' / ' + all.length + ' 个视频' : all.length + ' 个视频'
+  if (!all.length) {
     box.className = 'history-grid empty'
     box.append(el('p', 'empty-line', '还没有笔记。打开 B站 / 抖音精选 / YouTube 课程视频，或在上方粘贴链接。'))
     return
   }
+  if (!rows.length) {
+    box.className = 'history-grid empty'
+    box.append(el('p', 'empty-line', '没有匹配的笔记，换个关键词或学科试试。'))
+    return
+  }
   box.className = 'history-grid'
-  for (const row of rows.slice(0, 12)) {
+  // 有筛选条件时多显示一些，方便一次看全匹配结果
+  const limit = filtering ? 60 : 12
+  for (const row of rows.slice(0, limit)) {
     const button = el('button', 'history-item')
     button.type = 'button'
     button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ')))
@@ -680,6 +729,8 @@ $('toggle').addEventListener('click', () => {
 $('saveInterval').addEventListener('click', saveInterval)
 $('interval').addEventListener('keydown', (event) => { if (event.key === 'Enter') saveInterval() })
 $('scan').addEventListener('click', () => scan(false))
+$('historySearch').addEventListener('input', () => renderHistory())
+$('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
