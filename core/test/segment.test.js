@@ -75,6 +75,19 @@ test('normalizeSegments snaps near-miss timestamps to candidates', () => {
   assert.deepEqual(result.map((item) => item.from), [0, 90])
 })
 
+test('segmentTranscript asks again when the model replies with prose', async () => {
+  const replies = [
+    '这段视频可以分成几部分，但我不确定具体时间点。',
+    JSON.stringify({ segments: [{ at: '00:00', title: '开场' }, { at: '01:30', title: '正题' }] }),
+  ]
+  let calls = 0
+  const ctx = { llm: { stream: () => [replies[Math.min(calls++, replies.length - 1)]] } }
+  const timed = '[00:00] 开场\n[00:45] 过渡\n[01:30] 正题'
+  const result = await segmentTranscript(ctx, {}, { title: '长片', timedTranscript: timed, duration: 600 })
+  assert.equal(calls, 2)
+  assert.equal(result.length, 2)
+})
+
 test('callLlm retries with a bigger budget when the model returns nothing', async () => {
   const budgets = []
   const ctx = {

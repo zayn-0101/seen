@@ -1196,18 +1196,24 @@ export async function segmentTranscript(ctx, config, { title, timedTranscript, d
   if (seconds > 0 && seconds < 240) return []
   const points = sampleTimedPoints(parseTimedLines(timedTranscript))
   if (points.length < 3) return []
-  try {
+  const ask = async () => {
     const text = await callLlm(ctx, config, {
       system: '你是视频编辑，只输出严格 JSON。',
       messages: [{ role: 'user', content: buildSegmentPrompt(String(title ?? ''), points) }],
       // 推理型模型会先花掉一批 token 思考，给太少会返回空串
       maxTokens: 2000,
     })
-    const segments = normalizeSegments(parseJson(text), points)
-    if (segments.length === 0) {
-      console.log('[segment] 未能切段：候选 ' + points.length + ' 个时间点，模型返回长度 ' + String(text ?? '').length)
+    return { text: String(text ?? ''), segments: normalizeSegments(parseJson(text), points) }
+  }
+  try {
+    const first = await ask()
+    if (first.segments.length > 0) return first.segments
+    // 模型偶尔会把「我分不了」这类话当答案返回，再要一次 JSON 才判定失败
+    const second = await ask()
+    if (second.segments.length === 0) {
+      console.log('[segment] 未能切段：候选 ' + points.length + ' 个时间点，模型返回长度 ' + first.text.length + '/' + second.text.length)
     }
-    return segments
+    return second.segments
   } catch (error) {
     console.log('[segment] 分段失败：' + (error?.message || error))
     return []
