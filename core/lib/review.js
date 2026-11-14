@@ -75,7 +75,7 @@ export function buildWeeklyReview({ videos = [], now = new Date() } = {}) {
   for (const row of rows) {
     const subject = String(row.subject || '未分类')
     subjectCounts.set(subject, (subjectCounts.get(subject) || 0) + 1)
-    const source = row.source === 'douyin' ? '抖音' : 'B站'
+    const source = row.source === 'douyin' ? '抖音' : row.source === 'youtube' ? 'YouTube' : 'B站'
     sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1)
     for (const keyword of Array.isArray(row.keywords) ? row.keywords : []) {
       const text = String(keyword || '').trim()

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seen（拾影）本地服务：轮询 B站/抖音精选、生成总结并写入 Obsidian。
+ * Seen（拾影）本地服务：轮询 B站/抖音精选/YouTube、生成总结并写入 Obsidian。
  *
  * 前端：http://127.0.0.1:4780
  * 后端：复用 Seen Core 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。
@@ -125,7 +125,7 @@ function broadcast(event) {
 const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '1' })
 
 function notifySaved(data = {}) {
-  const platform = data.source === 'douyin' ? '抖音' : 'B站'
+  const platform = data.source === 'douyin' ? '抖音' : data.source === 'youtube' ? 'YouTube' : 'B站'
   notifier.notify({
     title: '拾影 · 笔记已生成',
     subtitle: [data.subject, platform].filter(Boolean).join(' · '),

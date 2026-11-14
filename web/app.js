@@ -62,8 +62,16 @@ function extractDouyinId(url) {
   return match ? match[1] : ''
 }
 
+function extractYoutubeId(url) {
+  const match = String(url || '').match(/(?:[?&]v=|\/shorts\/|\/embed\/|\/live\/|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  return match ? match[1] : ''
+}
+
 function platformLabel(source) {
-  return source === 'douyin' ? '抖音精选' : source === 'bilibili' ? 'B站' : ''
+  if (source === 'douyin') return '抖音精选'
+  if (source === 'bilibili') return 'B站'
+  if (source === 'youtube') return 'YouTube'
+  return ''
 }
 
 function setPill(node, text, tone, title) {
@@ -125,7 +133,7 @@ function renderForeground(fg) {
     box.className = 'foreground empty'
     box.append(el('div', 'empty-icon', '◌'))
     const copy = el('div')
-    copy.append(el('strong', '', '等待浏览器'), el('p', '', '在 Chrome 打开一个 B 站视频页，保持前台约 30 秒。'))
+    copy.append(el('strong', '', '等待浏览器'), el('p', '', '在 Chrome 打开一个 B站 / 抖音精选 / YouTube 视频页，保持前台约 30 秒。'))
     box.append(copy)
     return
   }
@@ -141,8 +149,10 @@ function renderForeground(fg) {
   const meta = el('div', 'fg-meta')
   const bvid = extractBvid(fg.url)
   const douyinId = extractDouyinId(fg.url)
+  const youtubeId = extractYoutubeId(fg.url)
   if (bvid) meta.append(el('span', 'chip accent', bvid))
   else if (douyinId) meta.append(el('span', 'chip accent', '抖音 ' + douyinId))
+  else if (youtubeId) meta.append(el('span', 'chip accent', 'YouTube ' + youtubeId))
   if (fg.url) {
     try {
       const host = new URL(fg.url).hostname
@@ -195,7 +205,7 @@ function renderSummary(data, stageText) {
 
   if (Array.isArray(data.discussion) && data.discussion.length) {
     const section = el('div', 'summary-section')
-    section.append(el('h3', '', source === 'douyin' ? '讨论焦点（基于主题）' : '弹幕与评论焦点'))
+    section.append(el('h3', '', source === 'douyin' || source === 'youtube' ? '讨论焦点（基于主题）' : '弹幕与评论焦点'))
     const ul = el('ul')
     for (const item of data.discussion) ul.append(el('li', '', item))
     section.append(ul)
@@ -219,18 +229,26 @@ function renderSummary(data, stageText) {
   const stats = data.fetchStats || null
   if (stats) {
     const douyin = source === 'douyin'
+    const youtube = source === 'youtube'
     const grid = el('div', 'stats')
     const transcriptLabel = data.contentSource === 'ai-subtitle'
       ? 'AI 字幕'
       : data.contentSource === 'up-subtitle'
         ? 'UP 主字幕'
-        : data.contentSource === 'whisper' || douyin
-          ? '音频转写'
-          : '字幕'
+        : data.contentSource === 'youtube-subtitle'
+          ? 'YouTube 字幕'
+          : data.contentSource === 'auto-subtitle'
+            ? '自动字幕'
+            : data.contentSource === 'whisper' || douyin
+              ? '音频转写'
+              : '字幕'
     grid.append(statBox(String(stats.transcript || 0) + ' 字', transcriptLabel))
     if (douyin) {
       grid.append(statBox(String(stats.totalComments || '—'), '全站评论（暂未抓取）'))
       grid.append(statBox(String(stats.totalDanmaku || '—'), '全站弹幕（暂未抓取）'))
+    } else if (youtube) {
+      grid.append(statBox(String((data.chapters || []).length), '章节'))
+      grid.append(statBox('暂未抓取', '评论（无弹幕）'))
     } else {
       grid.append(statBox(String(stats.comments || 0) + ' / ' + (stats.totalComments || '—'), '评论（抓取 / 全站）'))
       grid.append(statBox(String(stats.danmaku || 0) + ' / ' + (stats.totalDanmaku || '—'), '弹幕（抓取 / 全站）'))
@@ -267,7 +285,7 @@ function renderHistory(history) {
   $('historyCount').textContent = rows.length + ' 个视频'
   if (!rows.length) {
     box.className = 'history-grid empty'
-    box.append(el('p', 'empty-line', '还没有笔记。打开 B 站课程视频，或在上方粘贴链接。'))
+    box.append(el('p', 'empty-line', '还没有笔记。打开 B站 / 抖音精选 / YouTube 课程视频，或在上方粘贴链接。'))
     return
   }
   box.className = 'history-grid'
@@ -486,7 +504,7 @@ async function saveInterval() {
 
 async function scan(force) {
   const url = $('manualUrl').value.trim()
-  if (!url) { showToast('先粘贴 B 站视频 URL 或 BV 号'); return }
+  if (!url) { showToast('先粘贴视频链接或 BV 号'); return }
   const button = force ? $('scanForce') : $('scan')
   button.disabled = true
   $('summaryStage').textContent = '处理中'

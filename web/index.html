@@ -56,7 +56,7 @@
           <div class="manual-row">
             <div class="url-wrap">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 14 4-4M8.25 16.75l-1 1a3.54 3.54 0 0 1-5-5l3.5-3.5a3.54 3.54 0 0 1 5 0M15.75 7.25l1-1a3.54 3.54 0 0 1 5 5l-3.5 3.5a3.54 3.54 0 0 1-5 0"/></svg>
-              <input id="manualUrl" class="url-input" type="text" aria-label="视频链接或 B 站 BV 号" placeholder="粘贴 B站 / 抖音精选视频链接" autocomplete="off" spellcheck="false">
+              <input id="manualUrl" class="url-input" type="text" aria-label="视频链接或 B 站 BV 号" placeholder="粘贴 B站 / 抖音精选 / YouTube 视频链接" autocomplete="off" spellcheck="false">
             </div>
             <button id="scan" class="button primary" type="button">立即整理 <span aria-hidden="true">↗</span></button>
           </div>
@@ -88,7 +88,7 @@
               <span id="pollState" class="state stopped">已停止</span>
             </div>
             <div id="foreground" class="foreground empty">
-              <div class="empty-icon" aria-hidden="true">◌</div><div><strong>等待浏览器</strong><p>在 Chrome 打开 B站 / 抖音精选长视频，保持前台约 30 秒。</p></div>
+              <div class="empty-icon" aria-hidden="true">◌</div><div><strong>等待浏览器</strong><p>在 Chrome 打开 B站 / 抖音精选 / YouTube 长视频，保持前台约 30 秒。</p></div>
             </div>
             <div class="timeline"><div class="timeline-head"><span>最近活动</span><span id="lastPoll">尚未轮询</span></div><ol id="events" class="events"></ol></div>
           </section>
@@ -96,7 +96,7 @@
 
         <section id="knowledge" class="history-card" aria-labelledby="knowledgeTitle" tabindex="-1">
           <div class="card-head history-head"><div><p class="section-kicker">YOUR COLLECTION</p><h2 id="knowledgeTitle">知识库</h2><p class="sub">一点一滴，留给未来的自己</p></div><span id="historyCount" class="history-count">0 个视频</span></div>
-          <div id="history" class="history-grid empty"><p class="empty-line">还没有笔记。打开 B站 / 抖音精选课程视频，或在上方粘贴链接。</p></div>
+          <div id="history" class="history-grid empty"><p class="empty-line">还没有笔记。打开 B站 / 抖音精选 / YouTube 课程视频，或在上方粘贴链接。</p></div>
         </section>
         <footer class="footer"><span>拾影 Seen</span><span class="dot-sep">·</span><span>笔记写入 Obsidian</span><span class="spacer"></span><span id="footerPath" class="muted"></span></footer>
       </main>

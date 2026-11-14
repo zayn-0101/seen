@@ -31,6 +31,7 @@ export const DEFAULTS = Object.freeze({
   useTranscriptCache: true,
   transcriptCacheDays: 7,
   douyinCacheDays: 7,
+  youtubeCacheDays: 7,
   chromePath: null,
   ffmpegBin: null,
   whisperBin: null,
@@ -43,7 +44,7 @@ export const DEFAULTS = Object.freeze({
   browserNames: null,
 })
 
-const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays']
+const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays', 'youtubeCacheDays']
 const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian']
 const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin', 'chromePath', 'ffmpegBin', 'whisperBin', 'whisperModel']
 

@@ -27,7 +27,9 @@ function formatDate(timestamp) {
 }
 
 function sourceLabel(value) {
-  return value === 'douyin' ? '抖音' : 'B站'
+  if (value === 'douyin') return '抖音'
+  if (value === 'youtube') return 'YouTube'
+  return 'B站'
 }
 
 /** 生成索引 Markdown（不含 AUTO 标记，由调用方包装）。 */

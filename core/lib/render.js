@@ -69,14 +69,21 @@ export function formatDate(ts) {
 }
 
 /** 秒数格式化为 mm:ss / hh:mm:ss。 */
-/** B 站视频链接追加 t=秒 参数；其它来源或不支持时返回空字符串。 */
+/** 视频链接追加时间参数：B 站用 t=秒，YouTube 用 t=秒s；其它来源返回空字符串。 */
 export function buildTimeLink(url, platform, seconds) {
   const text = String(url ?? '').trim()
   if (!text) return ''
-  if (String(platform ?? '').toLowerCase() !== 'bilibili') return ''
-  if (!/bilibili\.com|b23\.tv/i.test(text)) return ''
+  const kind = String(platform ?? '').toLowerCase()
   const sec = Math.max(0, Math.floor(Number(seconds) || 0))
-  return text + (text.includes('?') ? '&' : '?') + 't=' + sec
+  if (kind === 'bilibili') {
+    if (!/bilibili\.com|b23\.tv/i.test(text)) return ''
+    return text + (text.includes('?') ? '&' : '?') + 't=' + sec
+  }
+  if (kind === 'youtube') {
+    if (!/youtube\.com|youtu\.be/i.test(text)) return ''
+    return text + (text.includes('?') ? '&' : '?') + 't=' + sec + 's'
+  }
+  return ''
 }
 
 export function formatDuration(seconds) {
@@ -257,12 +264,18 @@ export function renderVideoNote(input = {}) {
     lines.push('> [!warning] 内容依据有限', '> 未获取到视频字幕/转写，本文主要基于简介、标签和观众讨论整理，知识点可能不完整或有偏差。', '')
   } else if (contentSource === 'ai-subtitle') {
     lines.push('> [!info] 内容来源：B站 AI 字幕（自动识别，可能存在少量同音错字）', '')
+  } else if (contentSource === 'youtube-subtitle') {
+    lines.push('> [!info] 内容来源：YouTube 字幕', '')
+  } else if (contentSource === 'auto-subtitle') {
+    lines.push('> [!info] 内容来源：YouTube 自动字幕（自动识别，可能存在少量错字）', '')
   } else if (contentSource === 'whisper') {
-    lines.push('> [!info] 内容来源：抖音音频，本地 Whisper 转写（自动识别，可能存在同音错字）', '')
+    lines.push('> [!info] 内容来源：音频，本地 Whisper 转写（自动识别，可能存在同音错字）', '')
   }
   lines.push(`> ${summary || '（暂无摘要）'}`, '')
   if (platform === 'douyin') {
     lines.push('> [!note] 抖音评论/弹幕正文暂未抓取，下方讨论焦点为基于主题的推演。', '')
+  } else if (platform === 'youtube') {
+    lines.push('> [!note] YouTube 不提供弹幕，评论暂未抓取，下方讨论焦点为基于主题的推演。', '')
   }
   const manualTarget = `${noteRoot}/${subject}/${subject} 学习手册`
   lines.push(`> 所属学科：[[${manualTarget}|${subject} 学习手册]]`, '')
@@ -290,7 +303,7 @@ export function renderVideoNote(input = {}) {
     }
   }
 
-  lines.push('## 弹幕与评论讨论焦点', '')
+  lines.push(platform === 'youtube' ? '## 讨论焦点' : '## 弹幕与评论讨论焦点', '')
   if (discussion.length === 0) lines.push('- （暂无讨论数据）')
   else for (const item of discussion) lines.push(`- ${item}`)
   lines.push('')
@@ -319,6 +332,22 @@ export function renderVideoNote(input = {}) {
     lines.push(`- 音频转写：${stats.transcript} 字（本地 Whisper）`)
     lines.push(`- 弹幕：全站 ${stats.totalDanmaku || '未知'} 条（暂未抓取）`)
     lines.push(`- 评论：全站 ${stats.totalComments || '未知'} 条（暂未抓取）`, '')
+  } else if (platform === 'youtube') {
+    const ytLabel = contentSource === 'youtube-subtitle'
+      ? '（YouTube 字幕）'
+      : contentSource === 'auto-subtitle'
+        ? '（YouTube 自动字幕）'
+        : contentSource === 'whisper'
+          ? '（本地 Whisper 转写）'
+          : ''
+    lines.push(`- YouTube 视频：${url || '（未匹配到 YouTube 视频）'}`)
+    lines.push(`- 视频 ID：${videoId || '（无）'}`)
+    lines.push(`- 频道：${author || '（未知）'}`)
+    lines.push(`- 视频简介：${stats.desc} 字`)
+    lines.push(`- 标签：${stats.tags} 个`)
+    lines.push(`- 章节：${chapters.length} 个`)
+    lines.push(`- 字幕：${stats.transcript} 字${ytLabel}`)
+    lines.push('- 评论：暂未抓取（YouTube 无弹幕）', '')
   } else {
     lines.push(`- B站视频：${url || '（未匹配到 B 站视频）'}`)
     lines.push(`- BV 号：${bvid || '（无）'}`)

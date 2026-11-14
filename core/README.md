@@ -29,12 +29,13 @@ onEvent(fn) / isReadOnly() / isStarted()
 | 目录 | 职责 |
 |---|---|
 | `lib/index.js` | 编排：轮询、去重、分类、总结、写入 |
-| `lib/source.js` `douyin.js` `bilibili.js` | 平台识别与内容抓取 |
+| `lib/source.js` `douyin.js` `bilibili.js` `youtube.js` | 平台识别与内容抓取 |
 | `lib/transcript.js` | 字幕获取、SRT 解析、时间轴 |
 | `lib/analyze.js` | 提示词与 LLM 输出解析 |
 | `lib/render.js` | Markdown 渲染（笔记、手册、总览） |
 | `lib/obsidian.js` | vault 写入与 AUTO 区块更新 |
 | `lib/session.js` `ytdlp.js` | B 站登录态、yt-dlp 定位 |
+| `lib/whisper.js` | 本地语音转写（ffmpeg + whisper.cpp，抖音与 YouTube 无字幕时共用） |
 | `lib/foreground*.js` | 前台窗口检测（macOS / Windows） |
 | `lib/state.js` | 状态持久化与去重记录 |
 | `lib/mnemon.js` | 可选的本地记忆库写入 |

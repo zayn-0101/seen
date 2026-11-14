@@ -15,13 +15,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDouyinId, sourceLabel } from './source.js'
+import { findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
 
 const execFileP = promisify(execFile)
 const CACHE_DIR = join(homedir(), '.seen', 'cache', 'douyin')
-const MODEL_DIR = join(homedir(), '.seen', 'models')
 const CHROME_TIMEOUT_MS = 70000
 const FFMPEG_TIMEOUT_MS = 600000
-const WHISPER_TIMEOUT_MS = 30 * 60 * 1000
 const MAX_DOM_BYTES = 30 * 1024 * 1024
 
 function expandHome(value) {
@@ -89,44 +88,8 @@ export function findChrome(config = {}) {
   ])
 }
 
-export function findFfmpeg(config = {}) {
-  const configured = config.ffmpegBin ? expandHome(config.ffmpegBin) : null
-  const fromEnv = process.env.SEEN_FFMPEG_BIN ? expandHome(process.env.SEEN_FFMPEG_BIN) : null
-  return firstFile([
-    configured,
-    fromEnv,
-    whichSync('ffmpeg'),
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-    '/usr/bin/ffmpeg',
-  ])
-}
-
-export function findWhisperCli(config = {}) {
-  const configured = config.whisperBin ? expandHome(config.whisperBin) : null
-  const fromEnv = process.env.SEEN_WHISPER_BIN ? expandHome(process.env.SEEN_WHISPER_BIN) : null
-  return firstFile([
-    configured,
-    fromEnv,
-    whichSync('whisper-cli'),
-    whichSync('whisper-cpp'),
-    '/opt/homebrew/bin/whisper-cli',
-    '/usr/local/bin/whisper-cli',
-    join(homedir(), '.local', 'bin', 'whisper-cli'),
-    join(homedir(), 'bin', 'whisper-cli'),
-  ])
-}
-
-export function findWhisperModel(config = {}) {
-  return firstFile([
-    config.whisperModel ? expandHome(config.whisperModel) : null,
-    join(MODEL_DIR, 'ggml-small.bin'),
-    join(MODEL_DIR, 'ggml-base.bin'),
-    join(process.cwd(), 'models', 'ggml-small.bin'),
-    join(process.cwd(), 'models', 'ggml-base.bin'),
-    join(homedir(), '.cache', 'whisper', 'ggml-small.bin'),
-  ])
-}
+/* 音频预处理与 Whisper 转写已抽到 whisper.js，这里保留导出以兼容既有调用方。 */
+export { findFfmpeg, findWhisperCli, findWhisperModel }
 
 /** 从 SSR HTML 中提取 RENDER_DATA → videoDetail。 */
 export function parseRenderData(html) {
@@ -292,35 +255,6 @@ async function downloadAudio(playUrl, config) {
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* 忽略 */ }
     throw error
   }
-}
-
-async function transcribeAudio(wav, { title, author, tags, config }) {
-  const bin = findWhisperCli(config)
-  if (!bin) throw new Error('未找到 whisper-cli，无法转写抖音音频')
-  const model = findWhisperModel(config)
-  if (!model) throw new Error('未找到 Whisper 模型；请运行 node scripts/install-whisper-model.mjs，或配置 whisperModel')
-  const base = wav.replace(/\.wav$/i, '')
-  const prompt = [title, author, ...(Array.isArray(tags) ? tags.slice(0, 8) : [])]
-    .filter(Boolean).join(' ').slice(0, 500)
-  await execFileP(bin, [
-    '-m', model,
-    '-f', wav,
-    '-l', 'zh',
-    '-otxt',
-    '-of', base,
-    '-np',
-    '--prompt', prompt,
-  ], { timeout: WHISPER_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 })
-  const txt = base + '.txt'
-  if (!existsSync(txt)) throw new Error('Whisper 没有生成转写文本')
-  const text = readFileSync(txt, 'utf8')
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join('\n')
-  if (!text) throw new Error('Whisper 转写结果为空')
-  return text
 }
 
 /**

@@ -197,8 +197,9 @@ export function mermaidSafe(text: string, max = 60): string
 export function yamlString(value: any): string       // JSON.stringify(String(value))
 export function renderFrontmatter(obj: { [key: string]: any }): string
 export function renderVideoNote(input: {
-  title, subject, bvid, url, author, createdAt, summary, keyPoints, discussion, fetchStats, noteRoot, tags
+  title, subject, source, bvid, videoId, url, author, createdAt, summary, keyPoints, discussion, fetchStats, chapters, contentSource, contentQuality, noteRoot, tags
 }): string
+export function buildTimeLink(url: string, platform: 'bilibili'|'youtube', seconds: number): string
 export function renderSubjectManual(input: { subject, videos, noteRoot, updatedAt }): string
 export function renderOverview(input: { subjects: string[], noteRoot, updatedAt }): string
 export function upsertAutoBlock(text: string, block: string): string
@@ -243,12 +244,23 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 命令：`<bin> remember "<content>" --cat insight --imp 3 --source agent --tags "<tags>" --entities "<entities>" --store "<store>"`
 - 失败重试一次（2s），仍失败返回 `{ ok: false, error }`，绝不抛错。
 
-## lib/source.js / lib/douyin.js
+## lib/source.js / lib/douyin.js / lib/youtube.js
 
-- `detectSource({url,title})` → `bilibili` / `douyin` / `null`。
-- `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`。
+- `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`。
+- `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
 - `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
 - 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-small.bin`。
+- `fetchYoutubeContent({url,title,config,force,onProgress})` 返回同形对象：`source:'youtube'`、`videoId`、`bvid:null`、`transcript`、`transcriptSource:'youtube-subtitle'|'auto-subtitle'|'whisper'`、`fetchStats`、`chapters:[{from,content}]`、`comments:[]`、`danmaku:[]`。
+  取内容顺序：人工字幕 → 自动字幕 → 音频 + whisper.cpp → 仅元数据；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 7 天）。
+  纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。
+- YouTube 依赖：yt-dlp（元数据与字幕）、ffmpeg + whisper-cli + 模型（仅无字幕时）。
+
+## lib/whisper.js
+
+- `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置」探测，返回绝对路径或 null。
+- `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`。
+- `transcribeAudio(wav,{title,author,tags,config,language})`：转写 16kHz 单声道 wav，返回纯文本；失败抛错，由调用方降级。
+- 抖音与 YouTube 共用；`lib/douyin.js` 保留同名 re-export 以兼容既有调用。
 
 ## lib/index.js
 

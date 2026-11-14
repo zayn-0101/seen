@@ -25,8 +25,10 @@ import { classify, summarize, resolveModel } from './analyze.js'
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
 import { findYtDlp } from './ytdlp.js'
-import { detectSource, extractDouyinId, sourceLabel } from './source.js'
-import { fetchDouyinContent, findChrome, findFfmpeg, findWhisperCli, findWhisperModel } from './douyin.js'
+import { detectSource, extractDouyinId, extractYoutubeId, sourceLabel } from './source.js'
+import { fetchDouyinContent, findChrome, findFfmpeg } from './douyin.js'
+import { findWhisperCli, findWhisperModel } from './whisper.js'
+import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
@@ -150,7 +152,9 @@ export function apply(ctx, rawConfig = {}) {
       const source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : 'bilibili')
       const bvidFromUrl = source === 'bilibili' ? (extractBvid(input?.url || '') || null) : null
       const inputBvid = input?.bvid || bvidFromUrl
-      const inputVideoId = input?.videoId || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
+      const inputVideoId = input?.videoId
+        || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
+        || (source === 'youtube' ? extractYoutubeId(input?.url || '') : '')
       key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle })
       activeKey = key
 
@@ -186,6 +190,24 @@ export function apply(ctx, rawConfig = {}) {
             const videoKey = seenKey({ videoId: content.videoId, source: 'douyin', title: content.title || rawTitle })
             if (!input?.force && videoKey !== key && isSeen(state, videoKey)) {
               return { ok: true, skipped: true, message: '该抖音视频已处理过，保持静默' }
+            }
+            activeKey = videoKey
+          }
+        } else if (source === 'youtube') {
+          emit('fetching', { source, title: rawTitle, message: '解析 YouTube 视频，获取字幕或本地转写' })
+          content = await fetchYoutubeContent({
+            url: input?.url || (inputVideoId ? youtubeWatchUrl(inputVideoId) : ''),
+            title: rawTitle,
+            config,
+            force: Boolean(input?.force),
+            onProgress: (progress) => emit('progress', { source, ...progress }),
+          })
+          logger.log('youtube content title=' + JSON.stringify(content?.title || rawTitle) + ' videoId=' + (content?.videoId || 'none') + ' source=' + (content?.transcriptSource || 'none') + ' transcript=' + (content?.fetchStats?.transcript || 0))
+          emit('content', { source, videoId: content?.videoId || null, title: content?.title || rawTitle, fetchStats: content?.fetchStats || null, chapters: content?.chapters || [] })
+          if (content?.videoId) {
+            const videoKey = seenKey({ videoId: content.videoId, source: 'youtube', title: content.title || rawTitle })
+            if (!input?.force && videoKey !== key && isSeen(state, videoKey)) {
+              return { ok: true, skipped: true, message: '该 YouTube 视频已处理过，保持静默' }
             }
             activeKey = videoKey
           }
@@ -442,7 +464,9 @@ export function apply(ctx, rawConfig = {}) {
     const source = detectSource({ url: rawUrl, title: rawTitle })
     if (!source) return
     const bvid = source === 'bilibili' ? (extractBvid(rawUrl) || null) : null
-    const videoId = source === 'douyin' ? (extractDouyinId(rawUrl) || null) : null
+    const videoId = source === 'douyin'
+      ? (extractDouyinId(rawUrl) || null)
+      : source === 'youtube' ? (extractYoutubeId(rawUrl) || null) : null
     if (source === 'bilibili') {
       const onBilibili = /(^|\.)bilibili\.com\b|(^|\.)b23\.tv\b/i.test(rawUrl)
       const biliTitle = /哔哩哔哩|bilibili/i.test(rawTitle)
@@ -451,7 +475,8 @@ export function apply(ctx, rawConfig = {}) {
         if (onBilibili) return
         if (!biliTitle) return
       }
-    } else if (source === 'douyin' && !videoId) {
+    } else if ((source === 'douyin' || source === 'youtube') && !videoId) {
+      // 抖音首页、YouTube 主页/搜索页/频道页都没有视频 ID，静默忽略。
       return
     }
     const key = seenKey({ bvid, videoId, source, title })
@@ -724,14 +749,14 @@ export function apply(ctx, rawConfig = {}) {
       try { mnemonPath = await findMnemon(config) } catch { mnemonPath = null }
       add('mnemon', '记忆库（可选）', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
       const ytdlpPath = findYtDlp(config)
-      add('ytdlp', 'B站字幕工具', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕需要）')
+      add('ytdlp', 'yt-dlp（B站字幕 / YouTube 解析）', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕与 YouTube 解析都需要）')
       const chromePath = findChrome(config)
       const ffmpegPath = findFfmpeg(config)
       const whisperPath = findWhisperCli(config)
       const whisperModel = findWhisperModel(config)
       add('douyin-chrome', '抖音解析所需的 Chrome', Boolean(chromePath), chromePath || '未找到 Chrome（抖音页面解析需要）')
       add('douyin-ffmpeg', '抖音音频所需的 ffmpeg', Boolean(ffmpegPath), ffmpegPath || '未找到 ffmpeg（抖音音频提取需要）')
-      add('douyin-whisper', '抖音语音转写', Boolean(whisperPath && whisperModel), (whisperPath || '未找到 whisper-cli') + ' / ' + (whisperModel || '未找到 Whisper 模型'))
+      add('whisper', '本地语音转写（抖音 / YouTube 无字幕）', Boolean(whisperPath && whisperModel), (whisperPath || '未找到 whisper-cli') + ' / ' + (whisperModel || '未找到 Whisper 模型'))
       let biliOk = false
       let biliDetail = ''
       try {
@@ -741,6 +766,11 @@ export function apply(ctx, rawConfig = {}) {
         biliDetail = 'HTTP ' + res.status + ' code=' + (j?.code ?? '?')
       } catch (e) { biliDetail = String(e?.message || e) }
       add('bilibili', 'B站接口', biliOk, biliDetail)
+      let ytCheck = { ok: false, detail: '未找到 yt-dlp（可运行 brew install yt-dlp 安装）' }
+      if (ytdlpPath) {
+        try { ytCheck = await probeYoutube(config) } catch (e) { ytCheck = { ok: false, detail: String(e?.message || e) } }
+      }
+      add('youtube', 'YouTube 网络', ytCheck.ok, ytCheck.detail || '无法访问 YouTube')
       let model = null
       try { model = resolveModel(ctx, config) } catch { model = null }
       add('llm', '模型服务', Boolean(model), model ? model.provider + '/' + model.model : '无法解析模型')

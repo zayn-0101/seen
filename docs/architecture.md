@@ -9,8 +9,8 @@
       → 支持浏览器：osascript 读取 active tab {title, url}
       → 失败：System Events 窗口标题
       → 再失败：返回错误（诊断会提示缺少「自动化」权限）
-  → cleanTitle + extractBvid
-  → 去重（state.seen，bvid 优先）
+  → cleanTitle + extractBvid / extractDouyinId / extractYoutubeId
+  → 去重（state.seen：bvid 优先，其次 <source>:<videoId>）
   → 稳定计数（stablePolls=2）
   → processTitle()
       → session.getBilibiliCookieHeader()（yt-dlp 临时读取浏览器 Cookie，不落盘）
@@ -33,12 +33,20 @@
 
 ## 多平台来源
 
-当前支持两类来源：
+当前支持三类来源：
 
 - **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie。
 - **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；ffmpeg 抽音频；本地 `whisper-cli` 转写。结果缓存到 `~/.seen/cache/douyin`。
+- **YouTube**：`youtube.js` 用本机 yt-dlp `-J` 取元数据（标题/频道/时长/简介/章节/字幕轨道），逐级降级取文本：
 
-`source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:` 或 `douyin:<id>` 去重。抖音目前只取页面的评论/弹幕总数，不抓取评论/弹幕正文；笔记会明确标注「暂未抓取」。
+  1. 人工字幕：`--write-subs --sub-langs <精确键>`（只请求一条轨道，避免触发 YouTube 429）；
+  2. 自动字幕：`--write-auto-subs --sub-langs <精确键>`（实测常被限制，失败即降级）；
+  3. 音频兜底：`-f bestaudio` 下载后 ffmpeg 转 16kHz 单声道，本地 `whisper-cli` 转写（中文 `-l zh`、外文 `-l auto`，音频下载需 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；
+  4. 全都失败：仅元数据，笔记标注「内容依据有限」。
+
+  结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 7 天）。
+
+`source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:`、`douyin:<id>` 或 `youtube:<id>` 去重。抖音只取页面评论/弹幕总数、YouTube 不抓评论，两者的笔记都会明确标注「暂未抓取」。
 
 ## 独立运行模式
 
@@ -51,8 +59,8 @@
   │                       content / classified / transcript /
   │                       summarizing / summarized / saved / error
   ├─ POST /api/config     启动/暂停轮询、修改轮询间隔
-  ├─ POST /api/scan       手动扫描 URL / BV
-  └─ POST /api/check      前台权限、Obsidian、mnemon、B站、LLM 诊断
+  ├─ POST /api/scan       手动扫描 URL / BV / YouTube 链接
+  └─ POST /api/check      前台权限、Obsidian、mnemon、B站、YouTube、LLM 诊断
 ```
 
 - `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。

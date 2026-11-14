@@ -2,9 +2,9 @@
 
 ## 项目目标
 
-把 B 站 / 抖音精选网页课程长视频自动转化为 Obsidian 知识笔记：
+把 B 站 / 抖音精选 / YouTube 网页课程长视频自动转化为 Obsidian 知识笔记：
 
-1. 定时检测前台浏览器正在播放的 B站 / 抖音精选视频；
+1. 定时检测前台浏览器正在播放的 B站 / 抖音精选 / YouTube 视频；
 2. 去重后按学科分类：旧学科更新学习手册，新学科新建学习手册；
 3. 抓取视频简介/标签/字幕/弹幕/评论，LLM 生成知识总结；
 4. 输出到 Obsidian（视频原子笔记 + 学科学习手册 + 课程总览）；
@@ -44,8 +44,9 @@ seen/
 └── core/                      Seen 视频引擎（包名 seen-core）
     ├── package.json
     ├── README.md
-    ├── lib/                  index(编排) / source+douyin+bilibili(平台) / transcript+session+ytdlp(字幕)
+    ├── lib/                  index(编排) / source+douyin+bilibili+youtube(平台) / transcript+session+ytdlp(字幕)
     │                         analyze(总结) / render+obsidian+index-note+review(输出) / config+state+foreground*+notify+mnemon
+    │                         whisper(本地语音转写，抖音与 YouTube 无字幕时共用)
     └── test/
 ```
 
@@ -73,6 +74,7 @@ seen/
 | 笔记根目录 | `<vault>/课程知识地图` |
 | 状态/日志 | `~/.seen/state/` |
 | 抖音缓存 | `~/.seen/cache/douyin/` |
+| YouTube 缓存 | `~/.seen/cache/youtube/` |
 | Whisper 模型 | `~/.seen/models/ggml-small.bin` |
 | mnemon CLI | `mnemon`（在 PATH 中，可用 `which mnemon` 确认） |
 | Obsidian CLI | `obsidian-cli`（在 PATH 中） |
@@ -84,7 +86,7 @@ seen/
 cd core && node --test
 cd menubar && ./build.sh               # 编译菜单栏应用 → menubar/dist/Seen.app
 node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
-node scripts/install-whisper-model.mjs  # 安装抖音转写模型（约 465MB）
+node scripts/install-whisper-model.mjs  # 安装本地转写模型（抖音 / YouTube 无字幕时，约 465MB）
 obsidian-cli list --vault "Obsidian Vault" "课程知识地图"
 mnemon recall "视频课程"
 ```
@@ -93,7 +95,7 @@ mnemon recall "视频课程"
 ## 重要事实
 
 - 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 ~/.seen/llm.json（600）。
-- 视频处理完成后通过 macOS 通知提醒（SEEN_DISABLE_NOTIFY=1 可关）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站章节与知识点带 t= 时间链接。
+- 视频处理完成后通过 macOS 通知提醒（SEEN_DISABLE_NOTIFY=1 可关）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖；B站与 YouTube 的章节和知识点带 t= 时间链接。
 - 每次生成笔记后重建课程知识地图/索引.md（AUTO 区块）；每周回顾写入 每周回顾/，已存在不覆盖。
 - 菜单栏应用（`menubar/`）是独立 Swift 客户端，只通过 HTTP 调本地服务，不改变服务行为；登录自启由 app 内开关管理，优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。
@@ -102,4 +104,6 @@ mnemon recall "视频课程"
 - macOS 前台窗口读取依赖 AppleScript；首次运行在「系统设置 → 隐私与安全性 → 自动化」里允许运行服务的程序（菜单栏应用 Seen.app 或终端）控制 System Events 与浏览器。macOS 27 已移除独立的「辅助功能」分类，诊断要按实际调用能力判断，不能查 UI elements enabled 标志。
 - 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie。
 - 抖音当前只取评论/弹幕总数，不抓取正文；笔记会明确标注「暂未抓取」。
+- YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频用 whisper.cpp 本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，也不用 YouTube Data API。
+- YouTube 自动字幕接口限制严格（实测多为 429），实际经常落到本地转写，耗时 1–3 分钟；不抓评论（YouTube 也无弹幕）；结果缓存 `~/.seen/cache/youtube/<id>.json`，有效期 youtubeCacheDays（默认 7 天）。
 - `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；其它使用 mnemon 的工具读的是同一份数据。
