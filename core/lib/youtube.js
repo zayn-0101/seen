@@ -103,7 +103,10 @@ export function parseYoutubeJson(raw) {
 
 function pickTrack(tracks, priority) {
   if (!tracks || typeof tracks !== 'object') return null
-  const keys = Object.keys(tracks).filter((key) => Array.isArray(tracks[key]) && tracks[key].length > 0)
+  // live_chat 是直播聊天回放，不是字幕；选中它只会下载一堆聊天记录再失败。
+  const keys = Object.keys(tracks).filter((key) =>
+    Array.isArray(tracks[key]) && tracks[key].length > 0 && !/live_chat/i.test(key)
+  )
   if (keys.length === 0) return null
   const lower = new Map(keys.map((key) => [key.toLowerCase(), key]))
   for (const lang of priority) {

@@ -84,6 +84,12 @@ test('pickYoutubeSubtitle prefers manual Chinese, then manual English, then auto
   assert.equal(pickYoutubeSubtitle({}), null)
   // 只有各语言空数组时也应视为无字幕
   assert.equal(pickYoutubeSubtitle({ subtitles: { zh: [] }, automaticCaptions: {} }), null)
+  // live_chat 是直播聊天回放，不能当字幕
+  assert.equal(pickYoutubeSubtitle({ subtitles: { live_chat: [{}] }, automaticCaptions: {} }), null)
+  assert.deepEqual(
+    pickYoutubeSubtitle({ subtitles: { live_chat: [{}], en: [{}] }, automaticCaptions: {} }),
+    { lang: 'en', auto: false }
+  )
 })
 
 test('buildYoutubeChapters maps start_time and drops empty titles', () => {
