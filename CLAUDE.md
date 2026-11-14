@@ -74,6 +74,8 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 `~/.seen/llm.json`（600）。
 - macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示；`SEEN_DISABLE_NOTIFY=1` 可关。
 - 每次生成笔记后重建「索引.md」（AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖。
+- 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
+- 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
 - B 站与 YouTube 的章节和知识点带 `t=` 时间链接；抖音无章节。
 - 菜单栏应用是独立 Swift 客户端，只通过 HTTP 调服务；登录自启优先 SMAppService，不可用时回退 LaunchAgent。
 - 远程仓库：`https://github.com/zayn-0101/seen`（公开，默认分支 `main`）。改动完成后记得提交并推送。

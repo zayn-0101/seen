@@ -403,6 +403,25 @@ function stopStageClock() {
   state.processingStarted = 0
 }
 
+function renderUpdate(update) {
+  const banner = $('updateBanner')
+  if (!banner) return
+  if (!update || !update.latest) {
+    banner.hidden = true
+    return
+  }
+  // 用户点过「关闭」的版本不再提示
+  let dismissed = ''
+  try { dismissed = localStorage.getItem('seen.updateDismissed') || '' } catch { dismissed = '' }
+  if (dismissed === update.latest) {
+    banner.hidden = true
+    return
+  }
+  banner.hidden = false
+  $('updateText').textContent = '发现新版本 v' + update.latest + '（当前 v' + (update.current || '') + '）'
+  $('updateLink').href = update.url || 'https://github.com/zayn-0101/seen/releases'
+}
+
 function renderFailures(failures) {
   const card = $('failuresCard')
   const list = $('failures')
@@ -479,6 +498,7 @@ function renderSnapshot(snap) {
   setPill($('llmPill'), llmLabel, llm.ok ? 'ok' : 'bad', (llm.detail || '') + (llm.source ? ' · 来源：' + llm.source : ''))
   const vaultPath = snap.status?.vaultPath ? String(snap.status.vaultPath) : ''
   $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
+  renderUpdate(snap.update || null)
   renderHistory(snap.history || [])
   renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
@@ -761,6 +781,13 @@ $('toggle').addEventListener('click', () => {
 $('saveInterval').addEventListener('click', saveInterval)
 $('interval').addEventListener('keydown', (event) => { if (event.key === 'Enter') saveInterval() })
 $('scan').addEventListener('click', () => scan(false))
+$('updateClose').addEventListener('click', () => {
+  $('updateBanner').hidden = true
+  const latest = String($('updateText').textContent).match(/v([0-9.]+)/)?.[1] || ''
+  if (latest) {
+    try { localStorage.setItem('seen.updateDismissed', latest) } catch { /* 忽略 */ }
+  }
+})
 $('historySearch').addEventListener('input', () => renderHistory())
 $('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))

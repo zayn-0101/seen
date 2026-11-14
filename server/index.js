@@ -20,6 +20,7 @@ import { writeWeeklyReview, writeIndexNote } from '../core/lib/obsidian.js'
 import { buildIndexMarkdown } from '../core/lib/index-note.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
+import { compareVersions } from '../core/lib/version.js'
 import {
   PROVIDERS,
   PROVIDER_GROUPS,
@@ -191,6 +192,39 @@ if (ui.started && !engine.isReadOnly()) {
   if (!result.ok) log('自动启动轮询失败：' + result.message)
 }
 
+// ---- 版本与更新检查（每天最多一次，可用 SEEN_DISABLE_UPDATE_CHECK=1 关闭）----
+const APP_VERSION = JSON.parse(await readFile(join(here, '..', 'package.json'), 'utf8')).version
+const UPDATE_REPO = 'zayn-0101/seen'
+const UPDATE_DISABLED = process.env.SEEN_DISABLE_UPDATE_CHECK === '1'
+let updateInfo = { checkedAt: 0, latest: '', url: '', available: false }
+
+async function checkUpdate({ force = false } = {}) {
+  if (UPDATE_DISABLED) return updateInfo
+  const now = Date.now()
+  if (!force && updateInfo.checkedAt > 0 && now - updateInfo.checkedAt < 24 * 3600 * 1000) return updateInfo
+  try {
+    const res = await fetch('https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest', {
+      headers: { 'User-Agent': 'seen/' + APP_VERSION, Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) {
+      updateInfo = { ...updateInfo, checkedAt: now }
+      return updateInfo
+    }
+    const data = await res.json()
+    const latest = String(data.tag_name || '').replace(/^v/i, '')
+    updateInfo = {
+      checkedAt: now,
+      latest,
+      url: String(data.html_url || ('https://github.com/' + UPDATE_REPO + '/releases')),
+      available: Boolean(latest) && compareVersions(latest, APP_VERSION) > 0,
+    }
+  } catch {
+    updateInfo = { ...updateInfo, checkedAt: now }
+  }
+  return updateInfo
+}
+
 async function snapshot() {
   const status = await engine.getStatus()
   const events = engine.getEvents()
@@ -200,6 +234,7 @@ async function snapshot() {
     config: engine.getConfig(),
     history: engine.getHistory(),
     events: engine.getEvents(),
+    update: updateInfo.available ? { ...updateInfo, current: APP_VERSION } : null,
     llm: {
       ok: llmHealth.ok,
       detail: llmHealth.detail,
@@ -532,6 +567,11 @@ server.listen(PORT, HOST, () => {
   }
   ensureLastWeekReview().catch(() => {})
   rebuildIndexNote().catch(() => {})
+  checkUpdate().then((info) => {
+    if (!info.available) return
+    log('发现新版本 v' + info.latest + '（当前 v' + APP_VERSION + '）：' + info.url)
+    broadcast({ type: 'update', data: { ...info, current: APP_VERSION } })
+  }).catch(() => {})
 })
 
 function shutdown(code = 0) {

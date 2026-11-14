@@ -395,3 +395,12 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 .history-search:focus { outline: none; border-color: var(--focus); }
 .history-subject { min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; }
 .history-subject:focus { outline: none; border-color: var(--focus); }
+
+
+/* 新版本提示 */
+.update-banner { display: flex; align-items: center; gap: 12px; margin: 0; padding: 10px 18px; background: linear-gradient(90deg, rgba(237,140,91,0.16), rgba(237,140,91,0.04)); border-bottom: 1px solid rgba(237,140,91,0.28); color: var(--ink); font-size: 13px; }
+.update-banner[hidden] { display: none; }
+.update-text { flex: 1; }
+.update-link { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.update-close { border: 0; background: transparent; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.update-close:hover { color: var(--ink); }
