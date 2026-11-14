@@ -294,6 +294,68 @@ function filterHistory(rows) {
   })
 }
 
+let vaultSearchTimer = null
+let vaultSearchToken = 0
+
+/** 渲染笔记库全文搜索结果（服务端扫 vault 里的 Markdown）。 */
+function renderVaultSearch(results, query) {
+  const box = $('vaultSearch')
+  if (!box) return
+  if (!results.length) {
+    box.hidden = true
+    box.replaceChildren()
+    return
+  }
+  const head = document.createElement('p')
+  head.className = 'vault-search-head'
+  head.textContent = '笔记库中还有 ' + results.length + ' 篇匹配「' + query + '」'
+  const list = document.createElement('ul')
+  list.className = 'vault-search-list'
+  for (const item of results) {
+    const li = document.createElement('li')
+    const title = document.createElement('strong')
+    title.textContent = item.title
+    const path = document.createElement('span')
+    path.className = 'vault-search-path'
+    path.textContent = item.relPath
+    li.append(title, path)
+    if (item.snippet) {
+      const snippet = document.createElement('p')
+      snippet.className = 'vault-search-snippet'
+      snippet.textContent = item.snippet
+      li.appendChild(snippet)
+    }
+    list.appendChild(li)
+  }
+  box.replaceChildren(head, list)
+  box.hidden = false
+}
+
+/** 输入停顿后再查笔记库，避免每敲一个字都扫一遍 vault。 */
+function scheduleVaultSearch() {
+  clearTimeout(vaultSearchTimer)
+  const query = String($('historySearch')?.value || '').trim()
+  const box = $('vaultSearch')
+  if (query.length < 2) {
+    vaultSearchToken += 1
+    if (box) {
+      box.hidden = true
+      box.replaceChildren()
+    }
+    return
+  }
+  vaultSearchTimer = setTimeout(async () => {
+    const token = ++vaultSearchToken
+    try {
+      const response = await fetch('/api/search?limit=12&q=' + encodeURIComponent(query))
+      if (!response.ok) return
+      const data = await response.json()
+      if (token !== vaultSearchToken) return
+      renderVaultSearch(data.results || [], query)
+    } catch { /* 服务未启动时静默 */ }
+  }, 260)
+}
+
 /** 学科下拉只列出实际存在的学科，保持当前选中项。 */
 function renderSubjectOptions(rows) {
   const select = $('historySubject')
@@ -788,7 +850,10 @@ $('updateClose').addEventListener('click', () => {
     try { localStorage.setItem('seen.updateDismissed', latest) } catch { /* 忽略 */ }
   }
 })
-$('historySearch').addEventListener('input', () => renderHistory())
+$('historySearch').addEventListener('input', () => {
+  renderHistory()
+  scheduleVaultSearch()
+})
 $('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })

@@ -19,6 +19,7 @@ import { buildWeeklyReview } from '../core/lib/review.js'
 import { writeWeeklyReview, writeIndexNote, writeConceptIndexNote } from '../core/lib/obsidian.js'
 import { buildConceptIndexMarkdown, buildIndexMarkdown } from '../core/lib/index-note.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
+import { searchVault } from '../core/lib/vault-search.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
 import { compareVersions } from '../core/lib/version.js'
@@ -302,6 +303,15 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/status' && req.method === 'GET') {
       return json(res, 200, await snapshot())
+    }
+
+    if (pathname === '/api/search' && req.method === 'GET') {
+      const status = await engine.getStatus()
+      if (!status.vaultPath) return json(res, 400, { error: '没有找到 Obsidian vault' })
+      const query = url.searchParams.get('q') || ''
+      const limit = Number(url.searchParams.get('limit')) || 20
+      const results = searchVault({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, query, limit })
+      return json(res, 200, { query, results })
     }
 
     if (pathname === '/api/config' && req.method === 'POST') {
