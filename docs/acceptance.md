@@ -54,6 +54,15 @@
 - [ ] 会员 / 年龄限制 / 直播视频的失败提示待真实样本验证
 - [ ] YouTube 评论未接入（需要 OAuth，暂不做）
 
+## 自动安装（2026-11-14）
+
+- [x] yt-dlp：缺失时从 GitHub releases 下载到 `~/.seen/bin/yt-dlp`（37.4MB），`--version` 校验通过
+- [x] ffmpeg：缺失时下载 ffmpeg-static 静态二进制到 `~/.seen/bin/ffmpeg`（45.5MB，arm64），`ffmpeg -version` 输出 6.0
+- [x] Whisper 模型：缺失时按 HF_ENDPOINT → huggingface → hf-mirror 下载到 `~/.seen/models`（实测 base 模型 141MB 从 huggingface 直连成功）
+- [x] 系统里已装的优先：brew 的 `/opt/homebrew/bin/yt-dlp`、`/opt/homebrew/bin/ffmpeg` 仍被选中，自动下载的副本不覆盖
+- [x] whisper-cli 官方无预编译包，诊断与错误信息给出 `brew install whisper.cpp`
+- [x] `cd core && node --test`：81 tests / 81 pass
+
 ## 独立服务与前端
 
 - [x] `node server/index.js` 启动，默认 `http://127.0.0.1:4780`

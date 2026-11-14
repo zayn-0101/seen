@@ -31,6 +31,7 @@ seen/
 │   └── style.css
 ├── scripts/
 │   ├── export-icons.mjs          图标导出（母版 → 各平台资源）
+│   ├── install-ffmpeg.mjs        下载 ffmpeg 静态二进制到 ~/.seen/bin
 │   ├── install-launchd.mjs       服务开机自启
 │   ├── install-whisper-model.mjs 下载本地 Whisper 模型
 │   ├── install-yt-dlp.mjs        下载 yt-dlp 到 ~/.seen/bin
@@ -55,7 +56,7 @@ seen/
 ## 开发规则
 
 - 源码只在工作区修改；**绝不直接改**已安装的依赖副本（node_modules）。
-- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）；外部可执行文件（yt-dlp、ffmpeg、whisper-cli）按需探测，yt-dlp 缺失时自动下载。
+- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）；外部工具（yt-dlp、ffmpeg、Whisper 模型）按需探测，缺失时自动下载到 `~/.seen`，whisper-cli 与 Chrome 需用户自装。
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
@@ -78,6 +79,7 @@ seen/
 | 抖音缓存 | `~/.seen/cache/douyin/` |
 | YouTube 缓存 | `~/.seen/cache/youtube/` |
 | yt-dlp（自动安装的兜底副本） | `~/.seen/bin/yt-dlp` |
+| ffmpeg（自动安装的兜底副本） | `~/.seen/bin/ffmpeg` |
 | Whisper 模型 | `~/.seen/models/ggml-small.bin` |
 | mnemon CLI | `mnemon`（在 PATH 中，可用 `which mnemon` 确认） |
 | Obsidian CLI | `obsidian-cli`（在 PATH 中） |
@@ -91,6 +93,7 @@ cd menubar && ./build.sh               # 编译菜单栏应用 → menubar/dist/
 node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
 node scripts/install-whisper-model.mjs  # 安装本地转写模型（抖音 / YouTube 无字幕时，约 465MB）
 node scripts/install-yt-dlp.mjs         # 下载 yt-dlp 到 ~/.seen/bin（服务首次需要时也会自动下载）
+node scripts/install-ffmpeg.mjs         # 下载 ffmpeg 静态二进制到 ~/.seen/bin（同上）
 obsidian-cli list --vault "Obsidian Vault" "课程知识地图"
 mnemon recall "视频课程"
 ```
@@ -106,9 +109,13 @@ mnemon recall "视频课程"
 - 应用是独立桌面程序，`core/` 是本机引擎，不做网络服务依赖。
 - 上游参考：`linner1224/dsh-video-coursemap` 2.0.0（MIT，Windows 前台窗口 + Word 输出）；本项目保留其 B 站抓取思路，已独立演进为 macOS/Obsidian 方向。
 - macOS 前台窗口读取依赖 AppleScript；首次运行在「系统设置 → 隐私与安全性 → 自动化」里允许运行服务的程序（菜单栏应用 Seen.app 或终端）控制 System Events 与浏览器。macOS 27 已移除独立的「辅助功能」分类，诊断要按实际调用能力判断，不能查 UI elements enabled 标志。
-- 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie。
+- 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；其中 ffmpeg 与模型缺失时会自动下载，Chrome 与 whisper-cli 需用户自装；不保存抖音 Cookie。
 - 抖音当前只取评论/弹幕总数，不抓取正文；笔记会明确标注「暂未抓取」。
 - YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频用 whisper.cpp 本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，也不用 YouTube Data API。
 - YouTube 自动字幕接口限制严格（实测多为 429），实际经常落到本地转写，耗时 1–3 分钟；不抓评论（YouTube 也无弹幕）；结果缓存 `~/.seen/cache/youtube/<id>.json`，有效期 youtubeCacheDays（默认 7 天）。
-- yt-dlp 查找顺序：配置 `ytdlpBin` → PATH → `~/.seen/bin/yt-dlp` → 常见路径；都没有时，首次需要（YouTube 解析或 B 站 AI 字幕）会从 GitHub releases 自动下载到 `~/.seen/bin` 并校验 `--version`，下载走 Node fetch、失败回退系统 curl。系统里已装的优先，不会被覆盖。
+- 外部工具统一策略：「配置 → PATH/系统安装 → `~/.seen/bin`（自动下载）→ 常见路径」，系统里已装的始终优先、不会被覆盖。缺失时的自动下载：
+  - yt-dlp：GitHub releases 官方二进制（37MB），Node fetch 失败回退系统 curl；
+  - ffmpeg：ffmpeg-static 对应平台的静态二进制（45MB）；
+  - Whisper 模型：HF_ENDPOINT → huggingface.co → hf-mirror.com 依次尝试（465MB）；
+  - whisper-cli 与 Chrome 官方没有免安装包，只能提示 `brew install whisper.cpp` 和自行安装 Chrome。
 - `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；其它使用 mnemon 的工具读的是同一份数据。

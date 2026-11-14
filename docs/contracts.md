@@ -265,9 +265,12 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 ## lib/whisper.js
 
-- `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置」探测，返回绝对路径或 null。
+- `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置 → `~/.seen/bin`」探测，返回绝对路径或 null；只探测不安装。
+- `ensureFfmpeg(config, { onProgress })` / `ensureWhisperModel(config, { model, onProgress })`：有就返回 `{ ok, path, skipped }`，没有则自动下载一次。ffmpeg 取 ffmpeg-static 静态二进制（`ffmpegReleaseUrl()`），模型按 `whisperModelUrls()` 依次尝试 HF_ENDPOINT → huggingface → hf-mirror。失败返回 `{ ok:false, error }`，不抛错。
+- `installFfmpeg({ force, onProgress })` / `installWhisperModel({ model, force, onProgress })`：单独执行下载，并发调用共享同一次任务；`onProgress` 收到 `{ stage, message, received, total, percent }`。
+- `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试。
 - `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`。
-- `transcribeAudio(wav,{title,author,tags,config,language})`：转写 16kHz 单声道 wav，返回纯文本；失败抛错，由调用方降级。
+- `transcribeAudio(wav,{title,author,tags,config,language})`：转写 16kHz 单声道 wav，返回纯文本；调用方需先 `ensureWhisperModel`，whisper-cli 缺失时抛错（官方无预编译包，需 `brew install whisper.cpp`）。
 - 抖音与 YouTube 共用；`lib/douyin.js` 保留同名 re-export 以兼容既有调用。
 
 ## lib/index.js

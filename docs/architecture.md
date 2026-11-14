@@ -44,7 +44,7 @@
   3. 音频兜底：`-f bestaudio` 下载后 ffmpeg 转 16kHz 单声道，本地 `whisper-cli` 转写（中文 `-l zh`、外文 `-l auto`，音频下载需 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；
   4. 全都失败：仅元数据，笔记标注「内容依据有限」。
 
-  依赖的 yt-dlp 由 `ytdlp.js` 统一解析：配置 → PATH → `~/.seen/bin` → 常见路径；都没有时自动下载官方二进制到 `~/.seen/bin` 并校验版本。
+  依赖的 yt-dlp、ffmpeg 与 Whisper 模型由 `ytdlp.js` / `whisper.js` 统一解析：配置 → PATH → `~/.seen/bin`（或 `~/.seen/models`）→ 常见路径；都没有时自动下载并校验，系统里已装的始终优先。只有 whisper-cli 与 Chrome 需要用户自行安装。
 
   结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 7 天）。
 

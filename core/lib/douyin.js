@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDouyinId, sourceLabel } from './source.js'
-import { findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
+import { ensureFfmpeg, ensureWhisperModel, findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
 
 const execFileP = promisify(execFile)
 const CACHE_DIR = join(homedir(), '.seen', 'cache', 'douyin')
@@ -237,9 +237,10 @@ async function readPage(url, config) {
   }
 }
 
-async function downloadAudio(playUrl, config) {
-  const ffmpeg = findFfmpeg(config)
-  if (!ffmpeg) throw new Error('未找到 ffmpeg，无法提取抖音音频')
+async function downloadAudio(playUrl, config, onProgress) {
+  const ready = await ensureFfmpeg(config, { onProgress })
+  if (!ready.ok || !ready.path) throw new Error('未找到 ffmpeg，自动下载也失败：' + (ready.error || '未知原因'))
+  const ffmpeg = ready.path
   const dir = mkdtempSync(join(tmpdir(), 'seen-douyin-audio-'))
   const wav = join(dir, 'audio.wav')
   try {
@@ -281,8 +282,10 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
   if (!playUrl) throw new Error('抖音页面没有返回可播放地址')
   const meta = buildContent(detail, { url, id })
   if (onProgress) onProgress({ stage: 'audio', message: '下载并提取音频', videoId: id, duration: meta.duration })
-  const audio = await downloadAudio(playUrl, config)
+  const audio = await downloadAudio(playUrl, config, onProgress)
   try {
+    const modelReady = await ensureWhisperModel(config, { onProgress })
+    if (!modelReady.ok) throw new Error('未找到 Whisper 模型，自动下载也失败：' + (modelReady.error || '未知原因'))
     if (onProgress) onProgress({ stage: 'transcribe', message: '本地 Whisper 转写中', videoId: id, duration: meta.duration })
     const transcript = await transcribeAudio(audio.wav, {
       title: meta.title,

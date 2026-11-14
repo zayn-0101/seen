@@ -16,7 +16,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ensureYtDlp, findYtDlp } from './ytdlp.js'
 import { buildTimedTranscript, parseSrtSegments } from './transcript.js'
-import { findFfmpeg, transcribeAudio } from './whisper.js'
+import { ensureFfmpeg, ensureWhisperModel, findFfmpeg, transcribeAudio } from './whisper.js'
 import { extractYoutubeId, sourceLabel } from './source.js'
 
 const execFileP = promisify(execFile)
@@ -220,9 +220,10 @@ function guessLanguage(meta) {
   return /[\u4e00-\u9fff]/.test(text) ? 'zh' : 'auto'
 }
 
-async function downloadAudioOnce({ url, config }) {
-  const ffmpeg = findFfmpeg(config)
-  if (!ffmpeg) throw new Error('未找到 ffmpeg，无法提取 YouTube 音频')
+async function downloadAudioOnce({ url, config, onProgress }) {
+  const ready = await ensureFfmpeg(config, { onProgress })
+  if (!ready.ok || !ready.path) throw new Error('未找到 ffmpeg，自动下载也失败：' + (ready.error || '未知原因'))
+  const ffmpeg = ready.path
   const dir = mkdtempSync(join(tmpdir(), 'seen-youtube-audio-'))
   try {
     await runYtDlp([
@@ -250,11 +251,11 @@ async function downloadAudioOnce({ url, config }) {
 }
 
 /** YouTube 的媒体直链偶发 403，重试一次（实测第二次通常能过）。 */
-async function downloadAudio({ url, config }) {
+async function downloadAudio({ url, config, onProgress }) {
   let lastError = null
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await downloadAudioOnce({ url, config })
+      return await downloadAudioOnce({ url, config, onProgress })
     } catch (error) {
       lastError = error
     }
@@ -347,8 +348,10 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
 
   if (!transcript && config.fetchTranscript !== false) {
     try {
+      const modelReady = await ensureWhisperModel(config, { onProgress })
+      if (!modelReady.ok) throw new Error('未找到 Whisper 模型，自动下载也失败：' + (modelReady.error || '未知原因'))
       if (onProgress) onProgress({ stage: 'audio', message: '没有可用字幕，下载音频后本地转写', videoId: id })
-      const audio = await downloadAudio({ url: watchUrl, config })
+      const audio = await downloadAudio({ url: watchUrl, config, onProgress })
       try {
         if (onProgress) onProgress({ stage: 'transcribe', message: '本地 Whisper 转写中', videoId: id })
         transcript = await transcribeAudio(audio.wav, {

@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 /**
  * 下载本地 Whisper 模型到 ~/.seen/models。
- * 默认 small 模型（约 465MB），中文长视频转写用。
+ * 服务运行时也会在首次需要时自动下载，这个脚本用于提前装好（例如离线准备环境）。
  *
  * 用法：
  *   node scripts/install-whisper-model.mjs
  *   node scripts/install-whisper-model.mjs --model base
  *   node scripts/install-whisper-model.mjs --force
  */
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import {
+  installWhisperModel,
+  whisperModelPath,
+  whisperModelUrls,
+} from '../core/lib/whisper.js'
 
-const model = process.argv.includes('--model')
-  ? process.argv[process.argv.indexOf('--model') + 1]
-  : 'small'
+const modelIndex = process.argv.indexOf('--model')
+const model = modelIndex !== -1 ? process.argv[modelIndex + 1] : 'small'
 const force = process.argv.includes('--force')
 const allowed = new Set(['base', 'small', 'medium', 'large-v3-turbo'])
 if (!allowed.has(model)) {
@@ -22,51 +24,30 @@ if (!allowed.has(model)) {
   process.exit(1)
 }
 
-const dir = join(homedir(), '.seen', 'models')
-const target = join(dir, 'ggml-' + model + '.bin')
-const temp = target + '.part'
-const url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-' + model + '.bin'
-
+const target = whisperModelPath(model)
 if (existsSync(target) && !force) {
-  console.log('模型已存在：' + target + '（' + Math.round(statSync(target).size / 1024 / 1024) + ' MB）')
+  console.log('模型已存在：' + target)
+  console.log('如需重新下载，加 --force。')
   process.exit(0)
 }
 
-mkdirSync(dir, { recursive: true })
-console.log('下载 ' + model + ' → ' + target)
-console.log('来源：' + url)
+console.log('安装位置：' + whisperModelPath(model))
+console.log('下载源（按顺序尝试）：')
+for (const url of whisperModelUrls(model)) console.log('  ' + url)
 
-const res = await fetch(url, { redirect: 'follow' })
-if (!res.ok || !res.body) {
-  console.error('下载失败：HTTP ' + res.status)
+const result = await installWhisperModel({
+  model,
+  force,
+  onProgress: (p) => {
+    if (p.percent === null || p.percent === undefined) return
+    process.stdout.write('\r  ' + p.percent + '%  ' + Math.round(p.received / 1024 / 1024) + ' / ' + Math.round(p.total / 1024 / 1024) + ' MB')
+  },
+})
+
+if (!result.ok) {
+  console.error('\n下载失败：' + (result.error || '未知原因'))
+  console.error('也可以设置 HF_ENDPOINT=https://hf-mirror.com 后重试。')
   process.exit(1)
 }
 
-const total = Number(res.headers.get('content-length')) || 0
-let received = 0
-let lastPrint = 0
-const out = createWriteStream(temp)
-const reader = res.body.getReader()
-
-try {
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    out.write(Buffer.from(value))
-    received += value.length
-    const now = Date.now()
-    if (now - lastPrint > 1000) {
-      lastPrint = now
-      const percent = total ? ((received / total) * 100).toFixed(1) + '%' : Math.round(received / 1024 / 1024) + 'MB'
-      process.stdout.write('\r  ' + percent + '  ' + Math.round(received / 1024 / 1024) + ' / ' + Math.round(total / 1024 / 1024) + ' MB')
-    }
-  }
-  await new Promise((resolve, reject) => out.end((error) => error ? reject(error) : resolve()))
-  renameSync(temp, target)
-  console.log('\n完成：' + target)
-} catch (error) {
-  try { out.destroy() } catch { /* 忽略 */ }
-  try { rmSync(temp, { force: true }) } catch { /* 忽略 */ }
-  console.error('\n下载中断：' + String(error?.message || error))
-  process.exit(1)
-}
+console.log('\n完成：' + result.path)

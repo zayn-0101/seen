@@ -46,9 +46,17 @@
 - [Node.js](https://nodejs.org/) 20 或更新版本
 - [Obsidian](https://obsidian.md/) 和一个 vault
 - 一个可用的模型 API Key（或本机运行 Ollama、LM Studio、Magpie 等）
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)（YouTube 解析与 B 站 AI 字幕需要；已安装则直接用，没装会在首次使用时自动下载到 `~/.seen/bin`）
+外部工具按需使用，**已安装的本机版本始终优先**，没有的话大部分会自动补上：
 
-项目本身零 npm 依赖：不需要 `npm install`，克隆下来就能跑。外部工具（yt-dlp、ffmpeg、Whisper 模型）会按需自动下载或由你自行安装，见上方要求。
+| 工具 | 用在哪 | 没装时 |
+|---|---|---|
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube 解析、B 站 AI 字幕 | 首次需要时自动下载到 `~/.seen/bin` |
+| [ffmpeg](https://ffmpeg.org/) | 音频预处理（抖音、YouTube 无字幕） | 首次需要时自动下载静态二进制到 `~/.seen/bin` |
+| Whisper 模型 | 无字幕时本地转写 | 首次需要时自动下载到 `~/.seen/models`（约 465MB，可用 `HF_ENDPOINT` 换源） |
+| whisper-cli | 无字幕时本地转写 | 需手动装：`brew install whisper.cpp`（官方没有预编译包） |
+| Chrome | 抖音页面解析 | 需自行安装 |
+
+项目本身零 npm 依赖：不需要 `npm install`，克隆下来就能跑。
 
 ### 1. 获取代码
 
@@ -309,13 +317,14 @@ macOS 读取浏览器窗口需要 AppleScript 自动化权限：
 
 ### 抖音视频没有笔记
 
-抖音精选需要额外组件：
+抖音精选依赖 Chrome（页面解析）和 whisper-cli（音频转写）。ffmpeg 与 Whisper 模型缺失时会自动下载，需要手动准备的只有：
 
 ```bash
-node scripts/install-whisper-model.mjs   # 安装 Whisper 模型，约 465MB
+brew install --cask google-chrome   # 页面解析
+brew install whisper.cpp            # 本地转写（官方没有预编译包）
 ```
 
-以及本机的 Chrome、ffmpeg、whisper-cli。诊断里对应的项如果标红，就是缺组件。
+诊断里对应的项如果标红，就是缺组件。
 
 ### YouTube 视频没有笔记
 
@@ -332,6 +341,7 @@ brew install yt-dlp                      # 或者用系统包管理器
 - 诊断里「yt-dlp」「YouTube 网络」两项都要是绿的；
 - 在中国大陆需要先开代理，系统级代理即可，应用会沿用；
 - 有人工字幕的视频通常几秒完成；没有字幕的视频会下载音频用本地 Whisper 转写，一般 1–3 分钟；
+- 无字幕视频还需要 ffmpeg 和 Whisper 模型，两者缺失时会自动下载（45MB / 465MB），whisper-cli 仍需 `brew install whisper.cpp`；
 - 会员视频、私享视频、年龄限制视频会被 YouTube 拒绝，属于预期情况；
 - 如果自动下载的版本报证书错误（公司网络装了 HTTPS 代理时会这样），改用 `brew install yt-dlp` 装的那份即可。
 
