@@ -8,6 +8,7 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname } from 'node:path'
+import { alignSubject } from './subject.js'
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -133,21 +134,7 @@ export function pruneSeen(state, max = 1000) {
  * 3) 否则返回归一化后的新学科名。
  */
 export function resolveSubjectName(subject, existing = []) {
-  const list = Array.isArray(existing) ? existing.filter((item) => typeof item === 'string' && item.trim() !== '') : []
-  const raw = String(subject ?? '').trim()
-  if (raw && list.includes(raw)) return raw
-
-  const normalized = normalizeSubjectName(subject)
-  for (const name of list) {
-    if (normalizeSubjectName(name) === normalized) return name
-  }
-  for (const name of list) {
-    const candidate = normalizeSubjectName(name)
-    if (candidate && normalized && (candidate.includes(normalized) || normalized.includes(candidate))) {
-      return name
-    }
-  }
-  return normalized
+  return alignSubject(subject, existing).subject
 }
 
 /**
@@ -211,10 +198,4 @@ export function clearFailure(state, key) {
   delete state.failures[key]
 }
 
-function normalizeSubjectName(name) {
-  const result = String(name ?? '')
-    .normalize('NFC')
-    .trim()
-    .replace(/\s+/g, ' ')
-  return result || '未分类'
-}
+

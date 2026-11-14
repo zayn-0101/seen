@@ -115,3 +115,15 @@ test('mergeManualSection leaves note untouched when nothing handwritten', () => 
   const next = renderVideoNote({ title: 'X', subject: 'Y', summary: 's', noteRoot: '课程知识地图' })
   assert.equal(mergeManualSection('# 没有手写区', next), next)
 })
+
+test('renderVideoNote adds nested concept tags to frontmatter', () => {
+  const md = renderVideoNote({
+    title: '标签测试',
+    subject: '写作',
+    summary: 's',
+    concepts: [{ name: '责任前置', brief: '先认错' }, { name: '被动 语态', brief: '稀释责任' }],
+    noteRoot: '课程知识地图',
+  })
+  assert.ok(md.includes('"概念/责任前置"'))
+  assert.ok(md.includes('"概念/被动语态"'))
+})

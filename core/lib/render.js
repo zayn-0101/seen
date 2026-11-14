@@ -156,6 +156,17 @@ function normalizeKeyPoints(value) {
   return result
 }
 
+/** 找到某个时间点所属的章节，用于把知识点挂到章节上。 */
+function chapterAt(time, chapters) {
+  if (!Number.isFinite(time) || !Array.isArray(chapters) || chapters.length === 0) return null
+  let found = null
+  for (const chapter of chapters) {
+    if (chapter.from <= time) found = chapter
+    else break
+  }
+  return found
+}
+
 function toCount(value) {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
@@ -289,11 +300,15 @@ function normalizeSubjects(subjects) {
   return result
 }
 
-function normalizeTags(value, subject) {
+function normalizeTags(value, subject, extraTags = []) {
   let tags = []
   if (Array.isArray(value)) tags = value.map((item) => cleanInline(item).replace(/\s+/g, '-')).filter(Boolean)
   else if (typeof value === 'string') tags = value.split(/[,，、]/).map((item) => cleanInline(item).replace(/\s+/g, '-')).filter(Boolean)
   if (tags.length === 0) tags = ['视频课程', subject]
+  for (const tag of extraTags) {
+    const cleaned = cleanInline(tag)
+    if (cleaned && !tags.includes(cleaned)) tags.push(cleaned)
+  }
   return [...new Set(tags)]
 }
 
@@ -331,7 +346,7 @@ export function renderVideoNote(input = {}) {
     author,
     created: createdAt,
     updated: createdAt,
-    tags: normalizeTags(source.tags, subject),
+    tags: normalizeTags(source.tags, subject, concepts.map((item) => '概念/' + item.name.replace(/[\/\\#^|\s]+/g, ''))),
     contentSource,
     contentQuality,
     type: 'video-note',
@@ -405,7 +420,11 @@ export function renderVideoNote(input = {}) {
   } else {
     for (const topic of keyPoints) {
       const topicLink = Number.isFinite(topic.time) ? buildTimeLink(url, platform, topic.time) : ''
-      lines.push(topicLink ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})` : `### ${topic.title}`, '')
+      const chapter = chapterAt(topic.time, chapters)
+      const chapterTag = chapter ? `（所属章节：${chapter.content}）` : ''
+      lines.push(topicLink
+        ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})${chapterTag}`
+        : `### ${topic.title}${chapterTag}`, '')
       if (topic.points.length === 0) lines.push('- （暂无要点）')
       else for (const point of topic.points) lines.push(`- ${point}`)
       lines.push('')
