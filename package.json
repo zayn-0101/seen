@@ -1,7 +1,7 @@
 {
   "name": "seen",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "拾影 / Seen — 把看过的视频，变成可回顾的知识笔记",
   "scripts": {
