@@ -277,7 +277,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
   `{ start, stop, setPollInterval, scan, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
-- 事件类型：`foreground / stable / detected / fetching / content / classified / transcript / summarizing / summarized / saved / skipped / error / status`。
+- 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。
 - 内部工具名：`course_map_status`、`course_map_scan`、`course_map_check`，由服务构造的 ctx.tools 注册表调用（对应 /api/status、/api/scan、/api/check），不是对外公开 API。

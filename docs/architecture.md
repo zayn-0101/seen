@@ -44,6 +44,8 @@
   3. 音频兜底：`-f bestaudio` 下载后 ffmpeg 转 16kHz 单声道，本地 `whisper-cli` 转写（中文 `-l zh`、外文 `-l auto`，音频下载需 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；
   4. 全都失败：仅元数据，笔记标注「内容依据有限」。
 
+  依赖的 yt-dlp 由 `ytdlp.js` 统一解析：配置 → PATH → `~/.seen/bin` → 常见路径；都没有时自动下载官方二进制到 `~/.seen/bin` 并校验版本。
+
   结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 7 天）。
 
 `source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:`、`douyin:<id>` 或 `youtube:<id>` 去重。抖音只取页面评论/弹幕总数、YouTube 不抓评论，两者的笔记都会明确标注「暂未抓取」。

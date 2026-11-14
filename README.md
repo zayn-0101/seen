@@ -48,7 +48,7 @@
 - 一个可用的模型 API Key（或本机运行 Ollama、LM Studio、Magpie 等）
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)（YouTube 解析与 B 站 AI 字幕需要；已安装则直接用，没装会在首次使用时自动下载到 `~/.seen/bin`）
 
-零运行时依赖：不需要 `npm install`，克隆下来就能跑。
+项目本身零 npm 依赖：不需要 `npm install`，克隆下来就能跑。外部工具（yt-dlp、ffmpeg、Whisper 模型）会按需自动下载或由你自行安装，见上方要求。
 
 ### 1. 获取代码
 
@@ -386,7 +386,7 @@ Obsidian     vault 中的 Markdown
 ## 开发
 
 ```bash
-cd core && node --test          # 运行测试（69 项）
+cd core && node --test          # 运行测试（74 项）
 cd menubar && ./build.sh        # 编译菜单栏应用
 npm run check                   # 语法检查
 ```

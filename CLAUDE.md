@@ -21,7 +21,7 @@ seen/
 │   ├── architecture.md       架构与数据流
 │   ├── acceptance.md         验收清单与记录
 │   ├── icon-concepts/        图标探索稿（本地保留，不入库）
-│   ├── brand/                松鼠品牌规范与预览（完整交付包本地生成，不入库）
+│   ├── brand/                松鼠品牌规范与预览（规范文档与预览图入库；精灵图包、大图生成物本地保留）
 ├── server/                   本地服务（HTTP API + SSE + 静态页面）
 │   ├── index.js              HTTP API + SSE + 静态页面
 │   └── llm.js                Magpie / OpenAI-compatible LLM 适配
@@ -55,7 +55,7 @@ seen/
 ## 开发规则
 
 - 源码只在工作区修改；**绝不直接改**已安装的依赖副本（node_modules）。
-- 零运行时依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）。
+- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）；外部可执行文件（yt-dlp、ffmpeg、whisper-cli）按需探测，yt-dlp 缺失时自动下载。
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
