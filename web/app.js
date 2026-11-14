@@ -439,6 +439,11 @@ function handleEvent(event) {
   }
   if (event.type === 'saved' && event.data) renderSummary(event.data, '已生成')
   if (event.type === 'summarized' && event.data && !state.summary) renderSummary({ ...event.data, chapters: [], fetchStats: null }, '总结完成')
+  if (event.type === 'progress' && event.data?.stage === 'install') {
+    const message = String(event.data.message || '')
+    if (message.includes('安装完成')) setTimeout(check, 500)
+    else if (message.includes('安装失败')) showToast(message, true)
+  }
   if (event.type === 'snapshot') {
     renderSnapshot(event.data)
     return
@@ -522,16 +527,46 @@ async function scan(force) {
   }
 }
 
+function renderCheckPanel(data) {
+  const panel = $('checkPanel')
+  const list = $('checkList')
+  list.replaceChildren()
+  for (const item of data.checks || []) {
+    const row = el('li', item.ok ? 'ok' : 'bad')
+    row.append(el('span', 'check-label', (item.ok ? '✓ ' : '✕ ') + (item.label || item.id)))
+    if (item.detail) row.append(el('span', 'check-detail', item.detail))
+    if (!item.ok && item.id === 'whisper-cli') {
+      const install = el('button', 'button text-button', '安装 whisper-cli')
+      install.type = 'button'
+      install.title = '执行 brew install whisper.cpp（需要本机已装 Homebrew）'
+      install.addEventListener('click', () => installWhisperCli(install))
+      row.append(install)
+    }
+    list.append(row)
+  }
+  panel.hidden = false
+}
+
+async function installWhisperCli(button) {
+  button.disabled = true
+  button.textContent = '安装中…'
+  try {
+    const data = await api('/api/install/whisper-cli', { method: 'POST', body: '{}' })
+    showToast(data.message || '已开始安装', true)
+  } catch (error) {
+    showToast(error.message)
+    button.disabled = false
+    button.textContent = '安装 whisper-cli'
+  }
+}
+
 async function check() {
   showToast('正在检查…', true)
   try {
     const data = await api('/api/check', { method: 'POST', body: '{}' })
+    renderCheckPanel(data)
     const failed = (data.checks || []).filter((item) => !item.ok)
-    if (failed.length === 0) {
-      showToast('一切正常')
-    } else {
-      showToast('有 ' + failed.length + ' 项需要处理：' + '\n' + failed.map((item) => (item.label || item.id) + '：' + item.detail).join('\n'), true)
-    }
+    showToast(failed.length === 0 ? '一切正常' : '有 ' + failed.length + ' 项需要处理')
   } catch (error) {
     showToast(error.message)
   }
@@ -547,6 +582,7 @@ $('scan').addEventListener('click', () => scan(false))
 $('scanForce').addEventListener('click', () => scan(true))
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
+$('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })
 
 setInterval(updateStageClock, 1000)
 load()

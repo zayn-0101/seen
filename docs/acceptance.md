@@ -60,7 +60,8 @@
 - [x] ffmpeg：缺失时下载 ffmpeg-static 静态二进制到 `~/.seen/bin/ffmpeg`（45.5MB，arm64），`ffmpeg -version` 输出 6.0
 - [x] Whisper 模型：缺失时按 HF_ENDPOINT → huggingface → hf-mirror 下载到 `~/.seen/models`（实测 base 模型 141MB 从 huggingface 直连成功）
 - [x] 系统里已装的优先：brew 的 `/opt/homebrew/bin/yt-dlp`、`/opt/homebrew/bin/ffmpeg` 仍被选中，自动下载的副本不覆盖
-- [x] whisper-cli 官方无预编译包，诊断与错误信息给出 `brew install whisper.cpp`
+- [x] whisper-cli 官方无预编译包：诊断面板提供「安装」按钮，服务端代为执行 `brew install whisper.cpp`，进度走 SSE；接口实测返回 202，已装时直接跳过
+- [x] Web 诊断从 toast 改为可交互面板：逐项显示 ✓/✕ 与详情，缺 whisper-cli 时出现安装按钮
 - [x] `cd core && node --test`：81 tests / 81 pass
 
 ## 独立服务与前端

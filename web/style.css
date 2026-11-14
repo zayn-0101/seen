@@ -317,6 +317,42 @@ a { color: inherit; }
   .settings-dialog { padding: 20px; }
   .settings-actions { flex-wrap: wrap; }
 }
+/* 诊断结果面板 */
+.check-panel {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.check-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.check-label { font-weight: 600; }
+.check-list li.ok .check-label { color: var(--success); }
+.check-list li.bad .check-label { color: var(--red); }
+.check-detail { color: var(--muted); flex: 1 1 240px; word-break: break-word; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }

@@ -56,7 +56,7 @@ seen/
 ## 开发规则
 
 - 源码只在工作区修改；**绝不直接改**已安装的依赖副本（node_modules）。
-- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）；外部工具（yt-dlp、ffmpeg、Whisper 模型）按需探测，缺失时自动下载到 `~/.seen`，whisper-cli 与 Chrome 需用户自装。
+- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`（standalone 服务自己构造）；外部工具（yt-dlp、ffmpeg、Whisper 模型）按需探测，缺失时自动下载到 `~/.seen`；whisper-cli 由面板「安装」按钮代跑 `brew install whisper.cpp`，Chrome 需用户自装。
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
@@ -109,7 +109,7 @@ mnemon recall "视频课程"
 - 应用是独立桌面程序，`core/` 是本机引擎，不做网络服务依赖。
 - 上游参考：`linner1224/dsh-video-coursemap` 2.0.0（MIT，Windows 前台窗口 + Word 输出）；本项目保留其 B 站抓取思路，已独立演进为 macOS/Obsidian 方向。
 - macOS 前台窗口读取依赖 AppleScript；首次运行在「系统设置 → 隐私与安全性 → 自动化」里允许运行服务的程序（菜单栏应用 Seen.app 或终端）控制 System Events 与浏览器。macOS 27 已移除独立的「辅助功能」分类，诊断要按实际调用能力判断，不能查 UI elements enabled 标志。
-- 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；其中 ffmpeg 与模型缺失时会自动下载，Chrome 与 whisper-cli 需用户自装；不保存抖音 Cookie。
+- 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；其中 ffmpeg 与模型缺失时自动下载，whisper-cli 可在诊断面板点按钮安装，Chrome 需自装；不保存抖音 Cookie。
 - 抖音当前只取评论/弹幕总数，不抓取正文；笔记会明确标注「暂未抓取」。
 - YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频用 whisper.cpp 本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，也不用 YouTube Data API。
 - YouTube 自动字幕接口限制严格（实测多为 429），实际经常落到本地转写，耗时 1–3 分钟；不抓评论（YouTube 也无弹幕）；结果缓存 `~/.seen/cache/youtube/<id>.json`，有效期 youtubeCacheDays（默认 7 天）。
@@ -117,5 +117,6 @@ mnemon recall "视频课程"
   - yt-dlp：GitHub releases 官方二进制（37MB），Node fetch 失败回退系统 curl；
   - ffmpeg：ffmpeg-static 对应平台的静态二进制（45MB）；
   - Whisper 模型：HF_ENDPOINT → huggingface.co → hf-mirror.com 依次尝试（465MB）；
-  - whisper-cli 与 Chrome 官方没有免安装包，只能提示 `brew install whisper.cpp` 和自行安装 Chrome。
+  - whisper-cli：官方没有免安装包，面板诊断项提供「安装」按钮，点一下就代跑 `brew install whisper.cpp`（需要本机有 Homebrew），进度通过 SSE 推送；
+  - Chrome（仅抖音页面解析）需要用户自行安装。
 - `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；其它使用 mnemon 的工具读的是同一份数据。

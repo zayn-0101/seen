@@ -53,7 +53,7 @@
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube 解析、B 站 AI 字幕 | 首次需要时自动下载到 `~/.seen/bin` |
 | [ffmpeg](https://ffmpeg.org/) | 音频预处理（抖音、YouTube 无字幕） | 首次需要时自动下载静态二进制到 `~/.seen/bin` |
 | Whisper 模型 | 无字幕时本地转写 | 首次需要时自动下载到 `~/.seen/models`（约 465MB，可用 `HF_ENDPOINT` 换源） |
-| whisper-cli | 无字幕时本地转写 | 需手动装：`brew install whisper.cpp`（官方没有预编译包） |
+| whisper-cli | 无字幕时本地转写 | 诊断面板里点「安装 whisper-cli」（自动跑 brew）；也可自己 `brew install whisper.cpp` |
 | Chrome | 抖音页面解析 | 需自行安装 |
 
 项目本身零 npm 依赖：不需要 `npm install`，克隆下来就能跑。
@@ -324,7 +324,7 @@ brew install --cask google-chrome   # 页面解析
 brew install whisper.cpp            # 本地转写（官方没有预编译包）
 ```
 
-诊断里对应的项如果标红，就是缺组件。
+诊断里对应的项如果标红，就是缺组件；whisper-cli 那一项可以直接点「安装 whisper-cli」，应用会代跑 `brew install whisper.cpp` 并把进度显示在面板上。
 
 ### YouTube 视频没有笔记
 

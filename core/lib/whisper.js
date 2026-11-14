@@ -10,7 +10,7 @@
  *  - whisper-cli：官方没有预编译二进制，只能提示用包管理器安装。
  * 系统里已装的始终优先，不会被自动下载的副本覆盖。
  */
-import { execFile, spawnSync } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
   chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync,
@@ -304,6 +304,68 @@ export function resetWhisperState() {
   ffmpegTried = false
   modelTask = null
   modelTried = false
+}
+
+/* ------------------------------------------------------------------ */
+/* whisper-cli（Homebrew）                                              */
+/* ------------------------------------------------------------------ */
+
+/** 探测 Homebrew 可执行文件。 */
+export function findHomebrew() {
+  const candidates = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return whichSync('brew')
+}
+
+/**
+ * 用 Homebrew 安装 whisper.cpp（官方没有免安装的预编译包）。
+ * 只在用户明确触发时调用；进度按 brew 的输出行回调。
+ */
+export async function installWhisperCli({ onProgress, timeout = 15 * 60 * 1000 } = {}) {
+  const existing = findWhisperCli()
+  if (existing) return { ok: true, path: existing, skipped: true }
+
+  const brew = findHomebrew()
+  if (!brew) {
+    return { ok: false, error: '未找到 Homebrew：请先安装 https://brew.sh，或自行编译 whisper.cpp' }
+  }
+
+  return new Promise((resolve) => {
+    const env = {
+      ...process.env,
+      HOMEBREW_NO_AUTO_UPDATE: '1',
+      HOMEBREW_NO_INSTALL_CLEANUP: '1',
+      HOMEBREW_NO_ENV_HINTS: '1',
+    }
+    const child = spawn(brew, ['install', 'whisper.cpp'], { env, windowsHide: true })
+    let settled = false
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      try { child.kill('SIGTERM') } catch { /* 忽略 */ }
+      finish({ ok: false, error: '安装超时（15 分钟）' })
+    }, timeout)
+    const report = (chunk) => {
+      if (!onProgress) return
+      const lines = String(chunk || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      if (lines.length === 0) return
+      onProgress({ message: lines[lines.length - 1].slice(0, 200) })
+    }
+    child.stdout.on('data', report)
+    child.stderr.on('data', report)
+    child.on('error', (error) => finish({ ok: false, error: String(error?.message || error) }))
+    child.on('close', (code) => {
+      if (code !== 0) return finish({ ok: false, error: 'brew install 退出码 ' + code })
+      const bin = findWhisperCli()
+      finish(bin ? { ok: true, path: bin } : { ok: false, error: '安装完成但找不到 whisper-cli' })
+    })
+  })
 }
 
 /* ------------------------------------------------------------------ */

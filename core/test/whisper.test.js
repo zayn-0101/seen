@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   buildWhisperArgs,
   ensureFfmpeg,
+  findHomebrew,
+  installWhisperCli,
   ffmpegAssetName,
   ffmpegInstallPath,
   ffmpegReleaseUrl,
@@ -97,4 +99,21 @@ test('ensureFfmpeg reuses an installed binary without downloading', async () => 
   assert.equal(result.ok, true)
   assert.equal(result.path, process.execPath)
   assert.equal(result.skipped, true)
+})
+
+test('findHomebrew returns an absolute brew path or null', () => {
+  const brew = findHomebrew()
+  if (brew) {
+    assert.match(brew, /\/brew$/)
+    assert.ok(findHomebrew().length > 0)
+  } else {
+    assert.equal(brew, null)
+  }
+})
+
+test('installWhisperCli never throws and reports path or error', async () => {
+  const result = await installWhisperCli({ timeout: 2000 })
+  assert.equal(typeof result.ok, 'boolean')
+  if (result.ok) assert.ok(result.path)
+  else assert.ok(result.error)
 })

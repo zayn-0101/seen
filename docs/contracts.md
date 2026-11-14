@@ -271,6 +271,8 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试。
 - `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`。
 - `transcribeAudio(wav,{title,author,tags,config,language})`：转写 16kHz 单声道 wav，返回纯文本；调用方需先 `ensureWhisperModel`，whisper-cli 缺失时抛错（官方无预编译包，需 `brew install whisper.cpp`）。
+- `findHomebrew()`：探测 `/opt/homebrew/bin/brew`、`/usr/local/bin/brew` 或 PATH；返回路径或 null。
+- `installWhisperCli({ onProgress, timeout })`：用 Homebrew 安装 whisper.cpp（官方无预编译包）。只在用户显式触发时调用（服务端 `POST /api/install/whisper-cli`），进度按 brew 输出行回调，默认 15 分钟超时；已存在时返回 `{ ok:true, skipped:true }`。
 - 抖音与 YouTube 共用；`lib/douyin.js` 保留同名 re-export 以兼容既有调用。
 
 ## lib/index.js
