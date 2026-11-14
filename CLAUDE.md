@@ -44,7 +44,8 @@ seen/
 └── core/                      Seen 视频引擎（包名 seen-core）
     ├── package.json
     ├── README.md
-    ├── lib/                  source / douyin / bilibili / analyze / render / index-note / review / notify
+    ├── lib/                  index(编排) / source+douyin+bilibili(平台) / transcript+session+ytdlp(字幕)
+    │                         analyze(总结) / render+obsidian+index-note+review(输出) / config+state+foreground*+notify+mnemon
     └── test/
 ```
 
