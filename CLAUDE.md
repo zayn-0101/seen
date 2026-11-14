@@ -73,7 +73,11 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 
 - 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 `~/.seen/llm.json`（600）。
 - macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示；`SEEN_DISABLE_NOTIFY=1` 可关。
-- 每次生成笔记后重建「索引.md」（AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖。
+- 每次生成笔记后重建「索引.md」和「概念索引.md」（都是 AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入，已存在不覆盖。
+- 视频笔记版式：内容来源标注 → `[!abstract]` 一句话总结 → `[!question]` 想回答 → `[!success]` 答案 → 视频信息表 + 封面 → 关键数字 → 章节 → 核心知识点（标所属章节）→ 核心概念（带 `^concept-xxx` 块引用）→ 相关笔记双链 → 讨论焦点 → 思维导图 → 我的补充 → 折叠的抓取统计。重写笔记时 mergeManualSection 保留「我的补充」。
+- 学科归类由 subject.js 的 alignSubject 归并：精确 → 包含且长度差≤2 → 共享≥2 连续汉字 → 已有 12 个学科时封顶取最接近。LLM 提示词要求输出 2~4 字宽泛领域名。
+- 跨笔记关联由 concept.js 负责：conceptKey 去标点空白归一概念名，findRelatedVideos 按「共享概念×2 + 共享关键词」打分取前 5，buildConceptIndex 供概念索引页使用。
+- 笔记目录有两种布局（paths.js）：`flat`（默认，`<noteRoot>/<学科>/`）与 `structured`（`视频笔记/<学科>/` + `手册/<学科>.md`）。迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
 - 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
 - B 站与 YouTube 的章节和知识点带 `t=` 时间链接；抖音无章节。
