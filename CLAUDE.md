@@ -32,6 +32,8 @@ seen/
 ├── scripts/
 │   ├── export-icons.mjs          图标导出（母版 → 各平台资源）
 │   ├── install-launchd.mjs       服务开机自启
+│   ├── install-whisper-model.mjs 下载本地 Whisper 模型
+│   ├── install-yt-dlp.mjs        下载 yt-dlp 到 ~/.seen/bin
 │   └── uninstall-launchd.mjs
 ├── seen.command             双击启动独立服务
 ├── menubar/                  菜单栏应用（Swift，只调本地服务 HTTP）
@@ -75,6 +77,7 @@ seen/
 | 状态/日志 | `~/.seen/state/` |
 | 抖音缓存 | `~/.seen/cache/douyin/` |
 | YouTube 缓存 | `~/.seen/cache/youtube/` |
+| yt-dlp（自动安装的兜底副本） | `~/.seen/bin/yt-dlp` |
 | Whisper 模型 | `~/.seen/models/ggml-small.bin` |
 | mnemon CLI | `mnemon`（在 PATH 中，可用 `which mnemon` 确认） |
 | Obsidian CLI | `obsidian-cli`（在 PATH 中） |
@@ -87,6 +90,7 @@ cd core && node --test
 cd menubar && ./build.sh               # 编译菜单栏应用 → menubar/dist/Seen.app
 node server/index.js                    # 独立服务，默认 http://127.0.0.1:4780
 node scripts/install-whisper-model.mjs  # 安装本地转写模型（抖音 / YouTube 无字幕时，约 465MB）
+node scripts/install-yt-dlp.mjs         # 下载 yt-dlp 到 ~/.seen/bin（服务首次需要时也会自动下载）
 obsidian-cli list --vault "Obsidian Vault" "课程知识地图"
 mnemon recall "视频课程"
 ```
@@ -106,4 +110,5 @@ mnemon recall "视频课程"
 - 抖音当前只取评论/弹幕总数，不抓取正文；笔记会明确标注「暂未抓取」。
 - YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频用 whisper.cpp 本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，也不用 YouTube Data API。
 - YouTube 自动字幕接口限制严格（实测多为 429），实际经常落到本地转写，耗时 1–3 分钟；不抓评论（YouTube 也无弹幕）；结果缓存 `~/.seen/cache/youtube/<id>.json`，有效期 youtubeCacheDays（默认 7 天）。
+- yt-dlp 查找顺序：配置 `ytdlpBin` → PATH → `~/.seen/bin/yt-dlp` → 常见路径；都没有时，首次需要（YouTube 解析或 B 站 AI 字幕）会从 GitHub releases 自动下载到 `~/.seen/bin` 并校验 `--version`，下载走 Node fetch、失败回退系统 curl。系统里已装的优先，不会被覆盖。
 - `mnemon remember --store default` 写入 `~/.mnemon/data/default/mnemon.db`；其它使用 mnemon 的工具读的是同一份数据。

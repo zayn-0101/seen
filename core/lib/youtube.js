@@ -14,7 +14,7 @@ import { promisify } from 'node:util'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findYtDlp } from './ytdlp.js'
+import { ensureYtDlp, findYtDlp } from './ytdlp.js'
 import { buildTimedTranscript, parseSrtSegments } from './transcript.js'
 import { findFfmpeg, transcribeAudio } from './whisper.js'
 import { extractYoutubeId, sourceLabel } from './source.js'
@@ -129,7 +129,7 @@ export function pickYoutubeSubtitle(meta) {
 
 async function runYtDlp(args, { config = {}, timeout = META_TIMEOUT_MS } = {}) {
   const bin = findYtDlp(config)
-  if (!bin) throw new Error('未找到 yt-dlp，无法解析 YouTube（可运行 brew install yt-dlp 安装）')
+  if (!bin) throw new Error('未找到 yt-dlp，也无法自动安装（可运行 brew install yt-dlp 手动安装）')
   try {
     const result = await execFileP(bin, args, { timeout, maxBuffer: MAX_OUTPUT, encoding: 'utf8' })
     return String(result.stdout || '')
@@ -317,6 +317,9 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
       return cached
     }
   }
+
+  const ready = await ensureYtDlp(config, { onProgress })
+  if (!ready.ok) throw new Error('未找到 yt-dlp，自动安装也失败：' + (ready.error || '未知原因'))
 
   const watchUrl = youtubeWatchUrl(id)
   const meta = await fetchMetadata({ url: watchUrl, config, onProgress })

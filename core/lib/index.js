@@ -749,7 +749,7 @@ export function apply(ctx, rawConfig = {}) {
       try { mnemonPath = await findMnemon(config) } catch { mnemonPath = null }
       add('mnemon', '记忆库（可选）', Boolean(mnemonPath), mnemonPath || '未找到 mnemon CLI（可配置 mnemonBin）')
       const ytdlpPath = findYtDlp(config)
-      add('ytdlp', 'yt-dlp（B站字幕 / YouTube 解析）', Boolean(ytdlpPath), ytdlpPath || '未找到 yt-dlp（B站 AI 字幕与 YouTube 解析都需要）')
+      add('ytdlp', 'yt-dlp（B站字幕 / YouTube 解析）', Boolean(ytdlpPath), ytdlpPath || '未安装：首次处理视频时会自动下载到 ~/.seen/bin（也可 brew install yt-dlp）')
       const chromePath = findChrome(config)
       const ffmpegPath = findFfmpeg(config)
       const whisperPath = findWhisperCli(config)

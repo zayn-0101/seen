@@ -255,6 +255,14 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
   纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。
 - YouTube 依赖：yt-dlp（元数据与字幕）、ffmpeg + whisper-cli + 模型（仅无字幕时）。
 
+## lib/ytdlp.js
+
+- `findYtDlp(config)`：同步探测，顺序为 配置 `ytdlpBin` → PATH → `~/.seen/bin/yt-dlp` → 常见安装位置；返回绝对路径或 null。
+- `ensureYtDlp(config, { onProgress })`：异步；有就返回 `{ ok, path, skipped }`，没有则自动下载一次官方二进制到 `~/.seen/bin` 并校验 `--version`。失败返回 `{ ok: false, error }`，不抛错。
+- `installYtDlp({ force, onProgress })`：单独执行下载安装；并发调用共享同一次下载。
+- `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform)` / `ytDlpReleaseUrl(platform)`：安装位置、官方资产名（darwin→`yt-dlp_macos`、linux→`yt-dlp_linux`、win32→`yt-dlp.exe`）与下载地址。
+- 下载优先用 Node `fetch`，证书链失败时回退系统 `curl`；写入先落 `.part` 临时文件再 `rename`，保证原子性。
+
 ## lib/whisper.js
 
 - `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置」探测，返回绝对路径或 null。

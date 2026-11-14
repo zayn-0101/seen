@@ -47,6 +47,10 @@
 - [x] 索引表「来源」列显示 YouTube；笔记含「YouTube 不提供弹幕」提示与 YouTube 来源统计
 - [x] 「诊断」新增 yt-dlp / YouTube 网络检查（改用 yt-dlp 真实探测，规避 Node fetch 在本机 TLS 中间人代理下的证书链失败）
 - [x] `cd core && node --test`：69 tests / 69 pass
+- [x] yt-dlp 自动安装：`node scripts/install-yt-dlp.mjs --force` 下载官方二进制到 `~/.seen/bin/yt-dlp`（37.4MB，2026.10.26），`--version` 校验通过
+- [x] 已安装的系统版本优先：机器上有 brew 版时 `findYtDlp` 返回 `/opt/homebrew/bin/yt-dlp`，不会被自动下载的副本覆盖
+- [x] 自动安装接入后重跑真实抓取：9.7 秒拿到 5,417 字字幕，行为不变
+- [x] `cd core && node --test`：74 tests / 74 pass
 - [ ] 会员 / 年龄限制 / 直播视频的失败提示待真实样本验证
 - [ ] YouTube 评论未接入（需要 OAuth，暂不做）
 

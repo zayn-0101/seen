@@ -46,7 +46,7 @@
 - [Node.js](https://nodejs.org/) 20 或更新版本
 - [Obsidian](https://obsidian.md/) 和一个 vault
 - 一个可用的模型 API Key（或本机运行 Ollama、LM Studio、Magpie 等）
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)（YouTube 解析与 B 站 AI 字幕需要，`brew install yt-dlp`）
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)（YouTube 解析与 B 站 AI 字幕需要；已安装则直接用，没装会在首次使用时自动下载到 `~/.seen/bin`）
 
 零运行时依赖：不需要 `npm install`，克隆下来就能跑。
 
@@ -319,17 +319,21 @@ node scripts/install-whisper-model.mjs   # 安装 Whisper 模型，约 465MB
 
 ### YouTube 视频没有笔记
 
-YouTube 支持依赖本机的 `yt-dlp` 和一条能访问 YouTube 的网络：
+YouTube 支持依赖 `yt-dlp` 和一条能访问 YouTube 的网络。查找顺序是：设置里的 `ytdlpBin` → PATH（`brew install yt-dlp` 装的那份）→ `~/.seen/bin/yt-dlp`（应用自动下载的）。
+
+**没装也能用**：第一次处理 YouTube 视频时，应用会自动下载官方最新版到 `~/.seen/bin`（约 37MB）。想提前装好：
 
 ```bash
-brew install yt-dlp      # 没装的话
-yt-dlp --version         # 能打印版本就说明装好了
+node scripts/install-yt-dlp.mjs          # 自动装到 ~/.seen/bin
+node scripts/install-yt-dlp.mjs --force  # 已存在也重新下载
+brew install yt-dlp                      # 或者用系统包管理器
 ```
 
 - 诊断里「yt-dlp」「YouTube 网络」两项都要是绿的；
 - 在中国大陆需要先开代理，系统级代理即可，应用会沿用；
 - 有人工字幕的视频通常几秒完成；没有字幕的视频会下载音频用本地 Whisper 转写，一般 1–3 分钟；
-- 会员视频、私享视频、年龄限制视频会被 YouTube 拒绝，属于预期情况。
+- 会员视频、私享视频、年龄限制视频会被 YouTube 拒绝，属于预期情况；
+- 如果自动下载的版本报证书错误（公司网络装了 HTTPS 代理时会这样），改用 `brew install yt-dlp` 装的那份即可。
 
 ### 学科判断不对
 
