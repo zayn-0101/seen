@@ -412,3 +412,6 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 .vault-search-list strong { font-size: 13px; font-weight: 600; }
 .vault-search-path { font-size: 11px; color: var(--muted); }
 .vault-search-snippet { margin: 2px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+.history-group { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.history-group-title { margin: 6px 0 0; font-size: 11px; letter-spacing: 0.08em; color: var(--muted); grid-column: 1 / -1; }

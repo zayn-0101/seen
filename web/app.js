@@ -400,27 +400,51 @@ function renderHistory(history) {
   box.className = 'history-grid'
   // 有筛选条件时多显示一些，方便一次看全匹配结果
   const limit = filtering ? 60 : 12
-  for (const row of rows.slice(0, limit)) {
-    const button = el('button', 'history-item')
-    button.type = 'button'
-    button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ')))
-    button.append(el('div', 'h-title', row.title || '（未命名视频）'))
-    if (row.summary) button.append(el('div', 'h-summary', row.summary))
-    button.addEventListener('click', () => {
-      renderSummary({
-        title: row.title,
-        subject: row.subject,
-        source: row.source,
-        summary: row.summary,
-        keyPoints: [],
-        discussion: [],
-        fetchStats: null,
-        notePath: row.notePath,
-        contentQuality: 'history',
-      }, '历史笔记')
-    })
-    box.append(button)
+  if (filtering) {
+    for (const row of rows.slice(0, limit)) box.append(historyItem(row))
+    return
   }
+  // 未筛选时按学科分组，直接看出自己的知识分布在哪些领域
+  const groups = new Map()
+  for (const row of rows) {
+    const key = row.subject || '未分类'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(row)
+  }
+  let shown = 0
+  for (const [subject, items] of groups) {
+    if (shown >= limit) break
+    const section = el('div', 'history-group')
+    section.append(el('p', 'history-group-title', subject + ' · ' + items.length + ' 个'))
+    for (const row of items.slice(0, Math.max(1, limit - shown))) {
+      section.append(historyItem(row))
+      shown += 1
+    }
+    box.append(section)
+  }
+}
+
+/** 知识库的一张笔记卡片。 */
+function historyItem(row) {
+  const button = el('button', 'history-item')
+  button.type = 'button'
+  button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ')))
+  button.append(el('div', 'h-title', row.title || '（未命名视频）'))
+  if (row.summary) button.append(el('div', 'h-summary', row.summary))
+  button.addEventListener('click', () => {
+    renderSummary({
+      title: row.title,
+      subject: row.subject,
+      source: row.source,
+      summary: row.summary,
+      keyPoints: [],
+      discussion: [],
+      fetchStats: null,
+      notePath: row.notePath,
+      contentQuality: 'history',
+    }, '历史笔记')
+  })
+  return button
 }
 
 function renderEvents(events) {
