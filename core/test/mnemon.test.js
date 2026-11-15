@@ -8,14 +8,14 @@ test('buildMnemonContent contains key facts and is bounded', () => {
     subject: '机器学习',
     summary: '讲解梯度下降原理与学习率选择。',
     keyPoints: [{ title: '学习率', points: ['太大会震荡', '太小收敛慢'] }],
-    notePath: '课程知识地图/机器学习/梯度下降详解',
+    notePath: '视频笔记/机器学习/梯度下降详解',
     bvid: 'BV1GJ411x7h7',
     url: 'https://www.bilibili.com/video/BV1GJ411x7h7',
   })
   assert.ok(content.includes('梯度下降详解'))
   assert.ok(content.includes('机器学习'))
   assert.ok(content.includes('学习率'))
-  assert.ok(content.includes('课程知识地图/机器学习/梯度下降详解'))
+  assert.ok(content.includes('视频笔记/机器学习/梯度下降详解'))
   assert.ok(content.length <= 800)
 })
 

@@ -2,7 +2,7 @@
  * seen-core · Obsidian 版
  *
  * 实时检测 B 站网页课程视频 → 学科分类 → 抓取简介/字幕/弹幕/评论 →
- * LLM 知识总结 → Obsidian 笔记/学习手册/课程总览 + dsh-mnemon insight。
+ * LLM 知识总结 → Obsidian 笔记/学习手册/总览 + dsh-mnemon insight。
  *
  * 基于 linner1224/dsh-video-coursemap 2.0.0（MIT）的架构 fork，
  * 新增 macOS 前台窗口检测、Obsidian 输出与 mnemon 集成。
@@ -533,7 +533,7 @@ export function apply(ctx, rawConfig = {}) {
     const subjects = Object.entries(state.subjects).map(([subject, d]) => ({ subject, videos: d.videos?.length ?? 0 }))
     const lastError = state.lastForeground?.error || ''
     const message = [
-      '视频课程知识地图 Agent 状态：',
+      '拾影 状态：',
       '- 轮询：' + (readOnly ? '只读（另一个实例持有锁）' : started ? '运行中' : '已停止'),
       '- 轮询间隔：' + config.pollIntervalMs + 'ms',
       '- 启用：' + config.enabled,
@@ -715,7 +715,7 @@ export function apply(ctx, rawConfig = {}) {
   // ---- 工具：状态 ----
   ctx.effect(() => ctx.tools.register({
     name: 'course_map_status',
-    description: '查看「视频课程知识地图 Agent」的运行状态：是否启用、Obsidian vault、学科与视频数、最近错误、mnemon 状态。',
+    description: '查看「拾影」的运行状态：是否启用、Obsidian vault、学科与视频数、最近错误、mnemon 状态。',
     parameters: { type: 'object', properties: {} },
     output: {
       schema: {
@@ -778,7 +778,7 @@ export function apply(ctx, rawConfig = {}) {
   // ---- 工具：诊断 ----
   ctx.effect(() => ctx.tools.register({
     name: 'course_map_check',
-    description: '诊断视频课程知识地图 Agent 的运行前提：macOS 前台窗口权限、Obsidian vault、状态目录、mnemon CLI、B站接口、LLM 模型解析。',
+    description: '诊断拾影 的运行前提：macOS 前台窗口权限、Obsidian vault、状态目录、mnemon CLI、B站接口、LLM 模型解析。',
     parameters: { type: 'object', properties: {} },
     output: {
       schema: {

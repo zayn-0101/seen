@@ -1,24 +1,26 @@
 /**
  * seen-core · 笔记目录结构
  *
- * 两种布局：
- *  - flat（默认）：<noteRoot>/<学科>/<标题>.md，学科学习手册与视频笔记同目录
- *  - structured：<noteRoot>/视频笔记/<学科>/<标题>.md，手册集中在 <noteRoot>/手册/
+ * 根目录（noteRoot）默认「视频笔记」，两种布局：
+ *  - structured（默认）：<noteRoot>/笔记/<学科>/<标题>.md，手册集中在 <noteRoot>/手册/，每周回顾在 <noteRoot>/回顾/
+ *  - flat：<noteRoot>/<学科>/<标题>.md，学科学习手册与视频笔记同目录
  *
  * 只做相对路径拼接，不访问文件系统；文件名清洗仍由 obsidian.js 负责。
  */
 
-export const VIDEO_DIR = '视频笔记'
+export const VIDEO_DIR = '笔记'
 export const MANUAL_DIR = '手册'
+export const REVIEW_DIR = '回顾'
+export const BACKUP_DIR = '_备份'
 export const MANUAL_SUFFIX = ' 学习手册'
 
 export function normalizeNoteLayout(value) {
-  return String(value ?? '').trim().toLowerCase() === 'structured' ? 'structured' : 'flat'
+  return String(value ?? '').trim().toLowerCase() === 'flat' ? 'flat' : 'structured'
 }
 
 function cleanRoot(noteRoot) {
   const root = String(noteRoot ?? '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
-  return root || '课程知识地图'
+  return root || '视频笔记'
 }
 
 function cleanSegment(value, fallback) {

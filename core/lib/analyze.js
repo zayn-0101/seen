@@ -640,7 +640,7 @@ function buildClassifyPrompt({ title, desc, tags, existingSubjects }) {
 }
 
 const CLASSIFY_SYSTEM =
-  '你是视频课程知识地图的「分类助手」。你的任务是判断视频是否属于值得整理的学习内容，并归入合适的中文学科。你只输出严格合法的 JSON 对象。'
+  '你是拾影的「分类助手」。你的任务是判断视频是否属于值得整理的学习内容，并归入合适的中文学科。你只输出严格合法的 JSON 对象。'
 
 /**
  * 调用 LLM 做课程分类。解析失败重试一次；仍失败返回 null。

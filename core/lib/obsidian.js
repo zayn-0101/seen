@@ -4,7 +4,7 @@
  * 纯 ESM、零运行时依赖。
  *  - vault / noteRoot / stateDir 目录准备
  *  - 视频笔记文件名清洗与 bvid 冲突处理（skipped / 追加 " (BVxxxx)" / force 备份）
- *  - 学科学习手册与课程总览只更新 <!-- AUTO:START --> 与 <!-- AUTO:END --> 之间的内容
+ *  - 学科学习手册与总览只更新 <!-- AUTO:START --> 与 <!-- AUTO:END --> 之间的内容
  *  - 所有写入使用 tmp + rename 原子替换
  *  - obsidian-cli 仅用于可选的 openInObsidian，失败只返回 error，绝不抛错
  */
@@ -23,7 +23,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
-import { manualNoteRelPath, normalizeNoteLayout, videoNoteRelPath } from './paths.js'
+import { REVIEW_DIR, manualNoteRelPath, normalizeNoteLayout, videoNoteRelPath } from './paths.js'
 import {
   autoBlock,
   mergeManualSection,
@@ -34,9 +34,9 @@ import {
   upsertAutoBlock,
 } from './render.js'
 
-const DEFAULT_NOTE_ROOT = '课程知识地图'
+const DEFAULT_NOTE_ROOT = '视频笔记'
 const DEFAULT_SUBJECT = '未分类'
-const OVERVIEW_FILENAME = '课程总览.md'
+const OVERVIEW_FILENAME = '总览.md'
 const MANUAL_SUFFIX = ' 学习手册.md'
 const OBSIDIAN_CLI_CANDIDATES = ['/opt/homebrew/bin/obsidian-cli', '/usr/local/bin/obsidian-cli']
 
@@ -241,7 +241,7 @@ export function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layo
   return { relPath: target.relPath, absPath: target.absPath }
 }
 
-/** 更新/创建课程总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
+/** 更新/创建总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
 export function updateOverview({ vaultPath, noteRoot, subjects, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, OVERVIEW_FILENAME))
@@ -313,7 +313,7 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   if (!vaultPath) throw new Error('writeWeeklyReview: 缺少 vaultPath')
   if (!label) throw new Error('writeWeeklyReview: 缺少 label')
   const root = normalizeNoteRoot(noteRoot)
-  const relPath = toPosix(join(root, '每周回顾', label + '.md'))
+  const relPath = toPosix(join(root, REVIEW_DIR, label + '.md'))
   const absPath = absoluteFromRel(vaultPath, relPath)
   if (existsSync(absPath)) return { ok: true, skipped: true, relPath, absPath }
   atomicWrite(absPath, markdown)
@@ -353,7 +353,7 @@ function writeAutoNote({ vaultPath, noteRoot, filename, title, type, markdown } 
 
 /** 写入知识索引；已有文件只更新 AUTO 区块，保留用户内容。 */
 export function writeIndexNote({ vaultPath, noteRoot, markdown } = {}) {
-  return writeAutoNote({ vaultPath, noteRoot, filename: '索引.md', title: '知识索引', type: 'index', markdown })
+  return writeAutoNote({ vaultPath, noteRoot, filename: '视频索引.md', title: '视频索引', type: 'index', markdown })
 }
 
 /** 写入概念索引；已有文件只更新 AUTO 区块，保留用户内容。 */

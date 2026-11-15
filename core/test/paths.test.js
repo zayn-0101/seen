@@ -11,42 +11,44 @@ import {
   videoNoteRelPath,
 } from '../lib/paths.js'
 
-test('normalizeNoteLayout falls back to flat', () => {
+test('normalizeNoteLayout defaults to structured', () => {
   assert.equal(normalizeNoteLayout('structured'), 'structured')
   assert.equal(normalizeNoteLayout('STRUCTURED'), 'structured')
-  assert.equal(normalizeNoteLayout(''), 'flat')
-  assert.equal(normalizeNoteLayout(undefined), 'flat')
-  assert.equal(normalizeNoteLayout('other'), 'flat')
+  assert.equal(normalizeNoteLayout('flat'), 'flat')
+  assert.equal(normalizeNoteLayout('FLAT'), 'flat')
+  assert.equal(normalizeNoteLayout(''), 'structured')
+  assert.equal(normalizeNoteLayout(undefined), 'structured')
+  assert.equal(normalizeNoteLayout('other'), 'structured')
 })
 
 test('videoNoteRelPath switches by layout', () => {
   assert.equal(
-    videoNoteRelPath({ noteRoot: '课程知识地图', subject: '写作', noteName: '标题', layout: 'flat' }),
-    '课程知识地图/写作/标题.md',
+    videoNoteRelPath({ noteRoot: '视频笔记', subject: '写作', noteName: '标题', layout: 'flat' }),
+    '视频笔记/写作/标题.md',
   )
   assert.equal(
-    videoNoteRelPath({ noteRoot: '课程知识地图', subject: '写作', noteName: '标题', layout: 'structured' }),
-    `课程知识地图/${VIDEO_DIR}/写作/标题.md`,
+    videoNoteRelPath({ noteRoot: '视频笔记', subject: '写作', noteName: '标题', layout: 'structured' }),
+    `视频笔记/${VIDEO_DIR}/写作/标题.md`,
   )
 })
 
 test('manualNoteRelPath switches by layout', () => {
   assert.equal(
-    manualNoteRelPath({ noteRoot: '课程知识地图', subject: '写作', layout: 'flat' }),
-    `课程知识地图/写作/写作${MANUAL_SUFFIX}.md`,
+    manualNoteRelPath({ noteRoot: '视频笔记', subject: '写作', layout: 'flat' }),
+    `视频笔记/写作/写作${MANUAL_SUFFIX}.md`,
   )
   assert.equal(
-    manualNoteRelPath({ noteRoot: '课程知识地图', subject: '写作', layout: 'structured' }),
-    `课程知识地图/${MANUAL_DIR}/写作.md`,
+    manualNoteRelPath({ noteRoot: '视频笔记', subject: '写作', layout: 'structured' }),
+    `视频笔记/${MANUAL_DIR}/写作.md`,
   )
 })
 
 test('manualNoteLinkTarget drops .md and handles missing values', () => {
   assert.equal(
-    manualNoteLinkTarget({ noteRoot: '课程知识地图', subject: '写作', layout: 'structured' }),
-    '课程知识地图/手册/写作',
+    manualNoteLinkTarget({ noteRoot: '视频笔记', subject: '写作', layout: 'structured' }),
+    '视频笔记/手册/写作',
   )
-  assert.equal(manualNoteLinkTarget({ subject: '', layout: 'structured' }), '课程知识地图/手册/未分类')
+  assert.equal(manualNoteLinkTarget({ subject: '', layout: 'structured' }), '视频笔记/手册/未分类')
 })
 
 test('remapStateNotePaths rewrites moved notes only', () => {
@@ -54,22 +56,22 @@ test('remapStateNotePaths rewrites moved notes only', () => {
     subjects: {
       写作: {
         videos: [
-          { notePath: '课程知识地图/写作/标题.md' },
-          { notePath: '课程知识地图/写作/没动.md' },
+          { notePath: '视频笔记/写作/标题.md' },
+          { notePath: '视频笔记/写作/没动.md' },
           { title: '没有 notePath' },
         ],
       },
-      别的: { videos: [{ notePath: '课程知识地图/别的/a.md' }] },
+      别的: { videos: [{ notePath: '视频笔记/别的/a.md' }] },
     },
   }
   const changed = remapStateNotePaths(
     state,
-    new Map([['课程知识地图/写作/标题.md', '课程知识地图/视频笔记/写作/标题.md']]),
+    new Map([['视频笔记/写作/标题.md', '视频笔记/视频笔记/写作/标题.md']]),
   )
   assert.equal(changed, 1)
-  assert.equal(state.subjects.写作.videos[0].notePath, '课程知识地图/视频笔记/写作/标题.md')
-  assert.equal(state.subjects.写作.videos[1].notePath, '课程知识地图/写作/没动.md')
-  assert.equal(state.subjects.别的.videos[0].notePath, '课程知识地图/别的/a.md')
+  assert.equal(state.subjects.写作.videos[0].notePath, '视频笔记/视频笔记/写作/标题.md')
+  assert.equal(state.subjects.写作.videos[1].notePath, '视频笔记/写作/没动.md')
+  assert.equal(state.subjects.别的.videos[0].notePath, '视频笔记/别的/a.md')
 })
 
 test('remapStateNotePaths tolerates empty state and plain objects', () => {

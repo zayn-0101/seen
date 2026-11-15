@@ -77,7 +77,7 @@ test('renderVideoNote renders abstract, meta table, numbers and concepts', () =>
     chapters: [{ from: 0, content: '开场' }],
     contentSource: 'youtube-subtitle',
     contentQuality: 'full',
-    noteRoot: '课程知识地图',
+    noteRoot: '视频笔记',
   })
   assert.ok(md.includes('> [!abstract] 一句话总结'))
   assert.ok(md.includes('> [!question] 这期想回答'))
@@ -98,7 +98,7 @@ test('renderVideoNote skips empty optional sections', () => {
     subject: '常识',
     summary: '一句',
     keyPoints: [],
-    noteRoot: '课程知识地图',
+    noteRoot: '视频笔记',
   })
   assert.ok(!md.includes('## 关键数字'))
   assert.ok(!md.includes('## 核心概念'))
@@ -107,13 +107,13 @@ test('renderVideoNote skips empty optional sections', () => {
 
 test('mergeManualSection carries handwritten content into regenerated note', () => {
   const old = '# 旧\n\n## 我的补充\n\n<!-- MANUAL:START -->\n我自己的笔记\n第二行\n<!-- MANUAL:END -->\n'
-  const next = renderVideoNote({ title: 'X', subject: 'Y', summary: 's', noteRoot: '课程知识地图' })
+  const next = renderVideoNote({ title: 'X', subject: 'Y', summary: 's', noteRoot: '视频笔记' })
   const merged = mergeManualSection(old, next)
   assert.equal(extractManualSection(merged), '我自己的笔记\n第二行')
 })
 
 test('mergeManualSection leaves note untouched when nothing handwritten', () => {
-  const next = renderVideoNote({ title: 'X', subject: 'Y', summary: 's', noteRoot: '课程知识地图' })
+  const next = renderVideoNote({ title: 'X', subject: 'Y', summary: 's', noteRoot: '视频笔记' })
   assert.equal(mergeManualSection('# 没有手写区', next), next)
 })
 
@@ -123,7 +123,7 @@ test('renderVideoNote adds nested concept tags to frontmatter', () => {
     subject: '写作',
     summary: 's',
     concepts: [{ name: '责任前置', brief: '先认错' }, { name: '被动 语态', brief: '稀释责任' }],
-    noteRoot: '课程知识地图',
+    noteRoot: '视频笔记',
   })
   assert.ok(md.includes('"概念/责任前置"'))
   assert.ok(md.includes('"概念/被动语态"'))
@@ -135,7 +135,7 @@ test('renderVideoNote renders cover image after info table', () => {
     subject: '写作',
     summary: 's',
     cover: 'https://example.com/c.jpg',
-    noteRoot: '课程知识地图',
+    noteRoot: '视频笔记',
   })
   assert.ok(md.includes('![封面|360](https://example.com/c.jpg)'))
   assert.ok(md.includes('cover: https://example.com/c.jpg') || md.includes('cover: "https://example.com/c.jpg"'))
@@ -146,24 +146,24 @@ test('renderVideoNote renders related notes with wiki links', () => {
     title: '当前视频',
     subject: '写作',
     summary: 's',
-    noteRoot: '课程知识地图',
+    noteRoot: '视频笔记',
     relatedNotes: [
-      { title: '旧视频', notePath: '课程知识地图/写作/旧视频.md', reason: '共同概念：责任前置' },
+      { title: '旧视频', notePath: '视频笔记/写作/旧视频.md', reason: '共同概念：责任前置' },
       { title: '无路径视频', notePath: '', reason: '' },
     ],
   })
   assert.ok(md.includes('## 相关笔记'))
-  assert.ok(md.includes('[[课程知识地图/写作/旧视频|旧视频]] — 共同概念：责任前置'))
+  assert.ok(md.includes('[[视频笔记/写作/旧视频|旧视频]] — 共同概念：责任前置'))
   assert.ok(md.includes('- 无路径视频'))
 })
 
 test('buildConceptIndexMarkdown lists concepts with note links', () => {
   const md = buildConceptIndexMarkdown([
-    { name: '责任前置', videos: [{ title: '视频A', notePath: '课程知识地图/写作/视频A.md' }] },
+    { name: '责任前置', videos: [{ title: '视频A', notePath: '视频笔记/写作/视频A.md' }] },
     { name: '空概念', videos: [] },
   ])
   assert.ok(md.includes('### 责任前置'))
-  assert.ok(md.includes('[[课程知识地图/写作/视频A|视频A]]'))
+  assert.ok(md.includes('[[视频笔记/写作/视频A|视频A]]'))
   assert.ok(!md.includes('空概念'))
 })
 

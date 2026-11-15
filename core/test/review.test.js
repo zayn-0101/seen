@@ -25,8 +25,8 @@ test('buildWeeklyReview filters by week and groups by day', () => {
   const { start } = weekRange(2026, 47)
   const day = 86400000
   const videos = [
-    { title: '周一视频', subject: '语言文化', source: 'bilibili', notePath: '课程知识地图/语言文化/a.md', createdAt: start.getTime() + 3600000, keywords: ['汉字'] },
-    { title: '周三视频', subject: '人工智能', source: 'douyin', notePath: '课程知识地图/人工智能/b.md', createdAt: start.getTime() + 2 * day + 3600000, keywords: ['模型'] },
+    { title: '周一视频', subject: '语言文化', source: 'bilibili', notePath: '视频笔记/语言文化/a.md', createdAt: start.getTime() + 3600000, keywords: ['汉字'] },
+    { title: '周三视频', subject: '人工智能', source: 'douyin', notePath: '视频笔记/人工智能/b.md', createdAt: start.getTime() + 2 * day + 3600000, keywords: ['模型'] },
     { title: '上周视频', subject: '语言文化', source: 'bilibili', createdAt: start.getTime() - day },
   ]
   const review = buildWeeklyReview({ videos, now })
@@ -35,7 +35,7 @@ test('buildWeeklyReview filters by week and groups by day', () => {
   assert.match(review.markdown, /新增 2 个视频，覆盖 2 个学科/)
   assert.match(review.markdown, /来源：B站 1 · 抖音 1/)
   assert.match(review.markdown, /### 11-16 周一/)
-  assert.match(review.markdown, /\[\[课程知识地图\/语言文化\/a\|周一视频\]\]/)
+  assert.match(review.markdown, /\[\[视频笔记\/语言文化\/a\|周一视频\]\]/)
   assert.match(review.markdown, /关键词/)
   assert.match(review.markdown, /汉字/)
   assert.doesNotMatch(review.markdown, /上周视频/)

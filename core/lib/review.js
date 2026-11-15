@@ -5,7 +5,7 @@
  * 只读取传入的 history 数据，不访问文件系统。
  */
 
-export const WEEK_FOLDER = '每周回顾'
+export const WEEK_FOLDER = '回顾'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 

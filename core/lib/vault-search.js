@@ -60,7 +60,7 @@ function makeSnippet(text, term) {
 export function searchVault({ vaultPath, noteRoot, query, limit = 20 } = {}) {
   const terms = splitTerms(query)
   if (!vaultPath || terms.length === 0) return []
-  const rootAbs = join(String(vaultPath), String(noteRoot || '课程知识地图'))
+  const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
   const files = []
   walkMarkdown(rootAbs, files)
 

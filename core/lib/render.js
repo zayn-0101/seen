@@ -4,7 +4,7 @@
  * 纯 ESM、零运行时依赖。三类 Markdown 模板：
  *  - 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 弹幕评论焦点 + Mermaid mindmap + 来源统计
  *  - 学科学习手册：AUTO 区（学科总览 mindmap + 视频链接列表）+ 用户「我的补充」区
- *  - 课程总览：AUTO 区（学科 mindmap + 学科列表）+ 用户「我的补充」区
+ *  - 总览：AUTO 区（学科 mindmap + 学科列表）+ 用户「我的补充」区
  *
  * frontmatter 的值一律使用 JSON 双引号字符串；Mermaid 节点一律经 mermaidSafe 处理。
  */
@@ -17,7 +17,7 @@ export const AUTO_END = '<!-- AUTO:END -->'
 
 const DEFAULT_TITLE = '未命名视频'
 const DEFAULT_SUBJECT = '未分类'
-const DEFAULT_NOTE_ROOT = '课程知识地图'
+const DEFAULT_NOTE_ROOT = '视频笔记'
 
 /** Mermaid mindmap 节点安全化：去掉会破坏语法的字符、压缩空白、截断。 */
 export function mermaidSafe(text, max = 60) {
@@ -588,13 +588,13 @@ export function subjectManualAutoBody(input = {}) {
   return lines.join('\n')
 }
 
-/** 课程总览 AUTO 区正文（不含 AUTO 标记）。 */
+/** 总览 AUTO 区正文（不含 AUTO 标记）。 */
 export function overviewAutoBody(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const layout = normalizeNoteLayout(source.layout)
   const subjects = normalizeSubjects(source.subjects)
-  const lines = ['## 学科总览', '', '```mermaid', 'mindmap', '  root((课程知识地图))']
+  const lines = ['## 学科总览', '', '```mermaid', 'mindmap', `  root((${noteRoot}))`]
   if (subjects.length === 0) {
     lines.push('    （暂无学科）')
   } else {
@@ -634,17 +634,17 @@ export function renderSubjectManual(input = {}) {
   ].join('\n')
 }
 
-/** 课程总览完整文档（frontmatter + H1 + AUTO 区 + 用户补充区）。 */
+/** 总览完整文档（frontmatter + H1 + AUTO 区 + 用户补充区）。 */
 export function renderOverview(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const updatedAt = formatDate(source.updatedAt ?? Date.now())
-  const frontmatter = renderFrontmatter({ title: '课程知识地图', created: updatedAt, updated: updatedAt, type: 'course-overview' })
+  const frontmatter = renderFrontmatter({ title: noteRoot, created: updatedAt, updated: updatedAt, type: 'course-overview' })
   const body = overviewAutoBody({ subjects: source.subjects, noteRoot, layout: source.layout })
   return [
     frontmatter.trimEnd(),
     '',
-    '# 课程知识地图',
+    `# ${noteRoot}`,
     '',
     autoBlock(body),
     '',

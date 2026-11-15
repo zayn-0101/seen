@@ -11,7 +11,7 @@ test('resolveConfig merges defaults and validates', () => {
   const config = resolveConfig({})
   assert.equal(config.pollIntervalMs, 15000)
   assert.equal(config.stablePolls, 2)
-  assert.equal(config.noteRoot, '课程知识地图')
+  assert.equal(config.noteRoot, '视频笔记')
   assert.ok(config.stateDir.endsWith(join('.seen', 'state')))
   assert.equal(typeof config.vaultPath, 'string')
   assert.equal(resolveConfig({ pollIntervalMs: 5000 }).pollIntervalMs, 5000)

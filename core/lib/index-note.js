@@ -33,7 +33,7 @@ function sourceLabel(value) {
 }
 
 /** 生成索引 Markdown（不含 AUTO 标记，由调用方包装）。 */
-export function buildIndexMarkdown(videos = [], { noteRoot = '课程知识地图' } = {}) {
+export function buildIndexMarkdown(videos = [], { noteRoot = '视频笔记' } = {}) {
   const rows = (Array.isArray(videos) ? videos : [])
     .filter((row) => row && typeof row === 'object' && (row.title || row.notePath))
     .slice()
@@ -74,7 +74,7 @@ export function buildIndexMarkdown(videos = [], { noteRoot = '课程知识地图
 }
 
 /** 生成概念索引 Markdown：每个概念下列出出现过它的视频笔记。 */
-export function buildConceptIndexMarkdown(concepts = [], { noteRoot = '课程知识地图' } = {}) {
+export function buildConceptIndexMarkdown(concepts = [], { noteRoot = '视频笔记' } = {}) {
   const items = (Array.isArray(concepts) ? concepts : [])
     .filter((item) => item && item.name && Array.isArray(item.videos) && item.videos.length > 0)
   const lines = ['## 全部概念', '']
