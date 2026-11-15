@@ -45,7 +45,8 @@ export class VaultBlockedError extends Error {
  */
 export function probeVaultAccess(vaultPath, options = {}) {
   const target = String(vaultPath || '').trim()
-  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 2500
+  // 首次访问时 tccd 可能要现拉授权状态（用户刚打开过系统设置），2.5 秒会误报；给足 8 秒仍然有界
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000
   const checkedAt = Date.now()
   if (!target) {
     return Promise.resolve({ ok: false, code: 'missing', detail: '没有配置 vault 路径', checkedAt })

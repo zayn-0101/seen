@@ -123,6 +123,17 @@ if (vaultProbe.ok) {
   }
 } else {
   log('笔记库不可访问（' + vaultProbe.code + '）：' + VAULT_HINT)
+  // 首次访问 tccd 可能还在等用户点授权弹窗，超时不等于真没权限：几秒后自己再探一次
+  if (vaultProbe.code === 'timeout') {
+    setTimeout(async () => {
+      try {
+        const status = await engine.reprobeVault()
+        log('笔记库权限复查：' + (status.ok ? '正常' : status.code))
+      } catch (error) {
+        log('笔记库权限复查失败：' + String(error?.message || error))
+      }
+    }, 4000).unref()
+  }
 }
 
 const engine = apply(ctx, baseConfig)
