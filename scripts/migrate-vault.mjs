@@ -29,15 +29,10 @@ import { resolveConfig } from '../core/lib/config.js'
 import { loadState, saveState } from '../core/lib/state.js'
 import { resolveVaultPath, toPosix } from '../core/lib/obsidian.js'
 import { BACKUP_DIR, MANUAL_DIR, MANUAL_SUFFIX, REVIEW_DIR, VIDEO_DIR, remapStateNotePaths } from '../core/lib/paths.js'
+import { INDEX, LEGACY_INDEX, LEGACY_OVERVIEW, LEGACY_REVIEW_DIR, LEGACY_ROOTS, LEGACY_VIDEO_DIR, OVERVIEW, rewriteLegacyRefs } from '../core/lib/legacy-refs.js'
 
 const apply = process.argv.includes('--apply')
-const LEGACY_ROOTS = ['课程知识地图']
-const LEGACY_VIDEO_DIR = '视频笔记'
-const LEGACY_REVIEW_DIR = '每周回顾'
-const LEGACY_OVERVIEW = '课程总览.md'
-const OVERVIEW = '总览.md'
-const LEGACY_INDEX = '索引.md'
-const INDEX = '视频索引.md'
+
 
 function readConfig() {
   const stateDir = process.env.SEEN_STATE_DIR || undefined
@@ -194,21 +189,11 @@ function main() {
   }
 
   // 5) 重写笔记内的旧路径引用
-  const replacements = [
-    [LEGACY_ROOTS[0], noteRoot],
-    ['/' + LEGACY_REVIEW_DIR + '/', '/' + REVIEW_DIR + '/'],
-    ['/' + LEGACY_OVERVIEW.replace(/\.md$/, ''), '/' + OVERVIEW.replace(/\.md$/, '')],
-    ['/' + LEGACY_INDEX.replace(/\.md$/, ''), '/' + INDEX.replace(/\.md$/, '')],
-    ['/' + LEGACY_VIDEO_DIR + '/', '/' + VIDEO_DIR + '/'],
-  ]
   let rewritten = 0
   for (const file of listMarkdown(newRootAbs)) {
     if (toPosix(file).includes('/' + BACKUP_DIR + '/')) continue
     const text = readFileSync(file, 'utf8')
-    let next = text
-    for (const [from, to] of replacements) {
-      if (from && from !== to) next = next.split(from).join(to)
-    }
+    const next = rewriteLegacyRefs(text, { noteRoot })
     if (next !== text) {
       writeFileSync(file, next, 'utf8')
       rewritten += 1
