@@ -10,7 +10,7 @@ export const DEFAULTS: {
   pollIntervalMs: 15000,
   stablePolls: 2,
   vaultPath: null,
-  noteRoot: '课程知识地图',
+  noteRoot: '视频笔记',
   stateDir: null,
   provider: null,
   model: null,
