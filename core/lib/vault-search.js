@@ -39,6 +39,19 @@ async function walkMarkdown(dir, bucket, depth = 0) {
   }
 }
 
+/**
+ * 列出笔记库里的 Markdown 绝对路径（跳过 _备份、点开头目录）。
+ * 供工具脚本（自检）复用；不做词典与打分，直接走文件系统。
+ * @returns {Promise<string[]>}
+ */
+export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' } = {}) {
+  if (!vaultPath) return []
+  const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
+  const files = []
+  await walkMarkdown(rootAbs, files)
+  return files
+}
+
 function splitTerms(query) {
   return String(query ?? '')
     .toLowerCase()

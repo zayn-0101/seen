@@ -121,6 +121,12 @@ test('mergeManualSection leaves note untouched when nothing handwritten', () => 
   assert.equal(mergeManualSection('# 没有手写区', next), next)
 })
 
+test('renderVideoNote stamps the note format version', () => {
+  const md = renderVideoNote({ title: '格式版本', subject: '写作', summary: 's', noteRoot: '视频笔记' })
+  assert.match(md, /^format: 2$/m)
+  assert.match(md, /^type: "video-note"$/m)
+})
+
 test('renderVideoNote adds nested concept tags to frontmatter', () => {
   const md = renderVideoNote({
     title: '标签测试',

@@ -10,6 +10,7 @@
  */
 
 import { conceptKey } from './concept.js'
+import { NOTE_FORMAT } from './note-check.js'
 import { manualNoteLinkTarget, normalizeNoteLayout } from './paths.js'
 
 export const AUTO_START = '<!-- AUTO:START -->'
@@ -42,6 +43,8 @@ function isPlainObject(value) {
 function yamlValue(value) {
   if (Array.isArray(value)) return JSON.stringify(value.map((item) => String(item)))
   if (isPlainObject(value)) return JSON.stringify(value)
+  // 数字保持裸值（format: 2），其余一律按字符串加引号
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   return yamlString(value)
 }
 
@@ -378,6 +381,8 @@ export function renderVideoNote(input = {}) {
     contentSource,
     contentQuality,
     type: 'video-note',
+    // 版式版本：自检用它区分当前格式与 0.3 之前的旧笔记
+    format: NOTE_FORMAT,
   }
   if (cover) frontmatterData.cover = cover
   if (bvid) frontmatterData.bvid = bvid

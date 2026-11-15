@@ -8,7 +8,9 @@
     "start": "node server/index.js",
     "start:no-open": "node server/index.js --no-open",
     "test": "cd core && node --test",
-    "check": "node --check server/index.js && node --check server/llm.js"
+    "check": "node --check server/index.js && node --check server/llm.js",
+    "self-check": "node scripts/self-check.mjs",
+    "self-check:llm": "node scripts/self-check.mjs --llm"
   },
   "engines": {
     "node": ">=20"
