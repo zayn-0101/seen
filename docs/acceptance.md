@@ -165,7 +165,7 @@
 
 背景：0.3.1 换包装后菜单栏 app 拉起的服务在 4780 端口 listen 但不 accept，sample 显示主线程 1553/1553 个采样卡在 libsystem_kernel __open（uv_run → uv_fs_open），根因是 vault 在「文稿」文件夹、TCC 未授权时同步 open 永久挂起，把整个事件循环堵死。
 
-- [x] 权限探测放在子进程：probeVaultAccess 用 process.execPath 跑探针脚本做 readdirSync，主进程只读结果，返回 ok / missing / denied / timeout；子进程 2.5 秒不返回就 SIGKILL
+- [x] 权限探测放在子进程：probeVaultAccess 用 process.execPath 跑探针脚本做 readdirSync，主进程只读结果，返回 ok / missing / denied / timeout；子进程 8 秒不返回才 SIGKILL（首次访问时 tccd 要现拉授权状态，2.5 秒会误报 timeout；启动探到 timeout 时 4 秒后自动复查一次）
 - [x] 熔断守卫：未授权时所有 vault 读写立即抛 VaultBlockedError，保存流程 emit vault-blocked 并返回「笔记没有写入」，不再挂死、也不记入 state.failures
 - [x] 全部 vault IO 异步化：obsidian.js 改 node:fs/promises，每个写操作过 runVaultTask（守卫 → 串行队列 → 10 秒超时熔断）；vault-search.js 同步改 async
 - [x] 面板提示条 + 一键恢复：顶部红条说明原因和授权路径，点「重新检测」走 POST /api/vault/probe，授权后无需重启；SSE 的 vault / vault-blocked 事件同步更新
