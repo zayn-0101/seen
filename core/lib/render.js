@@ -304,16 +304,31 @@ function normalizeSubjects(subjects) {
   return result
 }
 
-function normalizeTags(value, subject, extraTags = []) {
-  let tags = []
-  if (Array.isArray(value)) tags = value.map((item) => cleanInline(item).replace(/\s+/g, '-')).filter(Boolean)
-  else if (typeof value === 'string') tags = value.split(/[,，、]/).map((item) => cleanInline(item).replace(/\s+/g, '-')).filter(Boolean)
-  if (tags.length === 0) tags = ['视频课程', subject]
-  for (const tag of extraTags) {
-    const cleaned = cleanInline(tag)
-    if (cleaned && !tags.includes(cleaned)) tags.push(cleaned)
+/**
+ * 标签由 tags.js 按「学科 → 主题 → 类型 → 概念」组装好后传入，这里只做清洗与去重。
+ * 不动形态：把空格换成连字符会毁掉「概念/被动语态」这类嵌套标签。
+ */
+function normalizeTags(value, subject, concepts = []) {
+  const tags = []
+  const push = (item) => {
+    const tag = cleanInline(item)
+    if (tag && !tags.includes(tag)) tags.push(tag)
   }
-  return [...new Set(tags)]
+  if (Array.isArray(value)) {
+    for (const item of value) push(item)
+  } else if (typeof value === 'string') {
+    for (const item of value.split(/[,，、]/)) push(item)
+  }
+  // 调用方已经拼过概念标签就不再重复，否则按核心概念补齐
+  if (!tags.some((tag) => tag.startsWith('概念/'))) {
+    for (const item of Array.isArray(concepts) ? concepts : []) {
+      const name = cleanInline(typeof item === 'string' ? item : item?.name).replace(/[/\\#^|\s]+/g, '')
+      if (name) push('概念/' + name)
+    }
+  }
+  // 至少要留一个可检索维度：老调用方完全不传标签时退回学科
+  if (tags.length === 0) push(subject)
+  return tags
 }
 
 /** 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 弹幕评论焦点 + Mermaid mindmap + 来源统计。 */
@@ -359,7 +374,7 @@ export function renderVideoNote(input = {}) {
     author,
     created: createdAt,
     updated: createdAt,
-    tags: normalizeTags(source.tags, subject, concepts.map((item) => '概念/' + item.name.replace(/[\/\\#^|\s]+/g, ''))),
+    tags: normalizeTags(source.tags, subject, concepts),
     contentSource,
     contentQuality,
     type: 'video-note',

@@ -12,6 +12,9 @@
 
 import { randomUUID } from 'node:crypto'
 
+import { conceptKey } from './concept.js'
+import { normalizeTagTypes, normalizeThemes } from './tags.js'
+
 const DEFAULT_MAX_TOKENS = 4096
 const LLM_TIMEOUT_MS = 120000
 const JSON_FAIL = Symbol('json-fail')
@@ -741,7 +744,7 @@ const GENERIC_CONCEPTS = new Set([
   '总结', '介绍', '讲解', '分析', '案例', '故事', '话题', '主题', '讨论', '分享',
 ])
 
-/** 规范化核心概念：过滤泛化词、限长、去重，最多 8 个。 */
+/** 规范化核心概念：过滤泛化词、限长、去重，最多 6 个。 */
 export function normalizeConcepts(value) {
   if (!Array.isArray(value)) return []
   const result = []
@@ -751,19 +754,33 @@ export function normalizeConcepts(value) {
     if (!raw) continue
     const name = cleanText(raw.name ?? raw.title ?? raw.concept ?? '')
     if (!name) continue
+    // 带括号的概念多半是模型顺手加的注释，标签里没法点选
+    if (/[（(【《]/.test(name)) continue
     const plain = name.replace(/[\s\p{P}]+/gu, '')
-    if (plain.length < 2 || plain.length > 12) continue
+    if (plain.length < 2 || plain.length > 8) continue
     if (GENERIC_CONCEPTS.has(plain)) continue
-    if (seen.has(plain)) continue
-    seen.add(plain)
+    // 与标签体系共用 conceptKey，保证「DSH / DeepSeek-Harness」这类写法只留一个
+    const key = conceptKey(name)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
     const brief = truncateText(cleanText(raw.brief ?? raw.desc ?? raw.explanation ?? ''), 80)
     const aliases = Array.isArray(raw.aliases)
       ? raw.aliases.map((alias) => cleanText(alias)).filter(Boolean).slice(0, 3)
       : []
     result.push({ name, brief, aliases })
-    if (result.length >= 8) break
+    if (result.length >= 6) break
   }
   return result
+}
+
+/** 规范化标签：主题与形态分开归一，交给 tags.js 统一处理。 */
+export function normalizeSummaryTags(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { themes: [], types: [] }
+  }
+  const themes = normalizeThemes(raw.themes ?? raw.topicTags ?? raw.topic_tags)
+  const types = normalizeTagTypes(raw.types ?? raw.typeTags ?? raw.type_tags)
+  return { themes, types }
 }
 
 /** 规范化关键数字：值必须具体，含义不能为空，最多 6 条。 */
@@ -797,6 +814,7 @@ export function normalizeSummary(raw, fallbackTitle) {
       concepts: [],
       numbers: [],
       discussion: [],
+      tags: { themes: [], types: [] },
       mnemonSummary: title,
     }
   }
@@ -821,7 +839,8 @@ export function normalizeSummary(raw, fallbackTitle) {
       summary,
     800
   )
-  return { summary, question, answer, keyPoints, concepts, numbers, discussion, mnemonSummary }
+  const tags = normalizeSummaryTags(raw.tags ?? raw.tagSet ?? raw.tag_set)
+  return { summary, question, answer, keyPoints, concepts, numbers, discussion, tags, mnemonSummary }
 }
 
 /** 把长文本切成带少量重叠的块，避免长视频字幕超过单次上下文。 */
@@ -966,9 +985,20 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
   return parts.join('\n\n')
 }
 
-function buildSummarizePrompt({ title, subject, keywords, content, transcriptChunked = false }) {
+function buildSummarizePrompt({ title, subject, keywords, content, transcriptChunked = false, vocabulary = [] }) {
   const keywordList = Array.isArray(keywords)
     ? keywords.map((keyword) => cleanText(keyword)).filter(Boolean)
+    : []
+  const vocabularyList = Array.isArray(vocabulary)
+    ? vocabulary.map((item) => cleanText(item)).filter(Boolean)
+    : []
+  // 词表为空时整段不出现，避免「（无）」诱导模型自造
+  const vocabularySection = vocabularyList.length
+    ? [
+        '【已有主题词表】' + vocabularyList.join('、'),
+        '表里的词能准确概括本视频的，必须原样复用写法，不要另造近义词；表里没有合适的就新造，不要为了复用硬套不相关的词。',
+        '',
+      ]
     : []
   return [
     '请为以下视频课程生成结构化知识总结。',
@@ -978,6 +1008,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '学科：' + cleanText(subject),
     '关键词：' + (keywordList.join('、') || '（无）'),
     '',
+    ...vocabularySection,
     '【素材数据开始】',
     buildMaterialBlock(content),
     transcriptChunked ? '（说明：原始字幕较长，以上字幕是分块压缩后的摘要，仍需覆盖全片主要内容。）' : '',
@@ -994,18 +1025,20 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
-    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","keyPoints":[{"title":"主题","time":123,"points":["要点1"]}],"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
+    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","keyPoints":[{"title":"主题","time":123,"points":["要点1"]}],"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"tags":{"themes":["主题"],"types":["教程"]},"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
     '',
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
     '2. question / answer：用一到两句话说清「这期试图回答什么问题」和「最终给出了什么答案」。若视频只是知识罗列、没有明确问题，两者都留空字符串。',
     '3. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。',
-    '4. concepts：3~8 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；同一概念如有别称，写进 aliases。',
-    '5. numbers：3~6 个带有量级的关键数字，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；没有真实数字时输出空数组，不要编造。',
-    '6. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
-    '7. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
-    '8. 全部使用中文。',
-    '9. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
+    '4. concepts：3~6 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；名称 2~8 个汉字，不要带括号或注释；同一概念如有别称，写进 aliases。',
+    '5. tags.themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写这个视频所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；比 concepts 更宽，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
+    '6. tags.types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用这些词，不要自造或改写。',
+    '7. numbers：3~6 个带有量级的关键数字，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；没有真实数字时输出空数组，不要编造。',
+    '8. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
+    '9. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
+    '10. 全部使用中文。',
+    '11. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
   ].join('\n')
 }
 
@@ -1024,7 +1057,7 @@ function isValidSummaryRaw(raw) {
  * 调用 LLM 生成知识总结。解析失败重试一次；仍失败返回 fallback。
  */
 export async function summarize(ctx, config, input = {}) {
-  const { title = '', subject = '', keywords = [], content = null, transcript = '', transcriptSource = '' } = input || {}
+  const { title = '', subject = '', keywords = [], content = null, transcript = '', transcriptSource = '', vocabulary = [] } = input || {}
   const fallbackTitle = cleanText(title)
   const transcriptText = cleanText(transcript || content?.transcript || '')
   let transcriptDigest = transcriptText
@@ -1036,7 +1069,7 @@ export async function summarize(ctx, config, input = {}) {
   const promptContent = content
     ? { ...content, transcript: transcriptDigest, transcriptSource: transcriptSource || content?.transcriptSource || '' }
     : { transcript: transcriptDigest, transcriptSource }
-  const prompt = buildSummarizePrompt({ title, subject, keywords, content: promptContent, transcriptChunked })
+  const prompt = buildSummarizePrompt({ title, subject, keywords, content: promptContent, transcriptChunked, vocabulary })
 
   const request = async (extra) => {
     let text
@@ -1071,6 +1104,7 @@ export default {
   summarize,
   normalizeClassify,
   normalizeSummary,
+  normalizeSummaryTags,
 }
 
 

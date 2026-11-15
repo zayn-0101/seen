@@ -94,3 +94,38 @@ export function buildConceptIndexMarkdown(concepts = [], { noteRoot = '视频笔
   lines.push('笔记根目录：' + noteRoot)
   return lines.join('\n')
 }
+
+const TAG_SECTIONS = [
+  { type: 'subject', title: '## 学科' },
+  { type: 'theme', title: '## 主题' },
+  { type: 'type', title: '## 类型' },
+  { type: 'concept', title: '## 概念' },
+]
+
+/** 生成标签索引 Markdown：主题/类型/概念分区，每个标签下列出用到它的笔记。 */
+export function buildTagIndexMarkdown(tags = [], { noteRoot = '视频笔记' } = {}) {
+  const items = (Array.isArray(tags) ? tags : []).filter(
+    (item) => item && item.name && Array.isArray(item.videos) && item.videos.length > 0
+  )
+  const lines = ['## 全部标签', '']
+  if (items.length === 0) {
+    lines.push('（还没有标签，生成笔记后会自动出现）', '', '笔记根目录：' + noteRoot)
+    return lines.join('\n')
+  }
+  lines.push('共 ' + items.length + ' 个标签，按出现次数排序。', '')
+  for (const section of TAG_SECTIONS) {
+    const group = items.filter((item) => item.type === section.type)
+    if (group.length === 0) continue
+    lines.push(section.title, '')
+    for (const item of group) {
+      lines.push('### ' + escapeCell(item.name), '')
+      lines.push('出现 ' + item.videos.length + ' 次：')
+      for (const video of item.videos) {
+        lines.push('- ' + noteLink({ title: video.title, notePath: video.notePath }))
+      }
+      lines.push('')
+    }
+  }
+  lines.push('笔记根目录：' + noteRoot)
+  return lines.join('\n')
+}

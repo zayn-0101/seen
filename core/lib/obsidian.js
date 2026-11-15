@@ -361,4 +361,9 @@ export function writeConceptIndexNote({ vaultPath, noteRoot, markdown } = {}) {
   return writeAutoNote({ vaultPath, noteRoot, filename: '概念索引.md', title: '概念索引', type: 'concept-index', markdown })
 }
 
+/** 写入标签索引；已有文件只更新 AUTO 区块，保留用户内容。 */
+export function writeTagIndexNote({ vaultPath, noteRoot, markdown } = {}) {
+  return writeAutoNote({ vaultPath, noteRoot, filename: '标签索引.md', title: '标签索引', type: 'tag-index', markdown })
+}
+
 

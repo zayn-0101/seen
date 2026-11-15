@@ -18,9 +18,13 @@ test('normalizeConcepts filters generic words, dedupes and caps', () => {
   assert.deepEqual(list[1].aliases, ['步长', 'lr'])
 })
 
-test('normalizeConcepts caps at 8', () => {
+test('normalizeConcepts caps at 6 and drops bracketed names', () => {
   const input = Array.from({ length: 20 }, (_, i) => `概念词${i}`)
-  assert.equal(normalizeConcepts(input).length, 8)
+  assert.equal(normalizeConcepts(input).length, 6)
+  assert.deepEqual(
+    normalizeConcepts(['仓库（Vault）', '双向链接', '双向 链接']).map((item) => item.name),
+    ['双向链接']
+  )
 })
 
 test('normalizeNumbers drops empty meaning and caps at 6', () => {

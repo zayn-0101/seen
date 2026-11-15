@@ -24,11 +24,26 @@ export function defaultState() {
     lastRunAt: 0,
     failures: {},
     stats: { processed: 0, skipped: 0, failed: 0, lastMnemon: null },
+    // 主题词 → 出现次数，供提示词复用与标签收敛；旧状态缺这一项时按空表处理
+    tagVocabulary: {},
   }
 }
 
 function normalizeNumber(value, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/** 词表只接受「非空词 → 正整数」，脏数据整项丢弃 */
+function normalizeTagVocabulary(value) {
+  if (!isPlainObject(value)) return {}
+  const result = {}
+  for (const [name, count] of Object.entries(value)) {
+    const key = String(name ?? '').trim()
+    const hits = Number(count)
+    if (!key || !Number.isFinite(hits) || hits <= 0) continue
+    result[key] = Math.floor(hits)
+  }
+  return result
 }
 
 /** 把任意输入合并到默认状态结构上，并清洗字段类型 */
@@ -40,6 +55,7 @@ function mergeState(input) {
   merged.seen = isPlainObject(input.seen) ? { ...input.seen } : {}
   merged.subjects = isPlainObject(input.subjects) ? { ...input.subjects } : {}
   merged.failures = isPlainObject(input.failures) ? { ...input.failures } : {}
+  merged.tagVocabulary = normalizeTagVocabulary(input.tagVocabulary)
   merged.lastTitle = typeof input.lastTitle === 'string' ? input.lastTitle : ''
   merged.lastRunAt = normalizeNumber(input.lastRunAt, 0)
   merged.stats = { ...base.stats, ...(isPlainObject(input.stats) ? input.stats : {}) }

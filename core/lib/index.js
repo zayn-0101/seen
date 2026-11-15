@@ -31,6 +31,7 @@ import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
+import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
 import { normalizeNoteLayout } from './paths.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
@@ -306,7 +307,11 @@ export function apply(ctx, rawConfig = {}) {
         : (transcript ? { transcript, transcriptSource } : null)
       const finalTitle = cls.title || title
       emit('summarizing', { title: finalTitle, subject, transcriptLength: transcript.length })
-      const summary = await summarize(ctx, config, { title: finalTitle, subject, keywords, content: contentForSummary, transcript, transcriptSource })
+      const summary = await summarize(ctx, config, {
+        title: finalTitle, subject, keywords, content: contentForSummary, transcript, transcriptSource,
+        // 历史主题词表：让同一主题在不同视频里沿用同一种写法，避免标签漂移
+        vocabulary: buildTagVocabulary(state),
+      })
       const contentQuality = transcript ? 'full' : 'metadata-only'
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
@@ -326,6 +331,13 @@ export function apply(ctx, rawConfig = {}) {
         historyVideos,
         { limit: 5 },
       )
+      // 四层标签：学科 → 主题 → 类型 → 概念，统一由 tags.js 组装
+      const noteTags = mergeTags({
+        subject,
+        themes: summary.tags?.themes,
+        types: summary.tags?.types,
+        concepts: summary.concepts,
+      })
 
       const note = renderVideoNote({
         title: finalTitle,
@@ -348,7 +360,7 @@ export function apply(ctx, rawConfig = {}) {
         cover: String(content?.cover || ''),
         relatedNotes,
         fetchStats: content?.fetchStats || null,
-        tags: ['视频课程', sourceLabel(source), subject, ...keywords].filter(Boolean),
+        tags: noteTags,
         chapters: noteChapters,
         contentSource: transcriptSource || 'metadata',
         contentQuality,
@@ -381,6 +393,7 @@ export function apply(ctx, rawConfig = {}) {
         keywords,
         summary: summary.summary.slice(0, 120),
         concepts: summary.concepts.map((item) => item.name),
+        tags: noteTags,
         createdAt,
       }
       const videos = state.subjects[subject].videos
@@ -431,6 +444,8 @@ export function apply(ctx, rawConfig = {}) {
       state.lastTitle = finalTitle
       state.lastRunAt = Date.now()
       state.stats.processed += 1
+      // 词表只累计主题词，供下一篇提示词复用
+      rememberTags(state, noteTags)
       clearFailure(state, activeKey)
       pruneSeen(state)
       save()
@@ -597,6 +612,7 @@ export function apply(ctx, rawConfig = {}) {
           summary: video.summary || '',
           keywords: video.keywords || [],
           concepts: Array.isArray(video.concepts) ? video.concepts : [],
+          tags: Array.isArray(video.tags) ? video.tags : [],
           createdAt: video.createdAt || 0,
         })
       }

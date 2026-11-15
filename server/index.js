@@ -13,12 +13,13 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { apply } from '../core/lib/index.js'
-import { resolveConfig } from '../core/lib/config.js'
+import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { writeWeeklyReview, writeIndexNote, writeConceptIndexNote } from '../core/lib/obsidian.js'
-import { buildConceptIndexMarkdown, buildIndexMarkdown } from '../core/lib/index-note.js'
+import { writeWeeklyReview, writeIndexNote, writeConceptIndexNote, writeTagIndexNote } from '../core/lib/obsidian.js'
+import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from '../core/lib/index-note.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
+import { buildTagIndex } from '../core/lib/tags.js'
 import { searchVault } from '../core/lib/vault-search.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
@@ -89,7 +90,7 @@ const baseConfig = resolveConfig({
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
-  noteLayout: process.env.SEEN_NOTE_LAYOUT || ui.noteLayout || 'flat',
+  noteLayout: process.env.SEEN_NOTE_LAYOUT || ui.noteLayout || DEFAULTS.noteLayout,
 })
 
 const tools = new Map()
@@ -564,6 +565,11 @@ async function rebuildIndexNote() {
       vaultPath: status.vaultPath,
       noteRoot: status.noteRoot,
       markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot: status.noteRoot }),
+    })
+    writeTagIndexNote({
+      vaultPath: status.vaultPath,
+      noteRoot: status.noteRoot,
+      markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot: status.noteRoot }),
     })
   } catch (error) {
     log('更新索引失败：' + String(error?.message || error))
