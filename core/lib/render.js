@@ -617,7 +617,7 @@ export function overviewAutoBody(input = {}) {
   }
   lines.push('```', '', '## 学科列表', '')
   if (subjects.length === 0) {
-    lines.push('- （暂无，开始观看视频课程后会自动生成）')
+    lines.push('- （暂无，开始观看视频后会自动生成）')
   } else {
     for (const subject of subjects) {
       const target = manualNoteLinkTarget({ noteRoot, subject: subject.name, layout })

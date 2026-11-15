@@ -40,7 +40,9 @@ onEvent(fn) / isReadOnly() / isStarted()
 | `lib/foreground*.js` | 前台窗口检测（macOS / Windows） |
 | `lib/state.js` | 状态持久化与去重记录 |
 | `lib/mnemon.js` | 可选的本地记忆库写入 |
-| `lib/index-note.js` `review.js` `notify.js` | 索引、每周回顾、系统通知 |
+| `lib/index-note.js` `review.js` `notify.js` | 视频/概念/标签索引、每周回顾、系统通知 |
+| `lib/tags.js` `concept.js` | 四层标签组装、概念归一与跨笔记关联 |
+| `lib/paths.js` `vault-search.js` | 目录布局与路径映射、vault 全文搜索 |
 | `lib/config.js` | 配置解析与默认值 |
 
 ## 开发

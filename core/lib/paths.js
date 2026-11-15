@@ -2,7 +2,7 @@
  * seen-core · 笔记目录结构
  *
  * 根目录（noteRoot）默认「视频笔记」，两种布局：
- *  - structured（默认）：<noteRoot>/笔记/<学科>/<标题>.md，手册集中在 <noteRoot>/手册/，每周回顾在 <noteRoot>/回顾/
+ *  - structured（默认）：<noteRoot>/笔记/<学科>/<标题>.md，手册集中在 <noteRoot>/手册/，周回顾在 <noteRoot>/回顾/
  *  - flat：<noteRoot>/<学科>/<标题>.md，学科学习手册与视频笔记同目录
  *
  * 只做相对路径拼接，不访问文件系统；文件名清洗仍由 obsidian.js 负责。

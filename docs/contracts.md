@@ -342,7 +342,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`。
 - `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
 - `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
-- 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-small.bin`。
+- 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-<model>.bin`（默认 large-v3-turbo，可在面板「诊断」里换）。
 - `fetchYoutubeContent({url,title,config,force,onProgress})` 返回同形对象：`source:'youtube'`、`videoId`、`bvid:null`、`transcript`、`transcriptSource:'youtube-subtitle'|'auto-subtitle'|'whisper'`、`fetchStats`、`chapters:[{from,content}]`、`comments:[]`、`danmaku:[]`。
   取内容顺序：人工字幕 → 自动字幕 → 音频 + whisper.cpp → 仅元数据；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 7 天）。
   纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。

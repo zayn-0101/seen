@@ -141,7 +141,7 @@ export function buildMnemonContent({ title, subject, summary, keyPoints, notePat
   const link = oneLine(url) || (oneLine(bvid) ? `https://www.bilibili.com/video/${oneLine(bvid)}` : '')
   const platformName = oneLine(platformLabel) || (oneLine(bvid) ? 'B站' : '视频')
 
-  const headLines = [`【视频课程】${safeTitle}`, `学科：${safeSubject}`]
+  const headLines = [`【视频笔记】${safeTitle}`, `学科：${safeSubject}`]
   const tailLines = []
   if (note) tailLines.push(`笔记：${note}`)
   if (link) tailLines.push(`${platformName}：${link}`)
@@ -224,7 +224,7 @@ function delay(ms) {
 }
 
 /** 写入一条视频 insight；失败重试一次，绝不抛错。 */
-export async function rememberVideo({ config, title, subject, summary, keyPoints, notePath, bvid, videoId, url, keywords, platformLabel } = {}) {
+export async function rememberVideo({ config, title, subject, summary, keyPoints, notePath, bvid, videoId, url, keywords, tags, platformLabel } = {}) {
   try {
     const safeConfig = config && typeof config === 'object' ? config : {}
     const bin = await findMnemon(safeConfig)
@@ -233,12 +233,16 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
     }
 
     const content = buildMnemonContent({ title, subject, summary, keyPoints, notePath, bvid, videoId, url, platformLabel })
-    const tags = ['视频课程', oneLine(subject), ...(Array.isArray(keywords) ? keywords.map(oneLine) : [])].filter(Boolean).slice(0, 10).join(',')
+    // 记忆库标签跟笔记的四层标签保持一致，没有新标签时才退回学科 + 关键词
+    const tagList = Array.isArray(tags) && tags.length
+      ? tags
+      : [oneLine(subject), ...(Array.isArray(keywords) ? keywords.map(oneLine) : [])]
+    const tagText = [...new Set(tagList.map((tag) => oneLine(tag)).filter(Boolean))].slice(0, 10).join(',')
     const entities = [oneLine(title), oneLine(subject), oneLine(bvid), oneLine(videoId)].filter(Boolean).join(',')
     const args = buildRememberArgs({
       bin,
       content,
-      tags,
+      tags: tagText,
       entities,
       store: safeConfig.mnemonStore || 'default',
     })

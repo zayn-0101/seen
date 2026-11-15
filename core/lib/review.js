@@ -1,5 +1,5 @@
 /**
- * seen-core · 每周回顾
+ * seen-core · 每周回顾（写入 noteRoot/回顾/）
  *
  * 按自然周（周一 ~ 周日）汇总本周处理过的视频，生成一篇 Markdown 回顾。
  * 只读取传入的 history 数据，不访问文件系统。

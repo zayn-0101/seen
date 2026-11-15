@@ -425,6 +425,7 @@ export function apply(ctx, rawConfig = {}) {
           videoId: content?.videoId || inputVideoId || '',
           url: content?.url || input?.url || '',
           keywords,
+          tags: noteTags,
           platformLabel: sourceLabel(source),
         })
         state.stats.lastMnemon = { ok: Boolean(m?.ok), at: Date.now(), error: m?.error || '' }
