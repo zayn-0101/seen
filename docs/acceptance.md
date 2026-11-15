@@ -186,3 +186,17 @@
 - [x] 回放实测（magpie / auto/deepseek-v4.1-flash）：YouTube 分段 3/3（段数 4,5,4，平均 17.7s）、抖音分段 3/3（4,5,5，平均 51.9s）、YouTube 总结 3/3（知识点 9,12,11，平均 122.0s）、抖音总结 3/3（7,5,6，平均 29.4s），合计 12 次 0 失败
 - [x] 断言按提示词校正过：keyPoints 上限从 8 改为 20（提示词允许 3~20），question/answer 允许同时为空（纯知识罗列的视频），只查「只填一边」
 - [x] 测试 190 项全绿（新增 note-check 15 项、format 1 项），`npm run check` 通过
+
+## 2026-11-16 批次 1：去封面、去思维导图与 format 3
+
+背景：封面图和思维导图占了版式却几乎不产出信息——封面就是视频缩略图，思维导图是把概念再画一遍。视频本身的内容才值得占位置。同时关键数字里混入了「视频总时长 12:19」「弹幕 150 条」这类视频自身参数。
+
+- [x] 视频笔记不再抓封面：删除 bilibili / youtube / douyin 内容对象的 cover 字段（含 B 站 `pic`），渲染层不再写 frontmatter `cover:` 与正文 `![封面]`；手册与总览的 mindmap 保留，视频笔记的 mermaid 思维导图整块删除
+- [x] 核心知识点不再标「所属章节」：标题只留 `### 标题 [mm:ss](t=链接)`，章节信息已经在「## 章节」里
+- [x] 关键数字精准化：normalizeNumbers 加 META_NUMBER_PATTERN 过滤视频自身参数（时长/体积/分辨率/播放点赞投币收藏/弹幕评论条数/界面分区数），提示词规则同步改为「3~6 个能支撑结论或可直接行动的量化信息，没有合适的给空数组」
+- [x] 仅元数据（没有字幕）的视频降级：`contentQuality: "metadata-only"` 时 concepts 与 numbers 一律按空数组处理，笔记不出现「## 关键数字」「## 核心概念」，相关笔记与标签也不再引用编造的概念
+- [x] `format: 3`：note-check 的 SECTION_ORDER / REQUIRED_ALWAYS 去掉思维导图，并新增三条回归反查——`legacy-cover`（frontmatter cover 或正文封面图）、`legacy-mindmap`（出现「## 思维导图」）、`legacy-chapter-tag`（出现「所属章节：」），只在当前格式判错，旧笔记不误报
+- [x] 旧笔记清理：新增 `core/lib/note-clean.js` 的 stripCover 与 `scripts/strip-cover.mjs`（默认预演，`--apply` 才写并先备份）；真实 vault 预演 23 个 markdown、命中 2 篇，`--apply` 后清理 2 篇（备份 `视频笔记/_备份/去封面-2026-11-15T16-08-05`），全库复查已无 `cover:` 与封面图
+- [x] 临时实例 E2E（B 站 BV1qqEj6oEEk，130 秒）：笔记 `format: 3`、无封面/思维导图/所属章节，区块为 视频信息 → 关键数字 → 章节 → 核心知识点 → 核心概念 → 讨论焦点 → 我的补充 → 来源统计；关键数字只剩「1 天左右」「6 级」这类真正有用的量化信息；知识点标题形如 `### 为什么适合 AI 时代 [01:05](…?t=65)`
+- [x] 同一实例验元数据版（B 站 BV11RWR64EYy 无字幕）：`contentQuality: "metadata-only"`，笔记里没有「## 关键数字」「## 核心概念」，标签只剩学科 + 3 个主题 + `类型/观点`，没有概念标签
+- [x] 测试 195 项全绿（新增 note-clean 3 项、format 3 回归 1 项、元数据降级 1 项），`npm run check` 通过

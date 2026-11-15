@@ -28,8 +28,8 @@ test('renderVideoNote contains required sections', () => {
   assert.ok(md.includes('bvid: "BV1GJ411x7h7"'))
   assert.ok(md.includes('## 核心知识点'))
   assert.ok(md.includes('## 弹幕与评论讨论焦点'))
-  assert.ok(md.includes('## 思维导图'))
-  assert.ok(md.includes('root((梯度下降详解))'))
+  assert.ok(!md.includes('## 思维导图'))
+  assert.ok(!md.includes('cover:'))
   assert.ok(md.includes('## 来源统计'))
 })
 

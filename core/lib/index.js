@@ -325,6 +325,9 @@ export function apply(ctx, rawConfig = {}) {
         vocabulary: buildTagVocabulary(state),
       })
       const contentQuality = transcript ? 'full' : 'metadata-only'
+      // 元数据版没有字幕支撑，概念与数字容易被模型编出来，不写进笔记与状态
+      const noteConcepts = contentQuality === 'full' ? summary.concepts : []
+      const noteNumbers = contentQuality === 'full' ? summary.numbers : []
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
       let noteChapters = Array.isArray(content?.chapters) ? content.chapters : []
@@ -339,7 +342,7 @@ export function apply(ctx, rawConfig = {}) {
       const historyVideos = Object.entries(state.subjects || {}).flatMap(([subjectName, entry]) =>
         (Array.isArray(entry?.videos) ? entry.videos : []).map((item) => ({ ...item, subject: subjectName })))
       const relatedNotes = findRelatedVideos(
-        { title: finalTitle, bvid: content?.bvid || inputBvid || '', videoId: content?.videoId || inputVideoId || '', url: content?.url || input?.url || '', concepts: summary.concepts, keywords },
+        { title: finalTitle, bvid: content?.bvid || inputBvid || '', videoId: content?.videoId || inputVideoId || '', url: content?.url || input?.url || '', concepts: noteConcepts, keywords },
         historyVideos,
         { limit: 5 },
       )
@@ -348,7 +351,7 @@ export function apply(ctx, rawConfig = {}) {
         subject,
         themes: summary.tags?.themes,
         types: summary.tags?.types,
-        concepts: summary.concepts,
+        concepts: noteConcepts,
       })
 
       const note = renderVideoNote({
@@ -365,11 +368,10 @@ export function apply(ctx, rawConfig = {}) {
         question: summary.question,
         answer: summary.answer,
         keyPoints: summary.keyPoints,
-        concepts: summary.concepts,
-        numbers: summary.numbers,
+        concepts: noteConcepts,
+        numbers: noteNumbers,
         discussion: summary.discussion,
         duration: Number(content?.duration) || 0,
-        cover: String(content?.cover || ''),
         relatedNotes,
         fetchStats: content?.fetchStats || null,
         tags: noteTags,
@@ -404,7 +406,7 @@ export function apply(ctx, rawConfig = {}) {
         notePath: writeResult.relPath,
         keywords,
         summary: summary.summary.slice(0, 120),
-        concepts: summary.concepts.map((item) => item.name),
+        concepts: noteConcepts.map((item) => item.name),
         tags: noteTags,
         createdAt,
       }

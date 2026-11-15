@@ -241,8 +241,11 @@ export function mermaidSafe(text: string, max = 60): string
 export function yamlString(value: any): string       // JSON.stringify(String(value))
 export function renderFrontmatter(obj: { [key: string]: any }): string
 export function renderVideoNote(input: {
-  title, subject, source, bvid, videoId, url, author, createdAt, summary, keyPoints, discussion, fetchStats, chapters, contentSource, contentQuality, noteRoot, tags
+  title, subject, source, bvid, videoId, url, author, createdAt, summary, question, answer,
+  keyPoints, concepts, numbers, discussion, fetchStats, chapters, contentSource, contentQuality,
+  duration, relatedNotes, tags, noteRoot
 }): string
+// format 3：不输出封面、封面字段与思维导图；关键数字与核心概念只在 contentQuality === 'full' 时渲染
 export function buildTimeLink(url: string, platform: 'bilibili'|'youtube', seconds: number): string
 export function renderSubjectManual(input: { subject, videos, noteRoot, updatedAt }): string
 export function renderOverview(input: { subjects: string[], noteRoot, updatedAt }): string
@@ -367,7 +370,7 @@ export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }
 纯函数、不访问文件系统、不调模型；文件存在性由调用方注入 `exists(relPath)`。
 
 ```js
-export const NOTE_FORMAT = 2      // frontmatter 的 format；缺失视为 0.3 之前的旧格式
+export const NOTE_FORMAT = 3      // frontmatter 的 format；缺失视为 0.3 之前的旧格式，format 2 按旧规则只告警
 export const MANUAL_START = '<!-- MANUAL:START -->'
 export const MANUAL_END = '<!-- MANUAL:END -->'
 
@@ -377,7 +380,7 @@ export function parseNoteMarkdown(markdown: string): {
   frontmatter, body, meta, format, tags, title, subject, source, url, type,
   contentQuality, duration, sections, sectionTitles, sectionMap,
   conceptEntries, conceptBlockCount, relatedLinks, manualLinkTarget,
-  manualMarkersOk, detailsOk, mindmapOk, statsUrl,
+  manualMarkersOk, detailsOk, statsUrl,
 }
 export function checkNoteShape(note): Finding[]           // 版式区块与顺序、三层标签、概念块引用、章节时间轴
 export function checkNoteLinks(note, { exists, selfPath }): Finding[]   // 相关笔记 / 学科手册链接
@@ -389,7 +392,16 @@ export function summarizeFindings(findings): { total, errors, warnings, errorGro
 type Finding = { code: string, level: 'error' | 'warn', message: string }
 ```
 
-严重度：旧格式笔记（`format < 2`）的结构缺失与概念漂移降级为 warn，当前格式为 error；标签规则（学科首个、无脏值、主题 2–6 字上限 4、类型枚举、概念 2–8 字上限 6 且与「核心概念」同名）对两种格式都生效。
+严重度：旧格式笔记（`format < NOTE_FORMAT`）的结构缺失与概念漂移降级为 warn，当前格式为 error；标签规则（学科首个、无脏值、主题 2–6 字上限 4、类型枚举、概念 2–8 字上限 6 且与「核心概念」同名）对两种格式都生效。当前格式（format 3）另外反查装饰回潮：出现 `cover` 字段或封面图报 `legacy-cover`、出现「## 思维导图」报 `legacy-mindmap`、出现「所属章节：」报 `legacy-chapter-tag`。
+
+## lib/note-clean.js
+
+```js
+/** 删掉 frontmatter 的 cover 行与正文的 ![封面…](…) 行。纯文本，不碰文件系统。 */
+export function stripCover(markdown: string): { markdown: string, changed: boolean }
+```
+
+用途：format 3 起视频笔记不再抓封面，`scripts/strip-cover.mjs` 用它清理历史笔记（默认预演，`--apply` 先备份到 `_备份/去封面-<时间>/`）。
 
 ## lib/mnemon.js
 

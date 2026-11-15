@@ -35,6 +35,7 @@ seen/
 │   ├── make-release.sh           构建内嵌运行时的 app 并打 dmg
 │   ├── migrate-vault.mjs         笔记目录迁移（含备份与路径重写）
 │   ├── retag-notes.mjs           重打历史笔记的标签
+│   ├── strip-cover.mjs           清掉旧笔记里的封面
 │   └── uninstall-launchd.mjs
 ├── seen.command              双击启动服务
 ├── menubar/                  菜单栏应用（Swift，只调本地服务 HTTP）
@@ -79,14 +80,14 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 `~/.seen/llm.json`（600）。
 - macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示；`SEEN_DISABLE_NOTIFY=1` 可关。
 - 每次生成笔记后重建「视频索引.md」「概念索引.md」「标签索引.md」（都是 AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入 `回顾/`，已存在不覆盖。
-- 视频笔记版式：内容来源标注 → `[!abstract]` 一句话总结 → `[!question]` 想回答 → `[!success]` 答案 → 视频信息表 + 封面 → 关键数字 → 章节 → 核心知识点（标所属章节）→ 核心概念（带 `^concept-xxx` 块引用）→ 相关笔记双链 → 讨论焦点 → 思维导图 → 我的补充 → 折叠的抓取统计。重写笔记时 mergeManualSection 保留「我的补充」。
+- 视频笔记版式（format 3，不抓封面、不画思维导图）：内容来源标注 → `[!abstract]` 一句话总结 → `[!question]` 想回答 → `[!success]` 答案 → 视频信息表 → 关键数字 → 章节 → 核心知识点（带 `t=` 时间链接，不再标「所属章节」）→ 核心概念（带 `^concept-xxx` 块引用）→ 相关笔记双链 → 讨论焦点 → 我的补充 → 折叠的抓取统计。关键数字只收能支撑结论或可直接行动的量化信息，normalizeNumbers 会过滤时长、体积、播放/点赞数、弹幕评论条数这类视频自身元数据；仅元数据（没有字幕）的视频不写关键数字与核心概念。重写笔记时 mergeManualSection 保留「我的补充」。
 - 学科归类由 subject.js 的 alignSubject 归并：精确 → 包含且长度差≤2 → 共享≥2 连续汉字 → 已有 12 个学科时封顶取最接近。LLM 提示词要求输出 2~4 字宽泛领域名。
 - 推理型模型（如 magpie 的 deepseek）会把 maxTokens 全花在思考上、正文返回空串。callLlm 在拿到空正文时自动翻倍预算重试一次；分段这类短输出场景也别把预算压到 800 以下。
 - 无章节视频（B 站没设分 P 章节、抖音、YouTube 无原生章节）由 analyze.segmentTranscript 按时间轴采样让模型切 3~5 段；模型若回解释文字而不是 JSON，会再要一次；模型抄错几秒的起始时间会就近吸附到候选点（±8 秒），偏太远视为编造丢弃。B 站内容必须带 duration 才会触发（≥4 分钟）。
 - 跨笔记关联由 concept.js 负责：conceptKey 去标点空白归一概念名，findRelatedVideos 按「共享概念×2 + 共享关键词」打分取前 5，buildConceptIndex 供概念索引页与 `GET /api/concepts`（面板概念浏览）使用。学科手册的「本学科核心概念」只收出现在 ≥2 篇笔记里的概念。
 - 标签由 tags.js 负责：mergeTags 固定顺序 学科 → 主题（裸标签）→ `类型/<枚举>` → `概念/xxx`；主题由 LLM 在总结那次调用里一并给出（2~6 字，去泛化词，同篇包含合并保留更长者，上限 4），类型从 8 个固定枚举（教程/科普/访谈/评测/观点/纪录/播客/课程）里选 0~2 个；概念名限 2~8 字、带括号直接丢弃、上限 6。不再拼「视频课程」/平台名/学科进 tags（平台看 source 字段）。主题词表存在 state.tagVocabulary，buildTagVocabulary 取前 40 个注入提示词（只要求「能准确概括才复用，不相关不要硬套」），rememberTags 只累加裸主题词、超 500 按次数淘汰。历史笔记回填用 `node scripts/retag-notes.mjs`（默认预演，`--apply` 才写并先备份）；状态里没有概念的早期笔记，脚本会先看旧标签的 `概念/`，再让模型从正文抽一批并写回 `video.concepts`，否则概念索引会缺这些篇。
 - 笔记结构（paths.js）：根目录默认「视频笔记」，`structured`（默认）= `视频笔记/笔记/<学科>/<标题>.md` + `手册/<学科>.md` + `回顾/<周>.md`，根下放 `总览.md`、`视频索引.md`、`概念索引.md`、`标签索引.md`；`flat` = `视频笔记/<学科>/<标题>.md`（手册与笔记同学科目录）。布局可在面板工作台「目录」里切换（写 `~/.seen/ui.json` 的 `noteLayout`，`SEEN_NOTE_LAYOUT` 可覆盖），引擎的 `setNoteLayout` 只改运行中的配置、不搬文件；迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）；迁移会同时改写笔记里的手册双链和 state.json 里的 notePath（索引、概念索引、相关笔记都从 state 的路径生成，不同步会全指到旧位置）。旧路径引用（含没有前导斜杠的 `[[视频笔记/学科/…]]`、行首写法）统一由 `core/lib/legacy-refs.js` 的 `rewriteLegacyRefs` 重写，迁移脚本和事后修补共用同一套规则。
-- 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、三层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 2` 标记当前版式，没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
+- 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、三层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 3` 标记当前版式（旧笔记的 format 2 仍按旧规则只告警），没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）；format 3 还会反查封面、思维导图、「所属章节」是否回潮。旧笔记清理（去封面）用 core/lib/note-clean.js 的 `stripCover` 与 `scripts/strip-cover.mjs`（默认预演，`--apply` 才写并先备份）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
 - 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
 - B 站与 YouTube 的原生章节和知识点带 `t=` 时间链接；抖音没有原生章节，只有 AI 切出来的逻辑段。本地转写（whisper `-osrt`）会产出带时间戳的 `timedTranscript`，所以抖音/YouTube 的长视频同样能切段。

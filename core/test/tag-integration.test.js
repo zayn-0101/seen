@@ -46,6 +46,7 @@ test('renderVideoNote writes four-layer tags without zero-information entries', 
     source: 'douyin',
     url: 'https://www.douyin.com/video/1',
     tags: ['知识管理', '类型/教程', '概念/双向链接'],
+    contentQuality: 'full',
     concepts: [{ name: '双向链接', brief: '笔记之间互相引用' }],
   })
   const frontmatter = note.split('---')[1] || ''
@@ -61,6 +62,7 @@ test('renderVideoNote still appends concept tags when the caller only passes the
     source: 'bilibili',
     url: 'https://www.bilibili.com/video/BV1xx',
     tags: ['知识管理'],
+    contentQuality: 'full',
     concepts: [{ name: '被动语态', brief: '' }],
   })
   assert.match(note, /"概念\/被动语态"/)

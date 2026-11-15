@@ -295,7 +295,6 @@ export function buildYoutubeContent({ meta = {}, id, url, transcript = '', timed
     comments: [],
     danmaku: [],
     matched: true,
-    cover: String(meta.thumbnail || ''),
     fetchStats: {
       desc: desc.length,
       tags: tags.length,

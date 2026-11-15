@@ -783,6 +783,9 @@ export function normalizeSummaryTags(raw) {
   return { themes, types }
 }
 
+/** 视频自身的元数据不是知识：时长、体积、播放/互动数、抓取统计一律过滤。 */
+const META_NUMBER_PATTERN = /视频总时长|安装包|弹幕|评论数|点赞|播放量|收藏|投币|本次收集|本次抓取|界面分|三大块|本期视频/
+
 /** 规范化关键数字：值必须具体，含义不能为空，最多 6 条。 */
 export function normalizeNumbers(value) {
   if (!Array.isArray(value)) return []
@@ -794,6 +797,7 @@ export function normalizeNumbers(value) {
     const figure = cleanText(raw.value ?? raw.number ?? raw.figure ?? '')
     const meaning = truncateText(cleanText(raw.meaning ?? raw.desc ?? raw.note ?? ''), 60)
     if (!figure || !meaning) continue
+    if (META_NUMBER_PATTERN.test(figure + ' ' + meaning)) continue
     const key = figure + '|' + meaning
     if (seen.has(key)) continue
     seen.add(key)
@@ -1021,7 +1025,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '【内容依据规则】',
     '- 核心知识点必须优先来自【视频字幕/讲解文本】和【视频简介】；【观众弹幕】【观众评论】只能用于 discussion，不能作为核心知识点的唯一依据。',
     '- 如果字幕为 AI 自动识别，允许存在同音错字，按上下文纠正明显错误；不要把识别错误当成新事实。',
-    '- 如果没有字幕/讲解文本，summary 要明确写「未获取到完整视频内容，信息有限」，keyPoints 控制在 3~8 个，不要编造具体操作步骤或数字。',
+    '- 如果没有字幕/讲解文本，summary 要明确写「未获取到完整视频内容，信息有限」，keyPoints 控制在 3~8 个；concepts 与 numbers 都输出空数组，不要编造具体操作步骤、时间点或数字。',
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
@@ -1034,7 +1038,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '4. concepts：3~6 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；名称 2~8 个汉字，不要带括号或注释；同一概念如有别称，写进 aliases。',
     '5. tags.themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写这个视频所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；比 concepts 更宽，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
     '6. tags.types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用这些词，不要自造或改写。',
-    '7. numbers：3~6 个带有量级的关键数字，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；没有真实数字时输出空数组，不要编造。',
+    '7. numbers：3~6 个能支撑结论或可直接行动的量化信息，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；不要收视频自身的参数（时长、体积、分辨率、播放/点赞/投币/收藏数、弹幕/评论条数、界面分区数）；没有合适的数字就给空数组，不要编造。',
     '8. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
     '9. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
     '10. 全部使用中文。',

@@ -71,13 +71,6 @@ function noteMarkdown(overrides = {}) {
     '',
     '1. 讨论一',
     '',
-    '## 思维导图',
-    '',
-    '```mermaid',
-    'mindmap',
-    '  root((测试))',
-    '```',
-    '',
     '## 我的补充',
     '',
     '<!-- MANUAL:START -->',
@@ -114,7 +107,6 @@ test('parseNoteMarkdown reads frontmatter, tags, duration and sections', () => {
   assert.equal(note.manualLinkTarget, '视频笔记/手册/知识管理')
   assert.equal(note.manualMarkersOk, true)
   assert.equal(note.detailsOk, true)
-  assert.equal(note.mindmapOk, true)
   assert.deepEqual(note.relatedLinks, ['视频笔记/笔记/知识管理/另一篇'])
 })
 
@@ -326,4 +318,20 @@ test('summarizeFindings groups by code and severity', () => {
   assert.equal(summary.warnings.length, 1)
   assert.equal(summary.errorGroups[0].code, 'a')
   assert.equal(summary.errorGroups[0].count, 2)
+})
+
+test('format 3 rejects decorative leftovers from earlier layouts', () => {
+  const decorated = noteMarkdown()
+    .replace('type: "video-note"', 'type: "video-note"\ncover: "https://example.com/c.jpg"')
+    .replace('## 核心知识点', '![封面|360](https://example.com/c.jpg)\n\n## 核心知识点')
+    .replace('## 我的补充', '## 思维导图\n\n```mermaid\nmindmap\n  root((测试))\n```\n\n## 我的补充')
+    .replace('### 要点一', '### 要点一 [00:10](https://www.bilibili.com/video/BV1test00001?t=10)（所属章节：开场）')
+  const found = codes(checkNoteShape(parseNoteMarkdown(decorated)))
+  assert.ok(found.includes('legacy-cover'))
+  assert.ok(found.includes('legacy-mindmap'))
+  assert.ok(found.includes('legacy-chapter-tag'))
+
+  // 旧格式笔记里的封面只当历史遗留，不报当前格式的错误
+  const legacy = noteMarkdown({ format: 2 }).replace('type: "video-note"', 'type: "video-note"\ncover: "https://example.com/c.jpg"')
+  assert.ok(!codes(checkNoteShape(parseNoteMarkdown(legacy))).includes('legacy-cover'))
 })

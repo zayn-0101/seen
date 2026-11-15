@@ -37,6 +37,14 @@ test('normalizeNumbers drops empty meaning and caps at 6', () => {
   assert.ok(list.length <= 6)
   assert.equal(list[0].value, '260 词')
   assert.ok(!list.some((item) => item.meaning === ''))
+
+  const meta = normalizeNumbers([
+    { value: '12:19', meaning: '视频总时长' },
+    { value: '150 条', meaning: '本次收集到的观众弹幕数量' },
+    { value: '37 MB', meaning: '安装包体积' },
+    { value: '40 字', meaning: '每句标题上限' },
+  ])
+  assert.deepEqual(meta.map((item) => item.value), ['40 字'])
 })
 
 test('normalizeSummary keeps question, answer, concepts and numbers', () => {
@@ -123,7 +131,7 @@ test('mergeManualSection leaves note untouched when nothing handwritten', () => 
 
 test('renderVideoNote stamps the note format version', () => {
   const md = renderVideoNote({ title: '格式版本', subject: '写作', summary: 's', noteRoot: '视频笔记' })
-  assert.match(md, /^format: 2$/m)
+  assert.match(md, /^format: 3$/m)
   assert.match(md, /^type: "video-note"$/m)
 })
 
@@ -132,6 +140,7 @@ test('renderVideoNote adds nested concept tags to frontmatter', () => {
     title: '标签测试',
     subject: '写作',
     summary: 's',
+    contentQuality: 'full',
     concepts: [{ name: '责任前置', brief: '先认错' }, { name: '被动 语态', brief: '稀释责任' }],
     noteRoot: '视频笔记',
   })
@@ -139,16 +148,32 @@ test('renderVideoNote adds nested concept tags to frontmatter', () => {
   assert.ok(md.includes('"概念/被动语态"'))
 })
 
-test('renderVideoNote renders cover image after info table', () => {
+test('renderVideoNote no longer stamps cover or mindmap', () => {
   const md = renderVideoNote({
-    title: '封面测试',
+    title: '去装饰测试',
     subject: '写作',
     summary: 's',
     cover: 'https://example.com/c.jpg',
     noteRoot: '视频笔记',
   })
-  assert.ok(md.includes('![封面|360](https://example.com/c.jpg)'))
-  assert.ok(md.includes('cover: https://example.com/c.jpg') || md.includes('cover: "https://example.com/c.jpg"'))
+  assert.ok(!md.includes('![封面'))
+  assert.ok(!md.includes('cover:'))
+  assert.ok(!md.includes('## 思维导图'))
+  assert.ok(!md.includes('所属章节：'))
+})
+
+test('metadata-only notes skip concepts and numbers even when supplied', () => {
+  const md = renderVideoNote({
+    title: '元数据版',
+    subject: '写作',
+    summary: '未获取到完整视频内容，信息有限',
+    contentQuality: 'metadata-only',
+    concepts: [{ name: '责任前置', brief: '先认错' }],
+    numbers: [{ value: '100 万', meaning: '播放量' }],
+    noteRoot: '视频笔记',
+  })
+  assert.ok(!md.includes('## 关键数字'))
+  assert.ok(!md.includes('## 核心概念'))
 })
 
 test('renderVideoNote renders related notes with wiki links', () => {

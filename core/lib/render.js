@@ -2,7 +2,8 @@
  * seen-core · Markdown / Mermaid 渲染
  *
  * 纯 ESM、零运行时依赖。三类 Markdown 模板：
- *  - 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 弹幕评论焦点 + Mermaid mindmap + 来源统计
+ *  - 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 核心概念 + 讨论焦点 + 来源统计
+ *  - 学科手册/总览：AUTO 区里用 Mermaid mindmap 画学科脉络
  *  - 学科学习手册：AUTO 区（学科总览 mindmap + 视频链接列表）+ 用户「我的补充」区
  *  - 总览：AUTO 区（学科 mindmap + 学科列表）+ 用户「我的补充」区
  *
@@ -160,17 +161,6 @@ function normalizeKeyPoints(value) {
     if (title || points.length) result.push(entry)
   }
   return result
-}
-
-/** 找到某个时间点所属的章节，用于把知识点挂到章节上。 */
-function chapterAt(time, chapters) {
-  if (!Number.isFinite(time) || !Array.isArray(chapters) || chapters.length === 0) return null
-  let found = null
-  for (const chapter of chapters) {
-    if (chapter.from <= time) found = chapter
-    else break
-  }
-  return found
 }
 
 function toCount(value) {
@@ -334,7 +324,7 @@ function normalizeTags(value, subject, concepts = []) {
   return tags
 }
 
-/** 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 弹幕评论焦点 + Mermaid mindmap + 来源统计。 */
+/** 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 核心概念 + 讨论焦点 + 来源统计。 */
 export function renderVideoNote(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const title = cleanInline(source.title) || DEFAULT_TITLE
@@ -350,8 +340,6 @@ export function renderVideoNote(input = {}) {
   const question = oneLine(source.question)
   const answer = oneLine(source.answer)
   const keyPoints = normalizeKeyPoints(source.keyPoints)
-  const concepts = normalizeConcepts(source.concepts)
-  const numbers = normalizeNumbers(source.numbers)
   const discussion = normalizeStringList(source.discussion)
   const stats = normalizeFetchStats(source.fetchStats)
   const chapters = normalizeChapters(source.chapters)
@@ -359,7 +347,9 @@ export function renderVideoNote(input = {}) {
   const publishedAt = cleanInline(source.publishedAt)
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
-  const cover = String(source.cover ?? '').trim()
+  // 元数据版没有字幕支撑，概念和数字容易被模型编出来，整节省略
+  const concepts = contentQuality === 'full' ? normalizeConcepts(source.concepts) : []
+  const numbers = contentQuality === 'full' ? normalizeNumbers(source.numbers) : []
   const relatedNotes = (Array.isArray(source.relatedNotes) ? source.relatedNotes : [])
     .map((item) => ({
       title: cleanInline(item?.title),
@@ -384,7 +374,6 @@ export function renderVideoNote(input = {}) {
     // 版式版本：自检用它区分当前格式与 0.3 之前的旧笔记
     format: NOTE_FORMAT,
   }
-  if (cover) frontmatterData.cover = cover
   if (bvid) frontmatterData.bvid = bvid
   if (videoId) frontmatterData.videoId = videoId
   const frontmatter = renderFrontmatter(frontmatterData)
@@ -429,7 +418,6 @@ export function renderVideoNote(input = {}) {
   lines.push('## 视频信息', '', '| 项目 | 内容 |', '| --- | --- |')
   for (const [metaKey, metaValue] of metaRows) lines.push(`| ${metaKey} | ${metaValue.replace(/\|/g, '\\|')} |`)
   lines.push('')
-  if (cover) lines.push(`![封面|360](${cover})`, '')
 
   if (numbers.length > 0) {
     lines.push('## 关键数字', '', '| 数字 | 含义 |', '| --- | --- |')
@@ -455,11 +443,9 @@ export function renderVideoNote(input = {}) {
   } else {
     for (const topic of keyPoints) {
       const topicLink = Number.isFinite(topic.time) ? buildTimeLink(url, platform, topic.time) : ''
-      const chapter = chapterAt(topic.time, chapters)
-      const chapterTag = chapter ? `（所属章节：${chapter.content}）` : ''
       lines.push(topicLink
-        ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})${chapterTag}`
-        : `### ${topic.title}${chapterTag}`, '')
+        ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})`
+        : `### ${topic.title}`, '')
       if (topic.points.length === 0) lines.push('- （暂无要点）')
       else for (const point of topic.points) lines.push(`- ${point}`)
       lines.push('')
@@ -494,20 +480,6 @@ export function renderVideoNote(input = {}) {
   if (discussion.length === 0) lines.push('- （暂无讨论数据）')
   else for (const item of discussion) lines.push(`- ${item}`)
   lines.push('')
-
-  lines.push('## 思维导图', '', '```mermaid', 'mindmap')
-  const rootText = mermaidSafe(title) || DEFAULT_TITLE
-  lines.push(`  root((${rootText}))`)
-  for (const topic of keyPoints) {
-    const topicText = mermaidSafe(topic.title)
-    if (!topicText) continue
-    lines.push(`    ${topicText}`)
-    for (const point of topic.points) {
-      const pointText = mermaidSafe(point, 60)
-      if (pointText) lines.push(`      ${pointText}`)
-    }
-  }
-  lines.push('```', '')
 
   // 手写保护区：重新生成笔记时由 mergeManualSection 原样搬回
   lines.push('## 我的补充', '', MANUAL_BEGIN, '', MANUAL_END, '')

@@ -13,7 +13,7 @@ import { conceptKey } from './concept.js'
 import { TAG_TYPES } from './tags.js'
 
 /** 当前笔记版式版本；缺失视为 0.3 之前的旧格式，结构缺失只算警告。 */
-export const NOTE_FORMAT = 2
+export const NOTE_FORMAT = 3
 
 export const MANUAL_START = '<!-- MANUAL:START -->'
 export const MANUAL_END = '<!-- MANUAL:END -->'
@@ -27,12 +27,11 @@ const SECTION_ORDER = [
   '相关笔记',
   '讨论焦点',
   '弹幕与评论讨论焦点',
-  '思维导图',
   '我的补充',
   '来源统计',
 ]
 
-const REQUIRED_ALWAYS = ['视频信息', '核心知识点', '思维导图', '来源统计']
+const REQUIRED_ALWAYS = ['视频信息', '核心知识点', '来源统计']
 
 // 0.2 时代没有的区块，只在当前格式里强制要求
 const REQUIRED_CURRENT = ['我的补充']
@@ -141,8 +140,6 @@ export function parseNoteMarkdown(markdown) {
   }
 
   const manualLink = body.match(/\[\[([^\]|#]+)\|[^\]]*学习手册\]\]/)
-  const mindmapSection = sectionMap.get('思维导图')
-  const mindmapOk = Boolean(mindmapSection) && /```mermaid/.test(mindmapSection.body) && (mindmapSection.body.match(/```/g) || []).length >= 2
 
   const statsSection = sectionMap.get('来源统计')
   const statsUrl = statsSection ? (statsSection.body.match(/https?:\/\/[^\s|)]+/) || [])[0] || '' : ''
@@ -169,7 +166,6 @@ export function parseNoteMarkdown(markdown) {
     manualLinkTarget: manualLink ? cleanInline(manualLink[1]) : '',
     manualMarkersOk: body.includes(MANUAL_START) && body.includes(MANUAL_END) && body.indexOf(MANUAL_START) < body.indexOf(MANUAL_END),
     detailsOk: Boolean(statsSection) && /<details>/.test(statsSection.body) && /<\/details>/.test(statsSection.body),
-    mindmapOk,
     statsUrl,
   }
 }
@@ -217,7 +213,16 @@ export function checkNoteShape(note) {
       findings.push(finding('manual-markers', 'error', '「我的补充」里缺 ' + MANUAL_START + ' / ' + MANUAL_END + ' 成对标记'))
     }
     if (!note.detailsOk) findings.push(finding('stats-details', 'error', '「来源统计」缺 <details> 折叠块'))
-    if (!note.mindmapOk) findings.push(finding('mindmap-fence', 'error', '「思维导图」的 mermaid 代码块不完整'))
+    // format 3 去掉了封面、思维导图与「所属章节」标注，重新出现说明版式回退
+    if (/^cover:/m.test(note.frontmatter) || /!\[封面/.test(note.body)) {
+      findings.push(finding('legacy-cover', 'error', 'format 3 不再抓封面，笔记里不该有 cover 字段或封面图'))
+    }
+    if (note.sectionTitles.includes('思维导图')) {
+      findings.push(finding('legacy-mindmap', 'error', 'format 3 的视频笔记不再有「思维导图」，内容与知识点重复'))
+    }
+    if (note.body.includes('所属章节：')) {
+      findings.push(finding('legacy-chapter-tag', 'error', 'format 3 不再标注「所属章节」，章节与知识点标题已能对照'))
+    }
   }
 
   // 标签

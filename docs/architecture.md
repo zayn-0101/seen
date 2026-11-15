@@ -135,5 +135,6 @@
 | index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |
 | vault-search.js | 笔记库全文搜索（文件名加权 + 正文命中）、markdown 文件枚举 |
 | note-check.js | 笔记结构 / 标签 / 章节时间轴 / 双链的纯函数断言（离线自检与模型回放回归） |
+| note-clean.js | 旧笔记清理（去掉 format 2 时代的封面字段与封面图） |
 | mnemon.js | CLI 探测与 remember 调用 |
 | index.js | 引擎入口、轮询、编排、内部工具注册 |

@@ -179,7 +179,6 @@ function buildContent(detail, { url, id, transcript, timedTranscript = '', trans
       totalDanmaku,
       totalComments,
     },
-    cover: typeof detail?.video?.cover === 'string' ? detail.video.cover : '',
   }
 }
 
