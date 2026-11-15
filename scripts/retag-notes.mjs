@@ -12,7 +12,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
-import { callLlm, parseJson } from '../core/lib/analyze.js'
+import { callLlm, normalizeConcepts, parseJson } from '../core/lib/analyze.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
 import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from '../core/lib/index-note.js'
@@ -78,6 +78,15 @@ function readTags(frontmatter) {
   }
 }
 
+/** 从旧标签的「概念/xxx」还原概念名，给状态里没存概念的早期笔记兜底。 */
+function conceptsFromTags(tags) {
+  return (Array.isArray(tags) ? tags : [])
+    .map((tag) => String(tag ?? '').trim())
+    .filter((tag) => tag.startsWith('概念/'))
+    .map((tag) => tag.slice(3).trim())
+    .filter(Boolean)
+}
+
 /** 替换（或补上）frontmatter 的 tags 行。 */
 function writeTags(markdown, tags) {
   const lines = String(markdown || '').split('\n')
@@ -91,7 +100,7 @@ function writeTags(markdown, tags) {
   return lines.join('\n')
 }
 
-function buildPrompt({ title, subject, summary, concepts, body, vocabulary }) {
+function buildPrompt({ title, subject, summary, concepts, body, vocabulary, needConcepts }) {
   const parts = [
     '标题：' + title,
     '学科：' + subject,
@@ -101,7 +110,7 @@ function buildPrompt({ title, subject, summary, concepts, body, vocabulary }) {
   if (vocabulary.length) {
     parts.push(
       '【已有主题词表】' + vocabulary.join('、'),
-      '主题能归入上表的，必须原样复用写法，不要另造近义词或上义词。',
+      '主题能归入上表的，必须原样复用写法，不要另造近义词或上义词；用不上的词一条都不要硬套。',
     )
   }
   parts.push(
@@ -110,10 +119,15 @@ function buildPrompt({ title, subject, summary, concepts, body, vocabulary }) {
     body,
     '',
     '【任务】为这篇视频笔记重新给一组标签：',
-    '- themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写它所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
+    '- themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写视频主体所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；只是顺带提到的大领域不算，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
     '- types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用。',
+    ...(needConcepts ? [
+      '- concepts：3~6 个具体概念，每个 2~8 个汉字，写视频里真正讲到的术语、方法、模型或框架（例如「双向链接」「边际效用」）；不要写学科名和主题词，不要写「方法」「技巧」「原理」这类空泛词，不要带括号。',
+    ] : []),
     '- 宁可少而准，不要堆砌。',
-    '只输出 JSON：{"themes":["..."],"types":["..."]}',
+    needConcepts
+      ? '只输出 JSON：{"concepts":["..."],"themes":["..."],"types":["..."]}'
+      : '只输出 JSON：{"themes":["..."],"types":["..."]}',
   )
   return parts.join('\n')
 }
@@ -151,7 +165,11 @@ for (const [index, item] of picked.entries()) {
   const markdown = readFileSync(absPath, 'utf8')
   const { frontmatter, body } = splitFrontmatter(markdown)
   const oldTags = readTags(frontmatter)
-  const concepts = Array.isArray(video.concepts) ? video.concepts : []
+  const storedConcepts = Array.isArray(video.concepts) ? video.concepts : []
+  // 早期笔记的状态里没有 concepts 字段，但旧标签可能留着「概念/xxx」，用它兜底
+  let concepts = storedConcepts.length ? storedConcepts : conceptsFromTags(oldTags)
+  // 仍然没有概念的，就让模型顺手从正文里抽一批，补上概念索引的数据缺口
+  const needConcepts = concepts.length === 0
   let parsed = null
   try {
     const raw = await callLlm(ctx, llmOptions, {
@@ -163,8 +181,9 @@ for (const [index, item] of picked.entries()) {
         concepts,
         body: body.slice(0, BODY_CHARS),
         vocabulary: buildTagVocabulary(state),
+        needConcepts,
       }) }] }],
-      maxTokens: 800,
+      maxTokens: needConcepts ? 1200 : 800,
     })
     parsed = parseJson(raw)
   } catch (error) {
@@ -173,6 +192,9 @@ for (const [index, item] of picked.entries()) {
     continue
   }
 
+  if (needConcepts) {
+    concepts = normalizeConcepts(parsed?.concepts ?? []).map((item) => item.name)
+  }
   const themes = normalizeThemes(parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes ?? [])
   const types = normalizeTagTypes(parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types ?? [])
   const tags = mergeTags({ subject, themes, types, concepts })
@@ -196,6 +218,8 @@ for (const [index, item] of picked.entries()) {
   copyFileSync(absPath, backupPath)
   writeFileSync(absPath, writeTags(markdown, tags), 'utf8')
   video.tags = tags
+  // 从旧标签还原出来的概念要落回状态，否则概念索引还是缺这几篇
+  if (!storedConcepts.length && concepts.length) video.concepts = concepts
   rememberTags(state, tags)
 }
 
