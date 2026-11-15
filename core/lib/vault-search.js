@@ -3,23 +3,26 @@
  *
  * 只扫描 <vault>/<noteRoot> 下的 Markdown，不碰用户其他目录。
  * 打分：文件名命中 ×3，正文命中 ×1；多关键词取总分。
+ * 走 obsidian 的 vault 守卫：没有「文稿文件夹」权限时快速失败，不会挂起服务。
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { runVaultTask } from './obsidian.js'
 
 const MAX_FILE_BYTES = 200 * 1024
 const MAX_FILES = 2000
+const MAX_DEPTH = 6
 
 function toPosix(value) {
   return String(value ?? '').replace(/\\/g, '/')
 }
 
-function walkMarkdown(dir, bucket, depth = 0) {
-  if (depth > 6 || bucket.length >= MAX_FILES) return
+async function walkMarkdown(dir, bucket, depth = 0) {
+  if (depth > MAX_DEPTH || bucket.length >= MAX_FILES) return
   let entries = []
   try {
-    entries = readdirSync(dir, { withFileTypes: true })
+    entries = await readdir(dir, { withFileTypes: true })
   } catch {
     return
   }
@@ -29,7 +32,7 @@ function walkMarkdown(dir, bucket, depth = 0) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
       if (entry.name === '_备份') continue
-      walkMarkdown(full, bucket, depth + 1)
+      await walkMarkdown(full, bucket, depth + 1)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       bucket.push(full)
     }
@@ -53,24 +56,18 @@ function makeSnippet(text, term) {
   return (start > 0 ? '…' : '') + text.slice(start, end).replace(/\s+/g, ' ').trim() + (end < text.length ? '…' : '')
 }
 
-/**
- * 搜索笔记库。
- * @returns {{ title: string, relPath: string, snippet: string, score: number }[]}
- */
-export function searchVault({ vaultPath, noteRoot, query, limit = 20 } = {}) {
-  const terms = splitTerms(query)
-  if (!vaultPath || terms.length === 0) return []
+async function search(vaultPath, noteRoot, terms, limit) {
   const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
   const files = []
-  walkMarkdown(rootAbs, files)
+  await walkMarkdown(rootAbs, files)
 
   const results = []
   for (const file of files) {
     let content = ''
     try {
-      const info = statSync(file)
+      const info = await stat(file)
       if (!info.isFile() || info.size > MAX_FILE_BYTES) continue
-      content = readFileSync(file, 'utf8')
+      content = await readFile(file, 'utf8')
     } catch {
       continue
     }
@@ -94,4 +91,14 @@ export function searchVault({ vaultPath, noteRoot, query, limit = 20 } = {}) {
   results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
   const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 20
   return results.slice(0, max)
+}
+
+/**
+ * 搜索笔记库。
+ * @returns {Promise<{ title: string, relPath: string, snippet: string, score: number }[]>}
+ */
+export async function searchVault({ vaultPath, noteRoot, query, limit = 20 } = {}) {
+  const terms = splitTerms(query)
+  if (!vaultPath || terms.length === 0) return []
+  return runVaultTask(() => search(vaultPath, noteRoot, terms, limit))
 }

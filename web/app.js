@@ -565,6 +565,31 @@ function renderUpdate(update) {
   $('updateLink').href = update.url || 'https://github.com/zayn-0101/seen/releases'
 }
 
+function renderVaultBanner(vault) {
+  const banner = $('vaultBanner')
+  if (!banner) return
+  if (!vault || vault.ok !== false) {
+    banner.hidden = true
+    return
+  }
+  const code = String(vault.code || 'error')
+  let dismissed = ''
+  try { dismissed = sessionStorage.getItem('seen.vaultDismissed') || '' } catch { dismissed = '' }
+  if (dismissed === code) {
+    banner.hidden = true
+    return
+  }
+  banner.hidden = false
+  const reason = code === 'denied'
+    ? '没有「文稿文件夹」权限，笔记读不到也写不进去'
+    : code === 'missing'
+      ? '笔记库目录不存在'
+      : code === 'timeout'
+        ? '读取笔记库超时，多半是权限没给'
+        : '访问笔记库失败（' + code + '）'
+  $('vaultText').textContent = reason + '。打开 系统设置 → 隐私与安全性 → 文件与文件夹，给 Seen 打开「文稿文件夹」，然后点「重新检测」。'
+}
+
 function renderFailures(failures) {
   const card = $('failuresCard')
   const list = $('failures')
@@ -642,6 +667,7 @@ function renderSnapshot(snap) {
   const vaultPath = snap.status?.vaultPath ? String(snap.status.vaultPath) : ''
   $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
   renderUpdate(snap.update || null)
+  renderVaultBanner(snap.status?.vault || snap.vault || null)
   const layoutSelect = $('noteLayout')
   if (layoutSelect && snap.config?.noteLayout) layoutSelect.value = snap.config.noteLayout
   renderHistory(snap.history || [])
@@ -722,6 +748,11 @@ function handleEvent(event) {
     const message = String(event.data.message || '')
     if (/安装完成|下载完成/.test(message)) setTimeout(check, 500)
     else if (/安装失败|下载失败/.test(message)) showToast(message, true)
+  }
+  if (event.type === 'vault') renderVaultBanner(event.data || null)
+  if (event.type === 'vault-blocked' && event.data) {
+    renderVaultBanner({ ok: false, ...event.data })
+    showToast('笔记没有写入：' + String(event.data.hint || '笔记库不可访问'), true)
   }
   if (event.type === 'snapshot') {
     renderSnapshot(event.data)
@@ -942,6 +973,31 @@ $('updateClose').addEventListener('click', () => {
   const latest = String($('updateText').textContent).match(/v([0-9.]+)/)?.[1] || ''
   if (latest) {
     try { localStorage.setItem('seen.updateDismissed', latest) } catch { /* 忽略 */ }
+  }
+})
+$('vaultRetry').addEventListener('click', async () => {
+  const button = $('vaultRetry')
+  const label = button.textContent
+  button.disabled = true
+  button.textContent = '检测中…'
+  try {
+    const data = await api('/api/vault/probe', { method: 'POST', body: '{}' })
+    try { sessionStorage.removeItem('seen.vaultDismissed') } catch { /* 忽略 */ }
+    renderSnapshot(data)
+    const vault = data.vault || data.status?.vault || {}
+    showToast(vault.ok ? '笔记库已恢复' : '还是不行：' + (vault.code || '未知原因'), !vault.ok)
+  } catch (error) {
+    showToast('检测失败：' + (error?.message || error), true)
+  } finally {
+    button.disabled = false
+    button.textContent = label || '重新检测'
+  }
+})
+$('vaultClose').addEventListener('click', () => {
+  $('vaultBanner').hidden = true
+  const code = String(state.snapshot?.status?.vault?.code || '')
+  if (code) {
+    try { sessionStorage.setItem('seen.vaultDismissed', code) } catch { /* 忽略 */ }
   }
 })
 $('historySearch').addEventListener('input', () => {

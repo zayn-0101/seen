@@ -161,3 +161,16 @@
 - [x] 顺手修掉过期表述：`rememberVideo` 改用笔记的四层标签写入记忆库（不再拼「视频课程」）、记忆库内容标题前缀改为【视频笔记】、contracts 的抖音依赖改 `ggml-<model>.bin`、core/README 模块表补 tags/concept/paths/vault-search、空状态文案与 paths/review 注释去掉「课程」「每周回顾」的旧说法
 - [x] 测试 168 项全绿，`npm run check` 通过
 
+## 2026-11-15 笔记库权限健壮性（0.3.2）
+
+背景：0.3.1 换包装后菜单栏 app 拉起的服务在 4780 端口 listen 但不 accept，sample 显示主线程 1553/1553 个采样卡在 libsystem_kernel __open（uv_run → uv_fs_open），根因是 vault 在「文稿」文件夹、TCC 未授权时同步 open 永久挂起，把整个事件循环堵死。
+
+- [x] 权限探测放在子进程：probeVaultAccess 用 process.execPath 跑探针脚本做 readdirSync，主进程只读结果，返回 ok / missing / denied / timeout；子进程 2.5 秒不返回就 SIGKILL
+- [x] 熔断守卫：未授权时所有 vault 读写立即抛 VaultBlockedError，保存流程 emit vault-blocked 并返回「笔记没有写入」，不再挂死、也不记入 state.failures
+- [x] 全部 vault IO 异步化：obsidian.js 改 node:fs/promises，每个写操作过 runVaultTask（守卫 → 串行队列 → 10 秒超时熔断）；vault-search.js 同步改 async
+- [x] 面板提示条 + 一键恢复：顶部红条说明原因和授权路径，点「重新检测」走 POST /api/vault/probe，授权后无需重启；SSE 的 vault / vault-blocked 事件同步更新
+- [x] 缺权限时不阻塞其他功能：/api/search 返回 { results: [], blocked: true, hint }，索引与周回顾跳过，/api/status 与 /api/check 照常返回（实测 missing vault 下 status 立即 200、check 11.5 秒完成）
+- [x] 队列内不得再调 runVaultTask（会死锁），内部实现全部用裸 fs 版本；测试覆盖守卫状态机、超时熔断、串行队列
+- [x] 真实链路 E2E（临时 vault）：B 站 129 秒生成笔记，总览/视频索引/概念索引/标签索引四篇索引与学科手册全部写成功，标签三层结构正常
+- [x] 测试 174 项全绿，npm run check 通过
+

@@ -60,6 +60,7 @@ seen/
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。
 - 不写死绝对路径：可执行文件按「环境变量 → PATH → 常见安装位置」探测；文档和配置里的路径用 `~` 或相对仓库根。
 - 不覆盖用户手写内容：学习手册/总览只更新 `<!-- AUTO:START -->` 与 `<!-- AUTO:END -->` 之间。
+- vault 读写全部走 `core/lib/obsidian.js` 的异步导出（内部依次过权限守卫、串行队列、10 秒超时熔断）；不要在别处对 vault 直接用 `node:fs` 同步 API——TCC 未授权时同步 `open` 会永久挂起，把整个事件循环（含 HTTP 服务）堵死。
 
 ## 验证命令
 
@@ -92,6 +93,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 发版步骤：改 `package.json` 的 version → `./scripts/make-release.sh` 出 `dist/Seen-v<版本>.dmg` → 打 tag `v<版本>` 并推送。安装包内嵌服务代码，所以用户升级必须重装 dmg；仓库代码改了不重新打包，菜单栏 app 里跑的还是旧代码。
 - 分发形态：`menubar/build.sh --bundle` 编译通用二进制（arm64 + x86_64，lipo 合并）并把两份 Node 运行时与服务代码塞进 app（约 233MB），`scripts/make-release.sh` 打成 dmg（约 85MB）；启动时按 CPU 架构选 `runtime/node-arm64` 或 `node-x64`，开发版回退系统 node。可用 `--arch=arm64|x64` 单独出包。未做开发者签名，首次打开需右键或去 quarantine。
 - 上游参考：`linner1224/dsh-video-coursemap` 2.0.0（MIT）；保留其 B 站抓取思路，已独立演进为 macOS / Obsidian 方向。
+- 笔记库权限（macOS TCC）：服务启动时用子进程探针（`core/lib/vault-access.js` 的 `probeVaultAccess`）判断 `ok / missing / denied / timeout`，结果进 `status.vault`；未授权时所有 vault 读写立即抛 `VaultBlockedError`（不再挂死），面板顶部红条提示并带「重新检测」（`POST /api/vault/probe`，不用重启），`/api/search` 返回 `blocked:true`，索引与周回顾跳过，失败不记入 state.failures。obsidian.js 的每个写操作都过 `runVaultTask`（守卫 → 串行队列 → 10 秒超时熔断）。重装 dmg 会改变 adhoc 签名、旧授权失效，需要用户在「系统设置 → 隐私与安全性 → 文件与文件夹」重新给 Seen 打开「文稿文件夹」。
 - macOS 前台窗口读取依赖 AppleScript，需要「系统设置 → 隐私与安全性 → 自动化」授权；macOS 27 已移除独立的「辅助功能」分类，诊断要按实际调用能力判断，不能查 UI elements enabled 标志。
 - 抖音精选依赖无头 Chrome（解析 SSR `RENDER_DATA`）、ffmpeg、whisper-cli 和本地模型；不保存抖音 Cookie；只取评论/弹幕总数，不抓正文。
 - YouTube 走本机 yt-dlp：`-J` 取元数据，人工字幕优先、自动字幕其次，都没有则下载音频本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，不用 YouTube Data API。

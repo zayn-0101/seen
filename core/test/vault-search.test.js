@@ -17,35 +17,35 @@ function makeVault() {
   return vault
 }
 
-test('searchVault matches titles first and skips backups', () => {
+test('searchVault matches titles first and skips backups', async () => {
   const vault = makeVault()
-  const hits = searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '责任前置' })
+  const hits = await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '责任前置' })
   assert.equal(hits.length, 1)
   assert.equal(hits[0].title, '责任前置')
   assert.equal(hits[0].relPath, '写作/责任前置.md')
   assert.equal(hits[0].score, 3)
 })
 
-test('searchVault matches body text with snippet', () => {
+test('searchVault matches body text with snippet', async () => {
   const vault = makeVault()
-  const hits = searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度' })
+  const hits = await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度' })
   assert.equal(hits.length, 1)
   assert.equal(hits[0].title, '梯度下降')
   assert.ok(hits[0].score >= 3)
-  const bodyHits = searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '损失函数' })
+  const bodyHits = await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '损失函数' })
   assert.equal(bodyHits.length, 1)
   assert.ok(bodyHits[0].snippet.includes('损失函数'))
 })
 
-test('searchVault returns empty for blank query or missing vault', () => {
+test('searchVault returns empty for blank query or missing vault', async () => {
   const vault = makeVault()
-  assert.deepEqual(searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '   ' }), [])
-  assert.deepEqual(searchVault({ vaultPath: '/tmp/definitely-not-here', noteRoot: 'x', query: 'a' }), [])
+  assert.deepEqual(await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '   ' }), [])
+  assert.deepEqual(await searchVault({ vaultPath: '/tmp/definitely-not-here', noteRoot: 'x', query: 'a' }), [])
 })
 
-test('searchVault supports multi-term queries', () => {
+test('searchVault supports multi-term queries', async () => {
   const vault = makeVault()
-  const hits = searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度 损失' })
+  const hits = await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度 损失' })
   assert.equal(hits.length, 1)
   assert.ok(hits[0].score >= 4)
 })

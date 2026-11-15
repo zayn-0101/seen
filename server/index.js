@@ -16,7 +16,8 @@ import { apply } from '../core/lib/index.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { writeWeeklyReview, writeIndexNote, writeConceptIndexNote, writeTagIndexNote } from '../core/lib/obsidian.js'
+import { ensureVaultDirs, writeWeeklyReview, writeIndexNote, writeConceptIndexNote, writeTagIndexNote } from '../core/lib/obsidian.js'
+import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
 import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from '../core/lib/index-note.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
 import { buildTagIndex } from '../core/lib/tags.js'
@@ -111,6 +112,19 @@ const ctx = {
   llm,
 }
 
+// 启动先探一次 vault 权限：没有「文稿文件夹」授权时快速降级，绝不让同步 I/O 挂起整个服务。
+const vaultProbe = await probeVaultAccess(baseConfig.vaultPath)
+baseConfig.vaultAccess = vaultProbe
+if (vaultProbe.ok) {
+  try {
+    await ensureVaultDirs({ vaultPath: baseConfig.vaultPath, noteRoot: baseConfig.noteRoot, stateDir: baseConfig.stateDir })
+  } catch (error) {
+    log('准备笔记目录失败：' + String(error?.message || error))
+  }
+} else {
+  log('笔记库不可访问（' + vaultProbe.code + '）：' + VAULT_HINT)
+}
+
 const engine = apply(ctx, baseConfig)
 if (!engine || typeof engine.getStatus !== 'function') {
   console.error('核心入口没有返回控制器，请检查 core 版本。')
@@ -189,6 +203,10 @@ engine.onEvent((event) => {
   if (event.type === 'error') {
     log('处理失败：' + event.data?.message)
     notifyFailed(event.data)
+  }
+  if (event.type === 'vault-blocked') {
+    log('笔记没有写入：' + VAULT_HINT)
+    notifyFailed({ message: '没有「文稿文件夹」权限，笔记未写入' })
   }
 })
 
@@ -311,9 +329,12 @@ const server = createServer(async (req, res) => {
     if (pathname === '/api/search' && req.method === 'GET') {
       const status = await engine.getStatus()
       if (!status.vaultPath) return json(res, 400, { error: '没有找到 Obsidian vault' })
+      if (status.vault && status.vault.ok === false) {
+        return json(res, 200, { query: url.searchParams.get('q') || '', results: [], blocked: true, hint: VAULT_HINT })
+      }
       const query = url.searchParams.get('q') || ''
       const limit = Number(url.searchParams.get('limit')) || 20
-      const results = searchVault({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, query, limit })
+      const results = await searchVault({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, query, limit })
       return json(res, 200, { query, results })
     }
 
@@ -369,6 +390,14 @@ const server = createServer(async (req, res) => {
       const result = await engine.retryFailure(key)
       const data = await snapshot()
       return json(res, result.ok ? 200 : 500, { ...data, result })
+    }
+
+    // 用户在面板点「重试」时重新探测 vault 权限（授权后无需重启服务）。
+    if (pathname === '/api/vault/probe' && req.method === 'POST') {
+      const status = await engine.reprobeVault()
+      log('重新探测笔记库权限：' + (status.ok ? '正常' : status.code))
+      const data = await snapshot()
+      return json(res, 200, { ...data, vault: status })
     }
 
     if (pathname === '/api/check' && req.method === 'POST') {
@@ -559,14 +588,15 @@ async function rebuildIndexNote() {
   try {
     const status = await engine.getStatus()
     if (!status.vaultPath) return
+    if (status.vault && status.vault.ok === false) return
     const history = engine.getHistory()
-    writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown: buildIndexMarkdown(history, { noteRoot: status.noteRoot }) })
-    writeConceptIndexNote({
+    await writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown: buildIndexMarkdown(history, { noteRoot: status.noteRoot }) })
+    await writeConceptIndexNote({
       vaultPath: status.vaultPath,
       noteRoot: status.noteRoot,
       markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot: status.noteRoot }),
     })
-    writeTagIndexNote({
+    await writeTagIndexNote({
       vaultPath: status.vaultPath,
       noteRoot: status.noteRoot,
       markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot: status.noteRoot }),
@@ -581,10 +611,11 @@ async function ensureLastWeekReview() {
   try {
     const status = await engine.getStatus()
     if (!status.vaultPath) return
+    if (status.vault && status.vault.ok === false) return
     const lastWeek = new Date(Date.now() - 7 * 86400000)
     const review = buildWeeklyReview({ videos: engine.getHistory(), now: lastWeek })
     if (review.count === 0) return
-    const written = writeWeeklyReview({
+    const written = await writeWeeklyReview({
       vaultPath: status.vaultPath,
       noteRoot: status.noteRoot,
       label: review.label,

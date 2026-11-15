@@ -99,6 +99,7 @@
 - 学科学习手册：AUTO 区（学科总览 mindmap + 视频链接列表）+ 用户「我的补充」区。
 - 总览：AUTO 区（学科 mindmap + 学科列表）；`flat` 布局下学科手册与笔记同级，`structured` 布局下分到 `笔记/` 与 `手册/`。
 - 写入采用 tmp + rename 原子替换；学习手册/总览只替换 `<!-- AUTO:START -->` 与 `<!-- AUTO:END -->` 之间。
+- 所有 vault 读写都是异步的，并经过 `runVaultTask`：权限守卫 → 串行队列 → 10 秒超时熔断。macOS 的 TCC 没授权「文稿文件夹」时，同步 `open` 会让内核一直挂着，整个事件循环（含 HTTP）跟着卡死——所以权限探测放在子进程里做（`probeVaultAccess`），主进程只读结果。
 
 ## 模型服务
 
@@ -129,7 +130,8 @@
 | concept.js | 概念归一、跨笔记关联打分、概念索引 |
 | paths.js | 两种目录布局、笔记与手册相对路径、状态路径重映射 |
 | render.js | 三类 Markdown 渲染、Mermaid 转义 |
-| obsidian.js | vault 路径、原子写、AUTO 区、冲突处理 |
+| vault-access.js | 笔记库权限探针（子进程）、熔断守卫、串行队列、超时保护 |
+| obsidian.js | vault 路径、原子写、AUTO 区、冲突处理；全部 async 并经 runVaultTask 过守卫 |
 | index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |
 | vault-search.js | 笔记库全文搜索（文件名加权 + 正文命中） |
 | mnemon.js | CLI 探测与 remember 调用 |

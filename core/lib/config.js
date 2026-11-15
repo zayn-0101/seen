@@ -43,6 +43,8 @@ export const DEFAULTS = Object.freeze({
   mnemonStore: 'default',
   openInObsidian: false,
   browserNames: null,
+  // 启动时探测到的笔记库权限状态（由服务端填入，不是用户配置）
+  vaultAccess: null,
 })
 
 const NOTE_LAYOUTS = ['flat', 'structured']
@@ -60,8 +62,12 @@ function requireNonEmptyString(value, key) {
   }
 }
 
-/** 读取 obsidian.json 并挑选可用的 vault 目录 */
-export function detectObsidianVault(home = homedir()) {
+/**
+ * 读取 obsidian.json 并挑选可用的 vault 目录。
+ * verify=false 时只取路径、不碰文件系统（vault 可能触发 TCC 权限询问并挂起）。
+ */
+export function detectObsidianVault(home = homedir(), options = {}) {
+  const verify = !options || options.verify !== false
   try {
     const homeDir = typeof home === 'string' && home ? home : homedir()
     const configPath = join(homeDir, 'Library', 'Application Support', 'obsidian', 'obsidian.json')
@@ -90,6 +96,7 @@ export function detectObsidianVault(home = homedir()) {
       const vaultPath = vault.path.trim()
       if (!vaultPath || checked.has(vaultPath)) continue
       checked.add(vaultPath)
+      if (!verify) return vaultPath
       try {
         if (existsSync(vaultPath) && statSync(vaultPath).isDirectory()) return vaultPath
       } catch {
@@ -224,7 +231,7 @@ export function resolveConfig(raw = {}) {
     config.browserNames = null
   }
 
-  if (!config.vaultPath) config.vaultPath = detectObsidianVault()
+  if (!config.vaultPath) config.vaultPath = detectObsidianVault(undefined, { verify: false })
   if (!config.stateDir) config.stateDir = defaultStateDir()
 
   return config

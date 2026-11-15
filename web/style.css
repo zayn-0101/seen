@@ -405,6 +405,14 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 .update-link { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .update-close { border: 0; background: transparent; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
 .update-close:hover { color: var(--ink); }
+.vault-banner { display: flex; align-items: center; gap: 12px; margin: 0; padding: 10px 18px; background: linear-gradient(90deg, rgba(214,71,71,0.14), rgba(214,71,71,0.03)); border-bottom: 1px solid rgba(214,71,71,0.3); color: var(--ink); font-size: 13px; }
+.vault-banner[hidden] { display: none; }
+.vault-text { flex: 1; }
+.vault-retry { flex: 0 0 auto; padding: 5px 12px; border: 1px solid rgba(214,71,71,0.4); border-radius: 7px; background: transparent; color: var(--ink); font-size: 12px; }
+.vault-retry:hover { background: rgba(214,71,71,0.1); }
+.vault-retry:disabled { opacity: .6; cursor: default; }
+.vault-close { border: 0; background: transparent; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.vault-close:hover { color: var(--ink); }
 
 .vault-search { margin: 8px 0 4px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface-soft, rgba(127, 127, 127, 0.04)); }
 .vault-search-head { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.04em; color: var(--muted); }

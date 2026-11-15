@@ -7,23 +7,19 @@
  *  - 学科学习手册与总览只更新 <!-- AUTO:START --> 与 <!-- AUTO:END --> 之间的内容
  *  - 所有写入使用 tmp + rename 原子替换
  *  - obsidian-cli 仅用于可选的 openInObsidian，失败只返回 error，绝不抛错
+ *
+ * vault 可能在 macOS 的「文稿文件夹」（TCC 保护）里：没有授权时同步 fs 会永久挂起。
+ * 因此所有 vault I/O 一律异步，并交给 vault-access 的守卫、超时与串行队列。
  */
 
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
+import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { spawn, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
 import { REVIEW_DIR, manualNoteRelPath, normalizeNoteLayout, videoNoteRelPath } from './paths.js'
+import { VAULT_IO_TIMEOUT_MS, createVaultQueue, withVaultTimeout } from './vault-access.js'
 import {
   autoBlock,
   mergeManualSection,
@@ -37,8 +33,76 @@ import {
 const DEFAULT_NOTE_ROOT = '视频笔记'
 const DEFAULT_SUBJECT = '未分类'
 const OVERVIEW_FILENAME = '总览.md'
-const MANUAL_SUFFIX = ' 学习手册.md'
 const OBSIDIAN_CLI_CANDIDATES = ['/opt/homebrew/bin/obsidian-cli', '/usr/local/bin/obsidian-cli']
+
+/** 当前生效的 vault 守卫（由引擎注入）；没有守卫时按可访问处理。 */
+let activeGuard = null
+/** vault 操作超时。 */
+let vaultTimeoutMs = VAULT_IO_TIMEOUT_MS
+/** 所有 vault 操作串行执行，避免权限挂起时堆满请求。 */
+const vaultQueue = createVaultQueue()
+
+/** 把一次 vault 操作交给守卫、超时与串行队列（其它模块复用）。 */
+export function runVaultTask(task) {
+  return runVault(task)
+}
+
+/** 注入 vault 守卫（引擎启动时调用）。 */
+export function setVaultGuard(guard) {
+  activeGuard = guard && typeof guard === 'object' ? guard : null
+  return activeGuard
+}
+
+/** 读取当前 vault 守卫。 */
+export function getVaultGuard() {
+  return activeGuard
+}
+
+/** 调整 vault 操作超时（毫秒）。 */
+export function setVaultTimeout(ms) {
+  const value = Number(ms)
+  if (Number.isFinite(value) && value > 0) vaultTimeoutMs = value
+  return vaultTimeoutMs
+}
+
+function isPermissionError(error) {
+  const code = String(error?.code || '')
+  return code === 'EACCES' || code === 'EPERM'
+}
+
+/**
+ * 在守卫保护下执行一次 vault 操作：blocked 直接失败、超时熔断、成功后解除熔断。
+ * 注意：内部不得再调用其它走 runVault 的导出函数，否则会排队死锁。
+ */
+async function runVault(task) {
+  const guard = activeGuard
+  if (guard) guard.ensure()
+  return vaultQueue.run(async () => {
+    try {
+      const result = await withVaultTimeout(Promise.resolve().then(task), vaultTimeoutMs, guard)
+      if (guard) guard.noteOk()
+      return result
+    } catch (error) {
+      if (guard) {
+        if (error && error.vaultBlocked) {
+          guard.noteBlocked(String(error.code || 'timeout'), String(error.detail || ''))
+        } else if (isPermissionError(error)) {
+          guard.noteBlocked('denied', String(error?.message || error))
+        }
+      }
+      throw error
+    }
+  })
+}
+
+async function pathExists(file) {
+  try {
+    await stat(file)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function expandHome(value) {
   const text = String(value ?? '').trim()
@@ -70,16 +134,16 @@ export function safeFilename(name, max = 80) {
 }
 
 /** 原子写：同目录临时文件写入后 rename 覆盖。 */
-function atomicWrite(file, content) {
+async function atomicWrite(file, content) {
   const dir = dirname(file)
-  mkdirSync(dir, { recursive: true })
+  await mkdir(dir, { recursive: true })
   const tmp = `${file}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
   try {
-    writeFileSync(tmp, String(content ?? ''), 'utf8')
-    renameSync(tmp, file)
+    await writeFile(tmp, String(content ?? ''), 'utf8')
+    await rename(tmp, file)
   } catch (error) {
     try {
-      unlinkSync(tmp)
+      await unlink(tmp)
     } catch {
       // 清理失败忽略，保留原始错误
     }
@@ -87,29 +151,32 @@ function atomicWrite(file, content) {
   }
 }
 
-/** 解析配置中的 vault 路径；显式配置优先，其次自动检测，最后尝试默认目录。 */
+/**
+ * 解析配置中的 vault 路径：显式配置 → obsidian.json 检测 → 默认目录。
+ * 这里不做任何文件系统校验（检测目录可能触发 TCC 弹窗并挂起），是否可读由探针负责。
+ */
 export function resolveVaultPath(config = {}) {
   const configured = config && typeof config === 'object' ? config.vaultPath : null
   if (typeof configured === 'string' && configured.trim() !== '') {
     return expandHome(configured)
   }
-  const detected = detectObsidianVault()
+  const detected = detectObsidianVault(undefined, { verify: false })
   if (detected) return detected
-  const fallback = join(homedir(), 'Documents', 'Obsidian Vault')
-  if (existsSync(fallback)) return fallback
-  throw new Error('未找到 Obsidian vault（可在配置中设置 vaultPath）')
+  return join(homedir(), 'Documents', 'Obsidian Vault')
 }
 
-/** 确保 vault、笔记根目录、状态目录存在。 */
-export function ensureVaultDirs({ vaultPath, noteRoot, stateDir } = {}) {
+/** 确保 vault、笔记根目录、状态目录存在。stateDir 不受 vault 守卫影响。 */
+export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir } = {}) {
   if (!vaultPath) throw new Error('ensureVaultDirs: 缺少 vaultPath')
-  mkdirSync(String(vaultPath), { recursive: true })
   const root = normalizeNoteRoot(noteRoot)
-  mkdirSync(join(String(vaultPath), ...root.split('/')), { recursive: true })
-  if (stateDir) mkdirSync(String(stateDir), { recursive: true })
+  await runVault(async () => {
+    await mkdir(String(vaultPath), { recursive: true })
+    await mkdir(join(String(vaultPath), ...root.split('/')), { recursive: true })
+  })
+  if (stateDir) await mkdir(String(stateDir), { recursive: true })
 }
 
-/** 视频笔记路径：扁平 <noteRoot>/<学科>/<标题>.md；结构化 <noteRoot>/视频笔记/<学科>/<标题>.md。 */
+/** 视频笔记路径：结构化 <noteRoot>/笔记/<学科>/<标题>.md；扁平 <noteRoot>/<学科>/<标题>.md。 */
 export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const subjectName = safeFilename(subject || DEFAULT_SUBJECT, 80)
@@ -118,10 +185,14 @@ export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layou
   return { absPath: absoluteFromRel(vaultPath, relPath), relPath }
 }
 
-/** 读取 frontmatter 中的 bvid（无 frontmatter / 无 bvid 返回 null）。 */
-export function readFrontmatterBvid(filePath) {
+/** 读取 frontmatter 中的 bvid（无 frontmatter / 无 bvid / 读不到返回 null）。 */
+export async function readFrontmatterBvid(filePath) {
+  return runVault(() => readBvidFile(filePath))
+}
+
+async function readBvidFile(filePath) {
   try {
-    const text = readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')
+    const text = (await readFile(filePath, 'utf8')).replace(/^\uFEFF/, '')
     const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
     if (!frontmatter) return null
     const line = frontmatter[1].match(/^\s*bvid\s*:\s*(.+?)\s*$/m)
@@ -150,14 +221,15 @@ function siblingNotePath(base, suffix) {
   return { absPath, relPath: relDir + name }
 }
 
-function backupFile(file) {
-  let backup = `${file}.bak-${Date.now()}`
+async function backupFile(file) {
+  const stamp = Date.now()
+  let backup = `${file}.bak-${stamp}`
   let index = 1
-  while (existsSync(backup)) {
-    backup = `${file}.bak-${Date.now()}-${index}`
+  while (await pathExists(backup)) {
+    backup = `${file}.bak-${stamp}-${index}`
     index += 1
   }
-  copyFileSync(file, backup)
+  await copyFile(file, backup)
   return backup
 }
 
@@ -170,55 +242,58 @@ function backupFile(file) {
 export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout } = {}) {
   const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout })
   const targetBvid = String(bvid ?? '').trim()
-  let target = base
 
-  if (existsSync(target.absPath)) {
-    const existingBvid = readFrontmatterBvid(target.absPath)
-    const sameBvid = Boolean(
-      targetBvid &&
-      existingBvid &&
-      existingBvid.toLowerCase() === targetBvid.toLowerCase()
-    )
+  return runVault(async () => {
+    let target = base
 
-    if (!force && sameBvid) {
-      return { relPath: target.relPath, absPath: target.absPath, skipped: true }
-    }
+    if (await pathExists(target.absPath)) {
+      const existingBvid = await readBvidFile(target.absPath)
+      const sameBvid = Boolean(
+        targetBvid &&
+        existingBvid &&
+        existingBvid.toLowerCase() === targetBvid.toLowerCase()
+      )
 
-    if (!force) {
-      const tag = targetBvid || '重名'
-      let index = 1
-      let found = null
-      while (index <= 100) {
-        const suffix = index === 1 ? ` (${tag})` : ` (${tag}-${index})`
-        const candidate = siblingNotePath(base, suffix)
-        if (!existsSync(candidate.absPath)) {
-          found = candidate
-          break
-        }
-        const candidateBvid = readFrontmatterBvid(candidate.absPath)
-        if (targetBvid && candidateBvid && candidateBvid.toLowerCase() === targetBvid.toLowerCase()) {
-          return { relPath: candidate.relPath, absPath: candidate.absPath, skipped: true }
-        }
-        index += 1
+      if (!force && sameBvid) {
+        return { relPath: target.relPath, absPath: target.absPath, skipped: true }
       }
-      target = found ?? siblingNotePath(base, ` (${tag}-${Date.now()})`)
-    } else {
-      backupFile(target.absPath)
-    }
-  }
 
-  // force 重写时把旧笔记里的手写内容搬回来，避免整篇覆盖丢掉
-  let finalContent = content
-  try {
-    if (existsSync(target.absPath)) {
-      finalContent = mergeManualSection(readFileSync(target.absPath, 'utf8'), content)
+      if (!force) {
+        const tag = targetBvid || '重名'
+        let index = 1
+        let found = null
+        while (index <= 100) {
+          const suffix = index === 1 ? ` (${tag})` : ` (${tag}-${index})`
+          const candidate = siblingNotePath(base, suffix)
+          if (!(await pathExists(candidate.absPath))) {
+            found = candidate
+            break
+          }
+          const candidateBvid = await readBvidFile(candidate.absPath)
+          if (targetBvid && candidateBvid && candidateBvid.toLowerCase() === targetBvid.toLowerCase()) {
+            return { relPath: candidate.relPath, absPath: candidate.absPath, skipped: true }
+          }
+          index += 1
+        }
+        target = found ?? siblingNotePath(base, ` (${tag}-${Date.now()})`)
+      } else {
+        await backupFile(target.absPath)
+      }
     }
-  } catch {
-    finalContent = content
-  }
 
-  atomicWrite(target.absPath, finalContent)
-  return { relPath: target.relPath, absPath: target.absPath, skipped: false }
+    // force 重写时把旧笔记里的手写内容搬回来，避免整篇覆盖丢掉
+    let finalContent = content
+    try {
+      if (await pathExists(target.absPath)) {
+        finalContent = mergeManualSection(await readFile(target.absPath, 'utf8'), content)
+      }
+    } catch {
+      finalContent = content
+    }
+
+    await atomicWrite(target.absPath, finalContent)
+    return { relPath: target.relPath, absPath: target.absPath, skipped: false }
+  })
 }
 
 function manualNotePath({ vaultPath, noteRoot, subject, layout }) {
@@ -231,14 +306,16 @@ function manualNotePath({ vaultPath, noteRoot, subject, layout }) {
 /** 更新/创建学科学习手册：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
 export function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout } = {}) {
   const target = manualNotePath({ vaultPath, noteRoot, subject, layout })
-  if (!existsSync(target.absPath)) {
-    atomicWrite(target.absPath, renderSubjectManual({ subject, videos, noteRoot, layout, updatedAt: Date.now() }))
-  } else {
-    const current = readFileSync(target.absPath, 'utf8')
-    const next = upsertAutoBlock(current, autoBlock(subjectManualAutoBody({ subject, videos })))
-    atomicWrite(target.absPath, next)
-  }
-  return { relPath: target.relPath, absPath: target.absPath }
+  return runVault(async () => {
+    if (!(await pathExists(target.absPath))) {
+      await atomicWrite(target.absPath, renderSubjectManual({ subject, videos, noteRoot, layout, updatedAt: Date.now() }))
+    } else {
+      const current = await readFile(target.absPath, 'utf8')
+      const next = upsertAutoBlock(current, autoBlock(subjectManualAutoBody({ subject, videos })))
+      await atomicWrite(target.absPath, next)
+    }
+    return { relPath: target.relPath, absPath: target.absPath }
+  })
 }
 
 /** 更新/创建总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
@@ -246,14 +323,16 @@ export function updateOverview({ vaultPath, noteRoot, subjects, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, OVERVIEW_FILENAME))
   const target = { absPath: absoluteFromRel(vaultPath, relPath), relPath }
-  if (!existsSync(target.absPath)) {
-    atomicWrite(target.absPath, renderOverview({ subjects, noteRoot: root, layout, updatedAt: Date.now() }))
-  } else {
-    const current = readFileSync(target.absPath, 'utf8')
-    const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, noteRoot: root, layout })))
-    atomicWrite(target.absPath, next)
-  }
-  return target
+  return runVault(async () => {
+    if (!(await pathExists(target.absPath))) {
+      await atomicWrite(target.absPath, renderOverview({ subjects, noteRoot: root, layout, updatedAt: Date.now() }))
+    } else {
+      const current = await readFile(target.absPath, 'utf8')
+      const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, noteRoot: root, layout })))
+      await atomicWrite(target.absPath, next)
+    }
+    return target
+  })
 }
 
 function findObsidianCli() {
@@ -280,8 +359,38 @@ function findObsidianCli() {
   return null
 }
 
+/** 执行外部命令并带超时；超时直接 KILL。 */
+function runCommand(bin, args, timeoutMs) {
+  return new Promise((resolve) => {
+    let settled = false
+    let child = null
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      try { child?.kill('SIGKILL') } catch { /* 已退出 */ }
+      finish({ error: new Error('命令超时（' + timeoutMs + 'ms）') })
+    }, timeoutMs)
+    try {
+      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    } catch (error) {
+      finish({ error })
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk) })
+    child.stderr?.on('data', (chunk) => { stderr += String(chunk) })
+    child.on('error', (error) => finish({ error }))
+    child.on('exit', (code) => finish({ code, stdout, stderr }))
+  })
+}
+
 /** 可选：在 Obsidian 中打开笔记。失败只返回 { ok:false, error }，绝不抛错。 */
-export function openInObsidian({ vaultPath, notePath } = {}) {
+export async function openInObsidian({ vaultPath, notePath } = {}) {
   try {
     if (process.platform !== 'darwin') return { ok: false, error: '仅支持 macOS 的 obsidian-cli' }
     const bin = findObsidianCli()
@@ -292,15 +401,11 @@ export function openInObsidian({ vaultPath, notePath } = {}) {
       .replace(/^\.?\/+/, '')
       .replace(/\.md$/i, '')
     if (!note) return { ok: false, error: '缺少 notePath' }
-    const result = spawnSync(bin, ['open', '--vault', vaultName, note], {
-      encoding: 'utf8',
-      timeout: 10000,
-      windowsHide: true,
-    })
+    const result = await runCommand(bin, ['open', '--vault', vaultName, note], 10000)
     if (result.error) return { ok: false, error: String(result.error.message || result.error) }
-    if (result.status !== 0) {
+    if (result.code !== 0) {
       const detail = String(result.stderr || result.stdout || '').trim()
-      return { ok: false, error: detail || `obsidian-cli exited with code ${result.status}` }
+      return { ok: false, error: detail || `obsidian-cli exited with code ${result.code}` }
     }
     return { ok: true }
   } catch (error) {
@@ -315,9 +420,11 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, REVIEW_DIR, label + '.md'))
   const absPath = absoluteFromRel(vaultPath, relPath)
-  if (existsSync(absPath)) return { ok: true, skipped: true, relPath, absPath }
-  atomicWrite(absPath, markdown)
-  return { ok: true, skipped: false, relPath, absPath }
+  return runVault(async () => {
+    if (await pathExists(absPath)) return { ok: true, skipped: true, relPath, absPath }
+    await atomicWrite(absPath, markdown)
+    return { ok: true, skipped: false, relPath, absPath }
+  })
 }
 
 /** 写入 AUTO 区块型索引笔记：已有文件只更新 AUTO 区，保留用户内容。 */
@@ -327,28 +434,30 @@ function writeAutoNote({ vaultPath, noteRoot, filename, title, type, markdown } 
   const relPath = toPosix(join(root, filename))
   const absPath = absoluteFromRel(vaultPath, relPath)
   const body = autoBlock(String(markdown || ''))
-  if (existsSync(absPath)) {
-    const current = readFileSync(absPath, 'utf8')
-    const next = upsertAutoBlock(current, body)
-    if (next !== current) atomicWrite(absPath, next)
-    return { ok: true, relPath, absPath, created: false }
-  }
-  const content = [
-    '---',
-    'title: "' + title + '"',
-    'type: ' + type,
-    '---',
-    '',
-    '# ' + title,
-    '',
-    body,
-    '',
-    '## 我的补充',
-    '',
-    '',
-  ].join('\n')
-  atomicWrite(absPath, content)
-  return { ok: true, relPath, absPath, created: true }
+  return runVault(async () => {
+    if (await pathExists(absPath)) {
+      const current = await readFile(absPath, 'utf8')
+      const next = upsertAutoBlock(current, body)
+      if (next !== current) await atomicWrite(absPath, next)
+      return { ok: true, relPath, absPath, created: false }
+    }
+    const content = [
+      '---',
+      'title: "' + title + '"',
+      'type: ' + type,
+      '---',
+      '',
+      '# ' + title,
+      '',
+      body,
+      '',
+      '## 我的补充',
+      '',
+      '',
+    ].join('\n')
+    await atomicWrite(absPath, content)
+    return { ok: true, relPath, absPath, created: true }
+  })
 }
 
 /** 写入知识索引；已有文件只更新 AUTO 区块，保留用户内容。 */
@@ -365,5 +474,3 @@ export function writeConceptIndexNote({ vaultPath, noteRoot, markdown } = {}) {
 export function writeTagIndexNote({ vaultPath, noteRoot, markdown } = {}) {
   return writeAutoNote({ vaultPath, noteRoot, filename: '标签索引.md', title: '标签索引', type: 'tag-index', markdown })
 }
-
-

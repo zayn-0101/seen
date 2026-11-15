@@ -33,7 +33,8 @@ import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
 import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
 import { normalizeNoteLayout } from './paths.js'
-import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, toPosix } from './obsidian.js'
+import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
 export const name = 'seen-core'
@@ -100,8 +101,17 @@ export function apply(ctx, rawConfig = {}) {
     vaultPath = join(homedir(), 'Documents', 'Obsidian Vault')
   }
 
+  // vault 访问守卫：服务启动时已经探过权限，这里沿用结果；没有结果时先按可用处理。
+  const vaultGuard = createVaultGuard({ initial: config.vaultAccess || null })
+  setVaultGuard(vaultGuard)
+
   ensureDir(config.stateDir)
-  ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+  if (!vaultGuard.isBlocked()) {
+    ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir }).catch((error) => {
+      if (error && error.vaultBlocked) return
+      console.error('[seen-core] 准备笔记目录失败：', error)
+    })
+  }
 
   const logger = makeLogger(config.stateDir)
   const statePath = join(config.stateDir, 'state.json')
@@ -141,6 +151,8 @@ export function apply(ctx, rawConfig = {}) {
     eventListeners.add(listener)
     return () => eventListeners.delete(listener)
   }
+
+  vaultGuard.onChange((status) => emit('vault', status))
 
   function save() {
     try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
@@ -368,7 +380,7 @@ export function apply(ctx, rawConfig = {}) {
         layout: config.noteLayout,
       })
 
-      const writeResult = writeVideoNote({
+      const writeResult = await writeVideoNote({
         vaultPath,
         noteRoot: config.noteRoot,
         layout: config.noteLayout,
@@ -406,10 +418,10 @@ export function apply(ctx, rawConfig = {}) {
       else videos.push(videoRecord)
       state.subjects[subject].updatedAt = createdAt
 
-      updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
-      updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), layout: config.noteLayout })
+      await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
+      await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), layout: config.noteLayout })
       if (config.openInObsidian) {
-        const opened = openInObsidian({ vaultPath, notePath: writeResult.relPath })
+        const opened = await openInObsidian({ vaultPath, notePath: writeResult.relPath })
         if (!opened.ok) logger.log('obsidian.open.error msg=' + (opened.error || 'unknown'))
       }
 
@@ -474,6 +486,11 @@ export function apply(ctx, rawConfig = {}) {
       return { ok: true, message: '已生成「' + subject + '」笔记：' + writeResult.relPath, subject, notePath: writeResult.relPath }
     } catch (error) {
       const msg = String(error?.message || error)
+      if (error && error.vaultBlocked) {
+        logger.log('vault.blocked code=' + (error.code || '') + ' msg=' + msg)
+        emit('vault-blocked', { code: error.code || 'timeout', detail: error.detail || msg, hint: VAULT_HINT })
+        return { ok: false, message: '笔记没有写入：' + VAULT_HINT }
+      }
       if (activeKey || key) {
         recordFailure(state, activeKey || key, msg, {
           title: rawTitle,
@@ -553,6 +570,7 @@ export function apply(ctx, rawConfig = {}) {
       '- 轮询：' + (readOnly ? '只读（另一个实例持有锁）' : started ? '运行中' : '已停止'),
       '- 轮询间隔：' + config.pollIntervalMs + 'ms',
       '- 启用：' + config.enabled,
+      '- 笔记库权限：' + (vaultGuard.status().ok ? '正常' : vaultGuard.status().code + '（' + VAULT_HINT + '）'),
       '- Obsidian：' + outputDir,
       '- 学科数：' + subjects.length,
       ...subjects.map((s) => '  · ' + s.subject + '（' + s.videos + ' 个视频）'),
@@ -568,6 +586,7 @@ export function apply(ctx, rawConfig = {}) {
       readOnly,
       outputDir,
       vaultPath,
+      vault: vaultGuard.status(),
       noteRoot: config.noteRoot,
       lastTitle: state.lastTitle,
       lastRunAt: state.lastRunAt,
@@ -741,6 +760,7 @@ export function apply(ctx, rawConfig = {}) {
           ok: { type: 'boolean' }, enabled: { type: 'boolean' },
           polling: { type: 'boolean' }, pollIntervalMs: { type: 'integer' }, readOnly: { type: 'boolean' },
           outputDir: { type: 'string' }, vaultPath: { type: 'string' }, noteRoot: { type: 'string' },
+          vault: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, code: { type: 'string' }, detail: { type: 'string' }, hint: { type: 'string' }, blocked: { type: 'boolean' }, checkedAt: { type: 'integer' } }, required: ['ok', 'code'] },
           lastTitle: { type: 'string' }, lastRunAt: { type: 'integer' },
           lastError: { type: 'string' }, mnemonReady: { type: 'boolean' },
           subjects: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { subject: { type: 'string' }, videos: { type: 'integer' } }, required: ['subject', 'videos'] } },
@@ -833,9 +853,8 @@ export function apply(ctx, rawConfig = {}) {
         }
       }
       add('foreground', '读取浏览器窗口', fgOk, fgDetail)
-      let vaultOk = false
-      try { vaultOk = existsSync(vaultPath) && existsSync(outputDir) } catch { vaultOk = false }
-      add('vault', 'Obsidian 笔记库', vaultOk, vaultPath + ' → ' + outputDir)
+      const vaultState = vaultGuard.status()
+      add('vault', 'Obsidian 笔记库', vaultState.ok, vaultState.ok ? vaultPath + ' → ' + outputDir : vaultState.code + '：' + VAULT_HINT)
       let stateOk = false
       try { ensureDir(config.stateDir); stateOk = existsSync(config.stateDir) } catch { stateOk = false }
       add('state', '数据目录', stateOk, config.stateDir)
@@ -896,11 +915,38 @@ export function apply(ctx, rawConfig = {}) {
   logger.log('apply pollIntervalMs=' + config.pollIntervalMs + ' autoStart=' + config.autoStart + ' vault=' + vaultPath + ' noteRoot=' + config.noteRoot + ' mnemon=' + config.enableMnemon + (readOnly ? ' readonly' : ''))
   if (!readOnly && config.autoStart) console.log('[seen-core] 已启动：每 ' + config.pollIntervalMs + 'ms 轮询前台窗口，输出 ' + outputDir)
 
+  /** 当前 vault 访问状态。 */
+  function getVaultStatus() {
+    return vaultGuard.status()
+  }
+
+  /** 用一次探测结果覆盖 vault 状态（服务端探针调用）。 */
+  function setVaultAccess(result) {
+    return vaultGuard.apply(result)
+  }
+
+  /** 重新探测 vault 权限；成功则补齐目录。 */
+  async function reprobeVault() {
+    const result = await probeVaultAccess(vaultPath)
+    vaultGuard.apply(result)
+    if (result.ok) {
+      try {
+        await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+      } catch (error) {
+        if (!(error && error.vaultBlocked)) console.error('[seen-core] 重试准备笔记目录失败：', error)
+      }
+    }
+    return vaultGuard.status()
+  }
+
   const controller = {
     start,
     stop,
     setPollInterval,
     setNoteLayout,
+    getVaultStatus,
+    setVaultAccess,
+    reprobeVault,
     scan,
     retryFailure,
     getFailures,

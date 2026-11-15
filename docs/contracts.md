@@ -256,20 +256,29 @@ export function formatDate(ts: number|string|Date): string  // YYYY-MM-DD
 ## lib/obsidian.js
 
 ```js
-export function resolveVaultPath(config): string
-export function ensureVaultDirs({ vaultPath, noteRoot, stateDir }): void
+// 所有碰 vault 的导出都是 async（内部走 runVaultTask：权限守卫 → 串行队列 → 超时熔断）
+export function resolveVaultPath(config): string            // 同步；只算路径，不 stat、不抛错
 export function safeFilename(name: string, max = 80): string
-export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid }): { absPath, relPath }
-export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false }): { relPath, absPath, skipped: boolean }
-export function updateSubjectManual({ vaultPath, noteRoot, subject, videos }): { relPath, absPath }
-export function updateOverview({ vaultPath, noteRoot, subjects }): { relPath, absPath }
-export function writeIndexNote({ vaultPath, noteRoot, markdown }): { relPath, absPath }
-export function writeConceptIndexNote({ vaultPath, noteRoot, markdown }): { relPath, absPath }
-export function writeTagIndexNote({ vaultPath, noteRoot, markdown }): { relPath, absPath }
-// 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
-export function readFrontmatterBvid(filePath: string): string | null
-export function openInObsidian({ vaultPath, notePath }): { ok: boolean, error?: string }
+export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout }): { absPath, relPath }
+export function manualNotePath({ vaultPath, noteRoot, subject, layout }): { absPath, relPath }
 export function toPosix(p: string): string
+
+export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir }): Promise<void>
+export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function updateOverview({ vaultPath, noteRoot, subjects, layout }): Promise<{ relPath, absPath }>
+export async function writeIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
+export async function writeConceptIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
+export async function writeTagIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
+export async function writeWeeklyReview({ vaultPath, noteRoot, label, markdown }): Promise<{ relPath, absPath, skipped: boolean }>
+// 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
+export async function readFrontmatterBvid(filePath: string): Promise<string | null>
+export async function openInObsidian({ vaultPath, notePath }): Promise<{ ok: boolean, error?: string }>
+
+export function setVaultGuard(guard): void                  // index.js 启动时注入 createVaultGuard 的实例
+export function getVaultGuard(): VaultGuard
+export function setVaultTimeout(ms: number): void            // 默认 VAULT_IO_TIMEOUT_MS
+export async function runVaultTask(task: () => Promise<T>): Promise<T>  // 供 vault-search 等复用；内部函数不得再调它，否则死锁
 ```
 
 写入规则：
@@ -316,10 +325,38 @@ export function buildConceptIndexMarkdown(concepts: any[], { noteRoot } = {}): s
 export function buildTagIndexMarkdown(tags: any[], { noteRoot } = {}): string         // 标签索引.md，按学科/主题/类型/概念分区
 ```
 
+## lib/vault-access.js
+
+```js
+export const VAULT_HINT: string
+export const VAULT_IO_TIMEOUT_MS = 10000
+export class VaultBlockedError extends Error   // { code, detail, vaultBlocked = true }
+
+export async function probeVaultAccess(vaultPath, { timeoutMs = 2500 } = {}): Promise<{ ok, code, detail, checkedAt }>
+// code: 'ok' | 'missing' | 'denied' | 'timeout' | 'error'
+// 用子进程（process.execPath -e <探针脚本>）做 readdirSync：TCC 未授权时内核 open 会挂起，只有杀掉子进程才拿得回来
+
+export function createVaultGuard({ initial } = {}): {
+  status(): { ok, code, detail, checkedAt, hint, blocked },
+  isBlocked(): boolean,
+  ensure(): void,            // blocked 时抛 VaultBlockedError
+  noteOk(): void,
+  noteBlocked(code, detail): void,
+  apply(probeResult): void,
+  reset(): void,
+  onChange(fn): () => void,  // 返回取消订阅
+}
+
+export function withVaultTimeout(promise, timeoutMs, guard): Promise   // 超时抛 VaultBlockedError('timeout') 并 noteBlocked
+export function createVaultQueue(): { run(task): Promise }             // 串行化，避免并发写同一文件
+```
+
+设计要点：判定结果只由探针写；读写失败时按错误码（vaultBlocked / EACCES / EPERM）自动熔断，其余错误原样抛给调用方。
+
 ## lib/vault-search.js
 
 ```js
-export function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Array<{ title, relPath, snippet, score }>
+export async function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Promise<Array<{ title, relPath, snippet, score }>>
 // 扫 <root> 下 .md（跳过 . 开头与 _备份，深度 ≤6，单文件 ≤200KB，≤2000 文件）；文件名命中 ×3、正文命中 ×1
 ```
 
