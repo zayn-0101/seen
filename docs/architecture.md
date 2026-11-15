@@ -124,8 +124,13 @@
 | state.js | 状态读写、去重、失败冷却 |
 | foreground*.js | 跨平台前台窗口读取 |
 | bilibili.js | URL/bvid 解析与 B 站内容抓取 |
-| analyze.js | LLM 提示词、JSON 解析、分类/总结 |
+| analyze.js | LLM 提示词、JSON 解析、分类/总结、无章节视频的时间轴切段 |
+| tags.js | 三层标签归一（学科/主题/类型/概念）、主题词表与包含合并 |
+| concept.js | 概念归一、跨笔记关联打分、概念索引 |
+| paths.js | 两种目录布局、笔记与手册相对路径、状态路径重映射 |
 | render.js | 三类 Markdown 渲染、Mermaid 转义 |
 | obsidian.js | vault 路径、原子写、AUTO 区、冲突处理 |
+| index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |
+| vault-search.js | 笔记库全文搜索（文件名加权 + 正文命中） |
 | mnemon.js | CLI 探测与 remember 调用 |
 | index.js | 引擎入口、轮询、编排、内部工具注册 |
