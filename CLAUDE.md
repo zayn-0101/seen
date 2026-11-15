@@ -68,6 +68,8 @@ seen/
 cd core && node --test          # 引擎测试
 cd menubar && ./build.sh        # 编译菜单栏应用 → menubar/dist/Seen.app
 npm run check                   # 语法检查
+npm run self-check              # 体检笔记库（结构/标签/双链/状态），只读
+npm run self-check:llm          # 再用缓存回放跑分段与总结的模型回归
 ./scripts/make-release.sh       # 构建内嵌 Node 运行时的 app 并打 dmg → dist/
 node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 ```
@@ -84,6 +86,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 跨笔记关联由 concept.js 负责：conceptKey 去标点空白归一概念名，findRelatedVideos 按「共享概念×2 + 共享关键词」打分取前 5，buildConceptIndex 供概念索引页与 `GET /api/concepts`（面板概念浏览）使用。学科手册的「本学科核心概念」只收出现在 ≥2 篇笔记里的概念。
 - 标签由 tags.js 负责：mergeTags 固定顺序 学科 → 主题（裸标签）→ `类型/<枚举>` → `概念/xxx`；主题由 LLM 在总结那次调用里一并给出（2~6 字，去泛化词，同篇包含合并保留更长者，上限 4），类型从 8 个固定枚举（教程/科普/访谈/评测/观点/纪录/播客/课程）里选 0~2 个；概念名限 2~8 字、带括号直接丢弃、上限 6。不再拼「视频课程」/平台名/学科进 tags（平台看 source 字段）。主题词表存在 state.tagVocabulary，buildTagVocabulary 取前 40 个注入提示词（只要求「能准确概括才复用，不相关不要硬套」），rememberTags 只累加裸主题词、超 500 按次数淘汰。历史笔记回填用 `node scripts/retag-notes.mjs`（默认预演，`--apply` 才写并先备份）；状态里没有概念的早期笔记，脚本会先看旧标签的 `概念/`，再让模型从正文抽一批并写回 `video.concepts`，否则概念索引会缺这些篇。
 - 笔记结构（paths.js）：根目录默认「视频笔记」，`structured`（默认）= `视频笔记/笔记/<学科>/<标题>.md` + `手册/<学科>.md` + `回顾/<周>.md`，根下放 `总览.md`、`视频索引.md`、`概念索引.md`、`标签索引.md`；`flat` = `视频笔记/<学科>/<标题>.md`（手册与笔记同学科目录）。布局可在面板工作台「目录」里切换（写 `~/.seen/ui.json` 的 `noteLayout`，`SEEN_NOTE_LAYOUT` 可覆盖），引擎的 `setNoteLayout` 只改运行中的配置、不搬文件；迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）；迁移会同时改写笔记里的手册双链和 state.json 里的 notePath（索引、概念索引、相关笔记都从 state 的路径生成，不同步会全指到旧位置）。旧路径引用（含没有前导斜杠的 `[[视频笔记/学科/…]]`、行首写法）统一由 `core/lib/legacy-refs.js` 的 `rewriteLegacyRefs` 重写，迁移脚本和事后修补共用同一套规则。
+- 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、三层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 2` 标记当前版式，没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
 - 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
 - B 站与 YouTube 的原生章节和知识点带 `t=` 时间链接；抖音没有原生章节，只有 AI 切出来的逻辑段。本地转写（whisper `-osrt`）会产出带时间戳的 `timedTranscript`，所以抖音/YouTube 的长视频同样能切段。

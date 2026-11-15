@@ -202,7 +202,7 @@ cd menubar
 
 每个视频一篇原子笔记：
 
-- frontmatter：标题、学科、来源、链接、时间、内容来源标记、封面、三层标签（见下方「标签体系」）
+- frontmatter：标题、学科、来源、链接、时间、内容来源标记、封面、版式版本（`format: 2`）、三层标签（见下方「标签体系」）
 - 内容来源标注（字幕 / 自动字幕 / 本地转写 / 仅元数据）
 - `[!abstract]` 一句话总结、`[!question]` 这期想回答、`[!success]` 给出的答案
 - 视频信息表 + 封面图
@@ -433,10 +433,14 @@ Obsidian     vault 中的 Markdown
 ## 开发
 
 ```bash
-cd core && node --test          # 运行测试（93 项）
+cd core && node --test          # 引擎测试（190 项）
 cd menubar && ./build.sh        # 编译菜单栏应用
 npm run check                   # 语法检查
+npm run self-check              # 体检库里的笔记：结构、标签、双链、状态一致性
+npm run self-check:llm          # 再用缓存回放，跑分段与总结的模型回归
 ```
+
+`self-check` 只读，不联网、不改笔记；用缓存的弹幕/字幕回放，检查版式区块、区块顺序、三层标签、章节时间轴、双链是否断、状态与笔记是否同步。旧格式笔记（frontmatter 没有 `format: 2`）的结构缺失只算警告，当前格式的问题才算错误，退出码 1 表示有错误。`--runs 5` 可加次数，`--json <路径>` 输出机器可读报告。
 
 开发约定见 [CLAUDE.md](CLAUDE.md)。
 

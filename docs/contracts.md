@@ -358,7 +358,38 @@ export function createVaultQueue(): { run(task): Promise }             // 串行
 ```js
 export async function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Promise<Array<{ title, relPath, snippet, score }>>
 // 扫 <root> 下 .md（跳过 . 开头与 _备份，深度 ≤6，单文件 ≤200KB，≤2000 文件）；文件名命中 ×3、正文命中 ×1
+export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }): Promise<string[]>
+// 返回 .md 绝对路径；规则同 searchVault（自检脚本用它遍历笔记库）
 ```
+
+## lib/note-check.js
+
+纯函数、不访问文件系统、不调模型；文件存在性由调用方注入 `exists(relPath)`。
+
+```js
+export const NOTE_FORMAT = 2      // frontmatter 的 format；缺失视为 0.3 之前的旧格式
+export const MANUAL_START = '<!-- MANUAL:START -->'
+export const MANUAL_END = '<!-- MANUAL:END -->'
+
+export function splitFrontmatter(markdown: string): { frontmatter: string, body: string }
+export function clockSeconds(value: string): number     // mm:ss / hh:mm:ss → 秒，非法返回 0
+export function parseNoteMarkdown(markdown: string): {
+  frontmatter, body, meta, format, tags, title, subject, source, url, type,
+  contentQuality, duration, sections, sectionTitles, sectionMap,
+  conceptEntries, conceptBlockCount, relatedLinks, manualLinkTarget,
+  manualMarkersOk, detailsOk, mindmapOk, statsUrl,
+}
+export function checkNoteShape(note): Finding[]           // 版式区块与顺序、三层标签、概念块引用、章节时间轴
+export function checkNoteLinks(note, { exists, selfPath }): Finding[]   // 相关笔记 / 学科手册链接
+export function checkIndexLinks(markdown, { exists }): Finding[]        // 索引页里的 [[双链]]
+export function checkSummaryShape(summary): Finding[]     // 模型总结结构（回放回归）
+export function checkSegments(segments, { duration }): Finding[]        // 切段结果（回放回归）
+export function summarizeFindings(findings): { total, errors, warnings, errorGroups, warningGroups }
+
+type Finding = { code: string, level: 'error' | 'warn', message: string }
+```
+
+严重度：旧格式笔记（`format < 2`）的结构缺失与概念漂移降级为 warn，当前格式为 error；标签规则（学科首个、无脏值、主题 2–6 字上限 4、类型枚举、概念 2–8 字上限 6 且与「核心概念」同名）对两种格式都生效。
 
 ## lib/mnemon.js
 
