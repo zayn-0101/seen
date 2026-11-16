@@ -186,6 +186,47 @@ export function buildTagIndex(videos = []) {
   return [...map.values()].sort((a, b) => b.videos.length - a.videos.length)
 }
 
+
+/**
+ * 把一组视频里的一个主题标签合并到另一个名字。
+ * 只做标签数组层面的替换，不碰学科/类型/概念前缀，也不读写文件。
+ * @returns {{ changedVideos: Array<{notePath:string,tags:string[]}>, changed: number, changedTags: number }}
+ */
+export function mergeTagInVideos(videos = [], from = '', to = '') {
+  const sourceKey = conceptKey(from)
+  const targetName = String(to ?? '').trim()
+  const targetKey = conceptKey(targetName)
+  if (!sourceKey || !targetName || sourceKey === targetKey) {
+    return { changedVideos: [], changed: 0, changedTags: 0 }
+  }
+  const changedVideos = []
+  let changedTags = 0
+  for (const video of Array.isArray(videos) ? videos : []) {
+    const tags = Array.isArray(video?.tags) ? video.tags : []
+    if (!tags.length) continue
+    const next = []
+    let changed = false
+    for (const tag of tags) {
+      const name = String(tag ?? '').trim()
+      const key = conceptKey(name)
+      if (key === sourceKey) {
+        if (!next.some((item) => conceptKey(item) === targetKey)) next.push(targetName)
+        changed = true
+        changedTags += 1
+        continue
+      }
+      if (key === targetKey && next.some((item) => conceptKey(item) === targetKey)) {
+        changed = true
+        changedTags += 1
+        continue
+      }
+      next.push(name)
+    }
+    if (changed) changedVideos.push({ notePath: String(video.notePath ?? ''), tags: next })
+  }
+  return { changedVideos, changed: changedVideos.length, changedTags }
+}
+
 export default {
   TAG_TYPES,
   normalizeTagName,

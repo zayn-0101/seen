@@ -423,6 +423,202 @@ function renderConcepts(rows) {
   box.append(list)
 }
 
+let tagCache = null
+let tagActive = ''
+
+/** 标签浏览：列出全库标签，支持把同义主题合并成一个。 */
+async function toggleTagBrowse() {
+  const box = $('tagBrowse')
+  const toggle = $('tagToggle')
+  if (!box) return
+  const next = box.hidden
+  box.hidden = !next
+  toggle?.setAttribute('aria-expanded', next ? 'true' : 'false')
+  if (!next) return
+  await loadTags()
+}
+
+async function loadTags() {
+  const box = $('tagBrowse')
+  if (!box) return
+  if (tagCache) {
+    renderTags(tagCache)
+    return
+  }
+  box.replaceChildren(el('p', 'concept-empty', '正在整理标签…'))
+  try {
+    const response = await fetch('/api/tags')
+    if (!response.ok) throw new Error('bad status')
+    const data = await response.json()
+    tagCache = Array.isArray(data.tags) ? data.tags : []
+    renderTags(tagCache)
+  } catch {
+    box.replaceChildren(el('p', 'concept-empty', '读取标签失败，确认服务已启动。'))
+  }
+}
+
+/** 标签云 + 选中主题后的合并操作。 */
+function renderTags(rows) {
+  const box = $('tagBrowse')
+  if (!box) return
+  const themes = rows.filter((item) => item.type === 'theme')
+  if (!themes.length) {
+    box.replaceChildren(el('p', 'concept-empty', '还没有主题标签。生成几篇笔记后这里会自动汇总。'))
+    return
+  }
+  const cloud = el('div', 'concept-cloud')
+  for (const item of themes) {
+    const chip = el('button', 'concept-chip' + (item.name === tagActive ? ' active' : ''))
+    chip.type = 'button'
+    chip.append(document.createTextNode(item.name), el('span', 'concept-count', String(item.count)))
+    chip.addEventListener('click', () => {
+      tagActive = tagActive === item.name ? '' : item.name
+      renderTags(rows)
+    })
+    cloud.append(chip)
+  }
+  box.replaceChildren(el('p', 'concept-head', '共 ' + themes.length + ' 个主题标签，点一个可以合并到同义主题'), cloud)
+  const active = themes.find((item) => item.name === tagActive)
+  if (!active) return
+  const bar = el('div', 'tag-merge')
+  bar.append(el('span', 'tag-merge-label', '把「' + active.name + '」合并到：'))
+  const select = document.createElement('select')
+  select.className = 'history-subject'
+  for (const item of themes) {
+    if (item.name === active.name) continue
+    const option = document.createElement('option')
+    option.value = item.name
+    option.textContent = item.name + '（' + item.count + ' 篇）'
+    select.append(option)
+  }
+  if (!select.options.length) {
+    box.append(el('p', 'concept-empty', '至少要有两个主题标签才能合并。'))
+    return
+  }
+  const button = el('button', 'button ghost', '合并')
+  button.type = 'button'
+  button.addEventListener('click', () => mergeTags(active.name, select.value, button))
+  bar.append(select, button)
+  box.append(bar)
+}
+
+async function mergeTags(from, to, button) {
+  if (!from || !to) return
+  if (!window.confirm('把「' + from + '」合并到「' + to + '」？会改写所有相关笔记的标签。')) return
+  button.disabled = true
+  button.textContent = '合并中…'
+  try {
+    const data = await api('/api/tags/merge', { method: 'POST', body: JSON.stringify({ from, to }) })
+    renderSnapshot(data)
+    showToast(data.result?.message || '标签已合并')
+    tagCache = null
+    tagActive = ''
+    await loadTags()
+  } catch (error) {
+    showToast(error.message)
+    button.disabled = false
+    button.textContent = '合并'
+  }
+}
+
+/** 问笔记库：把问题和检索到的笔记交给模型，回答带可点击的引用。 */
+async function askLibrary() {
+  const input = $('askInput')
+  const button = $('askButton')
+  const box = $('askAnswer')
+  const question = String(input?.value || '').trim()
+  if (!question) { showToast('先输入一个问题'); return }
+  button.disabled = true
+  button.textContent = '思考中…'
+  box.hidden = false
+  box.replaceChildren(el('p', 'ask-loading', '正在翻笔记…'))
+  try {
+    const data = await api('/api/ask', { method: 'POST', body: JSON.stringify({ question }) })
+    renderAskAnswer(data)
+  } catch (error) {
+    box.replaceChildren(el('p', 'ask-error', '回答失败：' + error.message))
+  } finally {
+    button.disabled = false
+    button.textContent = '提问'
+  }
+}
+
+/** 回答里的轻量 Markdown：标题、列表、加粗与 [[双链]]，全部用 DOM 节点拼，避免注入。 */
+function askInline(text, citationsByPath) {
+  const nodes = []
+  const pattern = /(\*\*[^*]+\*\*|\[\[[^\]]+\]\])/g
+  let last = 0
+  for (const match of String(text || '').matchAll(pattern)) {
+    if (match.index > last) nodes.push(document.createTextNode(text.slice(last, match.index)))
+    const token = match[0]
+    if (token.startsWith('**')) {
+      const strong = document.createElement('strong')
+      strong.textContent = token.slice(2, -2)
+      nodes.push(strong)
+    } else {
+      const inner = token.slice(2, -2)
+      const [path, title] = inner.split('|')
+      const link = document.createElement('a')
+      link.className = 'ask-inline-link'
+      link.href = obsidianUrl(path)
+      link.textContent = (citationsByPath.get(path) || title || path.split('/').pop() || path).replace(/\.md$/i, '')
+      nodes.push(link)
+    }
+    last = match.index + token.length
+  }
+  if (last < String(text || '').length) nodes.push(document.createTextNode(text.slice(last)))
+  return nodes
+}
+
+function renderAskAnswer(data) {
+  const box = $('askAnswer')
+  if (!box) return
+  if (!data || data.ok === false) {
+    box.replaceChildren(el('p', 'ask-error', data?.message || '回答失败'))
+    return
+  }
+  const citations = Array.isArray(data.citations) ? data.citations : []
+  const citationsByPath = new Map(citations.map((item) => [item.notePath, item.title]))
+  const body = el('div', 'ask-body')
+  let list = null
+  for (const raw of String(data.answer || '').split(/\n+/)) {
+    const line = raw.trim()
+    if (!line) continue
+    if (line.startsWith('#')) {
+      const heading = document.createElement('h4')
+      heading.className = 'ask-heading'
+      heading.append(...askInline(line.replace(/^#+\s*/, ''), citationsByPath))
+      body.append(heading)
+      list = null
+      continue
+    }
+    if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+      if (!list) { list = document.createElement('ul'); body.append(list) }
+      const item = document.createElement('li')
+      item.append(...askInline(line.replace(/^([-*]|\d+\.)\s+/, ''), citationsByPath))
+      list.append(item)
+      continue
+    }
+    const paragraph = document.createElement('p')
+    paragraph.append(...askInline(line, citationsByPath))
+    body.append(paragraph)
+    list = null
+  }
+  box.replaceChildren(body)
+  if (citations.length) {
+    const listNode = el('div', 'ask-citations')
+    listNode.append(el('span', 'ask-citations-label', '引用：'))
+    for (const item of citations) {
+      const link = document.createElement('a')
+      link.className = 'ask-citation'
+      link.href = obsidianUrl(item.notePath)
+      link.textContent = item.title || item.notePath
+      listNode.append(link)
+    }
+    box.append(listNode)
+  }
+}
+
 /** 学科下拉只列出实际存在的学科，保持当前选中项。 */
 function renderSubjectOptions(rows) {
   const select = $('historySubject')
@@ -1125,6 +1321,9 @@ $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter
 $('check').addEventListener('click', check)
 $('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })
 $('conceptToggle')?.addEventListener('click', toggleConceptBrowse)
+$('tagToggle')?.addEventListener('click', toggleTagBrowse)
+$('askButton')?.addEventListener('click', askLibrary)
+$('askInput')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') askLibrary() })
 
 setInterval(updateStageClock, 1000)
 load()

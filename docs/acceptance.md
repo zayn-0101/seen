@@ -250,3 +250,15 @@
 - [x] 临时实例 E2E（复制真实 vault/state，SEEN_PORT=4817）：GET /api/reviews 返回 12 篇到期（旧笔记无 review 字段，均视为今天到期）；POST /api/reviews 对 GTA6 笔记评 easy 后返回 due 2026-11-17、interval 1、ease 2.6、reps 1，剩余到期 11 篇；该笔记 frontmatter 已写入 review 行
 - [x] 测试 227 项全绿（新增 review-schedule 6 项、format 复习卡片 1 项、周回顾 1 项），`npm run check` 通过
 
+
+## 2026-11-16 批次 6：问笔记库与标签合并
+
+背景：笔记库已经能搜到东西，但用户还需要自己读；标签虽由 LLM 收敛，历史里仍会留下同义写法（如「个人知识管理」和「个人知识库」）。这一批把「检索」升级为「问答」，并给标签一个可操作的合并入口。
+
+- [x] 新增 core/lib/ask.js：buildAskPrompt（只根据笔记回答、每个结论带 `[[路径|标题]]` 引用）、extractCitations（按路径/标题映射回笔记并按出现顺序去重）、answerQuestion（callLlm 生成回答）
+- [x] engine.askLibrary：searchVault 取前 8 条，只读视频笔记/概念页/主题综述，最多读 5 篇正文；无命中时返回说明而不是报错；面板「问笔记库」走 POST /api/ask
+- [x] tags.js 新增 mergeTagInVideos；obsidian.js 新增 readVaultText / updateNoteTags；engine.renameTag 逐篇改 frontmatter、同步 state 的 video.tags 与 tagVocabulary，最后重建索引；类型/概念/学科标签拒绝合并；面板「标签」浏览 + 合并
+- [x] 服务新增 GET /api/tags（buildTagIndex → name/type/count）、POST /api/tags/merge、POST /api/ask
+- [x] 临时实例 E2E（复制真实 vault/state，SEEN_PORT=4818）：GET /api/tags 返回 98 个标签；POST /api/ask「Obsidian 的双链和反链有什么区别？」返回 200，答案带 2 条引用并映射回笔记路径；POST /api/tags/merge 把「效率工具」合并到「笔记工具」，changed=4，4 篇笔记 frontmatter 与标签索引同步更新
+- [x] 测试 233 项全绿（新增 ask 5 项、mergeTagInVideos 1 项），`npm run check` 通过
+

@@ -344,6 +344,45 @@ export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {})
   })
 }
 
+/** 读取一篇 vault 内的 Markdown（relPath 相对 vault 根）。 */
+export function readVaultText({ vaultPath, relPath } = {}) {
+  const rel = toPosix(String(relPath ?? '')).replace(/^\/+/, '')
+  if (!rel) return Promise.resolve({ ok: false, error: '缺少文件路径' })
+  const absPath = absoluteFromRel(vaultPath, rel)
+  return runVaultTask(async () => {
+    try {
+      return { ok: true, relPath: rel, text: await readFile(absPath, 'utf8') }
+    } catch {
+      return { ok: false, error: '文件不存在：' + rel }
+    }
+  })
+}
+
+/** 只改 frontmatter 的 tags 行（保留其它字段与正文）。 */
+export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
+  const relPath = toPosix(String(notePath ?? ''))
+  const absPath = absoluteFromRel(vaultPath, relPath)
+  const json = JSON.stringify(Array.isArray(tags) ? tags : [])
+  return runVault(async () => {
+    let markdown
+    try {
+      markdown = await readFile(absPath, 'utf8')
+    } catch {
+      return { ok: false, error: '笔记不存在：' + relPath }
+    }
+    const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+    if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }
+    const block = match[1]
+    const line = 'tags: ' + json
+    const nextBlock = /^tags:.*$/m.test(block)
+      ? block.replace(/^tags:.*$/m, line)
+      : block.replace(/\s*$/, '') + '\n' + line
+    const next = markdown.slice(0, match.index) + '---\n' + nextBlock + '\n---' + markdown.slice(match.index + match[0].length)
+    await atomicWrite(absPath, next)
+    return { ok: true, relPath }
+  })
+}
+
 /** 更新笔记 frontmatter 里的 review 字段（复习状态），保留其余内容。 */
 export function updateNoteReview({ vaultPath, notePath, review } = {}) {
   const relPath = String(notePath || '').trim().replace(/\\/g, '/')

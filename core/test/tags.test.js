@@ -10,6 +10,7 @@ import {
   buildTagVocabulary,
   rememberTags,
   buildTagIndex,
+  mergeTagInVideos,
 } from '../lib/tags.js'
 import { buildTagIndexMarkdown } from '../lib/index-note.js'
 
@@ -71,6 +72,19 @@ test('buildTagIndex groups tags by kind with counts', () => {
   assert.equal(index[0].type, 'subject')
   assert.equal(index.find((item) => item.name === '概念/双向链接').type, 'concept')
   assert.equal(index.find((item) => item.name === '类型/教程').type, 'type')
+})
+
+
+test('mergeTagInVideos replaces a theme tag and de-duplicates the target', () => {
+  const videos = [
+    { notePath: 'p/A.md', tags: ['知识管理', '个人知识库', '个人知识管理', '类型/教程'] },
+    { notePath: 'p/B.md', tags: ['知识管理', 'Obsidian'] },
+  ]
+  const result = mergeTagInVideos(videos, '个人知识管理', '个人知识库')
+  assert.equal(result.changed, 1)
+  assert.deepEqual(result.changedVideos[0].tags, ['知识管理', '个人知识库', '类型/教程'])
+  assert.deepEqual(mergeTagInVideos(videos, '', 'x').changed, 0)
+  assert.deepEqual(mergeTagInVideos(videos, '不存在', 'x').changed, 0)
 })
 
 test('buildTagIndexMarkdown renders sections and note links', () => {

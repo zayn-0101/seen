@@ -281,11 +281,30 @@ export function rememberTags(state: State, tags: string[]): void
 
 export function buildTagIndex(videos: any[]): Array<{ name: string, type: 'subject'|'theme'|'type'|'concept', videos: Array<{ title, notePath, subject }> }>
 // 标签名与该篇 subject 同名（mergeTags 保证学科排第一且与 subject 一致）→ type='subject'
+
+export function mergeTagInVideos(videos: any[], from: string, to: string): { changedVideos: Array<{ notePath: string, tags: string[] }>, changed: number, changedTags: number }
+// 只做标签数组层面的替换：conceptKey 相等即视为同一个标签；源标签换成目标名并去重；不碰文件系统
 ```
 
 规则：
 - 三层标签由同一篇笔记的那次 LLM 调用一并给出，主题靠词表收敛，本地不做语义聚类。
 - 平台由 frontmatter `source` 表达、形态由 `类型/xxx` 表达，不再出现 `视频课程` / `B站` / `抖音精选` 这类零信息标签。
+
+## lib/ask.js
+
+```js
+export const MAX_NOTE_CHARS = 5000
+export const MAX_NOTES = 5
+
+export function buildAskPrompt({ question, notes } = {}): string
+// notes: [{ title, notePath, body }]；提示词要求只根据笔记回答、先结论后依据、每个结论带 [[路径|标题]]、不足时直说
+export function extractCitations(answer: string, notes: any[]): Array<{ title: string, notePath: string }>
+// 解析 [[路径|标题]]，按 notePath 或标题映射回检索结果，按出现顺序去重
+export async function answerQuestion({ question, notes, llm, config, maxTokens = 1800 } = {}): Promise<{ answer: string, citations: Array<{ title: string, notePath: string }> }>
+// 无问题/无笔记直接返回提示；否则 callLlm 生成回答并提取引用
+```
+
+面板「问笔记库」由 `engine.askLibrary({ question })` 调用：先用 `searchVault` 检索，只取视频笔记/概念页/主题综述，最多读 5 篇正文，再交给 `answerQuestion`。
 
 ## lib/render.js
 
@@ -332,6 +351,8 @@ export async function writeTagIndexNote({ vaultPath, noteRoot, markdown }): Prom
 export async function writeWeeklyReview({ vaultPath, noteRoot, label, markdown }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function writeTranscriptNote({ vaultPath, noteRoot, noteName, content }): Promise<{ relPath, absPath }>
 export async function readTranscriptNote({ vaultPath, noteRoot, noteName }): Promise<string | null>  // 不存在返回 null
+export async function readVaultText({ vaultPath, relPath }): Promise<{ ok: boolean, relPath?: string, text?: string, error?: string }>  // 读任意 vault 内文本（问笔记库用）
+export async function updateNoteTags({ vaultPath, notePath, tags }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 tags 行
 export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 review 行
@@ -567,11 +588,13 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
-  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
 - `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
+- `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
+- `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。

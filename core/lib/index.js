@@ -31,11 +31,13 @@ import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
-import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
+import { buildTagVocabulary, mergeTags, mergeTagInVideos, rememberTags } from './tags.js'
 import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
+import { answerQuestion } from './ask.js'
+import { searchVault } from './vault-search.js'
 import { scoreNoteQuality } from './note-content.js'
 import { normalizeNoteLayout } from './paths.js'
-import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, updateNoteReview, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, readVaultText, updateNoteReview, updateNoteTags, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
 import { parseTranscriptNote, renderTranscriptNote } from './transcript-note.js'
 import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
@@ -928,6 +930,76 @@ export function apply(ctx, rawConfig = {}) {
     return { ok: true, message: normalized === 'easy' ? '记住了，下次 ' + review.due + ' 再见' : normalized === 'hard' ? '有点模糊，' + review.due + ' 再复习一次' : '没关系，明天再来', review }
   }
 
+  /** 问笔记库：搜索相关笔记，读正文交给模型回答并返回引用。 */
+  async function askLibrary({ question } = {}) {
+    const q = String(question || '').trim()
+    if (!q) return { ok: false, message: '请输入一个问题' }
+    const vault = vaultGuard.status()
+    if (vault.ok === false) return { ok: false, message: VAULT_HINT, blocked: true }
+    const hits = await searchVault({ vaultPath, noteRoot: config.noteRoot, query: q, limit: 8 })
+    const wanted = new Set(['视频笔记', '概念页', '主题综述'])
+    const notes = []
+    for (const hit of hits) {
+      if (notes.length >= 5) break
+      if (!wanted.has(hit.kind)) continue
+      const relPath = toPosix(join(config.noteRoot, hit.relPath))
+      const file = await readVaultText({ vaultPath, relPath })
+      if (!file.ok) continue
+      notes.push({ title: hit.title, notePath: relPath, body: file.text })
+    }
+    if (notes.length === 0) {
+      return { ok: true, question: q, answer: '笔记库里没有找到相关的笔记。可以换个关键词，或先整理几篇相关视频。', citations: [], sources: [] }
+    }
+    try {
+      const result = await answerQuestion({
+        question: q,
+        notes,
+        llm: ctx.llm,
+        config: { provider: config.provider, model: config.model },
+        maxTokens: 1800,
+      })
+      return { ok: true, question: q, ...result, sources: notes.map((note) => ({ title: note.title, notePath: note.notePath })) }
+    } catch (error) {
+      return { ok: false, message: '回答失败：' + (error?.message || error) }
+    }
+  }
+
+  /** 把一个主题标签合并到另一个主题（同时改 state 与笔记 frontmatter）。 */
+  async function renameTag({ from, to } = {}) {
+    const source = String(from || '').trim()
+    const target = String(to || '').trim()
+    if (!source || !target) return { ok: false, message: '缺少源标签或目标标签' }
+    if (source === target) return { ok: false, message: '两个标签相同' }
+    if (source.startsWith('类型/') || source.startsWith('概念/') || target.startsWith('类型/') || target.startsWith('概念/')) {
+      return { ok: false, message: '目前只支持合并主题标签，类型和概念请用回填脚本处理' }
+    }
+    const videos = getHistory()
+    if (videos.some((video) => String(video.subject || '') === source)) {
+      return { ok: false, message: '学科标签不能合并' }
+    }
+    const result = mergeTagInVideos(videos, source, target)
+    if (result.changed === 0) return { ok: false, message: '没有找到这个主题标签' }
+    let changed = 0
+    for (const item of result.changedVideos) {
+      const noteResult = await updateNoteTags({ vaultPath, notePath: item.notePath, tags: item.tags })
+      if (!noteResult.ok) return { ok: false, message: noteResult.error || '更新笔记标签失败', changed }
+      for (const data of Object.values(state.subjects || {})) {
+        const video = (Array.isArray(data?.videos) ? data.videos : []).find((entry) => entry.notePath === item.notePath)
+        if (video) { video.tags = item.tags; break }
+      }
+      changed += 1
+    }
+    if (state.tagVocabulary && typeof state.tagVocabulary === 'object') {
+      const count = Number(state.tagVocabulary[source] || 0)
+      if (count > 0) state.tagVocabulary[target] = (Number(state.tagVocabulary[target]) || 0) + count
+      delete state.tagVocabulary[source]
+    }
+    try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
+    logger.log('tags.merge from=' + JSON.stringify(source) + ' to=' + JSON.stringify(target) + ' changed=' + changed)
+    try { await rebuildKnowledgePages() } catch (error) { logger.log('tags.merge.rebuild.error msg=' + (error?.message || error)) }
+    return { ok: true, changed, message: '已把「' + source + '」合并到「' + target + '」，更新 ' + changed + ' 篇笔记' }
+  }
+
   /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
   async function rebuildKnowledgePages() {
     const vault = vaultGuard.status()
@@ -1159,6 +1231,8 @@ export function apply(ctx, rawConfig = {}) {
     rebuildKnowledgePages,
     getReviews,
     recordReview,
+    askLibrary,
+    renameTag,
     getFailures,
     getStatus: buildStatus,
     getSnapshot,

@@ -19,6 +19,7 @@ import { buildWeeklyReview } from '../core/lib/review.js'
 import { ensureVaultDirs, writeWeeklyReview } from '../core/lib/obsidian.js'
 import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
+import { buildTagIndex } from '../core/lib/tags.js'
 import { searchVault } from '../core/lib/vault-search.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
@@ -373,6 +374,31 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/reviews' && req.method === 'GET') {
       return json(res, 200, engine.getReviews())
+    }
+
+    if (pathname === '/api/tags' && req.method === 'GET') {
+      const history = engine.getHistory()
+      const tags = buildTagIndex(history).map((item) => ({
+        name: item.name,
+        type: item.type,
+        count: item.videos.length,
+      }))
+      return json(res, 200, { tags })
+    }
+
+    // 把一个主题标签合并到另一个主题（改 state 与笔记 frontmatter）。
+    if (pathname === '/api/tags/merge' && req.method === 'POST') {
+      const body = await readBody(req)
+      const result = await engine.renameTag({ from: body.from, to: body.to })
+      const data = await snapshot()
+      return json(res, result.ok ? 200 : 400, { ...data, result, error: result.ok ? undefined : result.message })
+    }
+
+    // 问笔记库：检索相关笔记后让模型回答，返回答案与引用。
+    if (pathname === '/api/ask' && req.method === 'POST') {
+      const body = await readBody(req)
+      const result = await engine.askLibrary({ question: body.question })
+      return json(res, result.ok ? 200 : 400, result.ok ? result : { ...result, error: result.message })
     }
 
     if (pathname === '/api/config' && req.method === 'POST') {

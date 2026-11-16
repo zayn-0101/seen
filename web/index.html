@@ -139,8 +139,15 @@
               <option value="">全部学科</option>
             </select>
             <button id="conceptToggle" type="button" class="history-subject concept-toggle" aria-expanded="false" aria-controls="conceptBrowse">概念</button>
+            <button id="tagToggle" type="button" class="history-subject concept-toggle" aria-expanded="false" aria-controls="tagBrowse">标签</button>
           </div>
           <div id="conceptBrowse" class="concept-browse" hidden></div>
+          <div id="tagBrowse" class="tag-browse" hidden></div>
+          <div class="ask-bar">
+            <input id="askInput" type="text" class="ask-input" placeholder="问笔记库：例如「Obsidian 的双链和反链有什么区别？」" autocomplete="off" />
+            <button id="askButton" type="button" class="button ghost ask-button">提问</button>
+          </div>
+          <div id="askAnswer" class="ask-answer" hidden></div>
           <div id="qualityHint" class="quality-hint" hidden></div>
           <div id="vaultSearch" class="vault-search" hidden></div>
           <div id="history" class="history-grid empty"><p class="empty-line">还没有笔记。打开 B站 / 抖音精选 / YouTube 课程视频，或在上方粘贴链接。</p></div>
