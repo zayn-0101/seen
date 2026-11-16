@@ -296,6 +296,7 @@
 - [x] 重试后仍没有模型时，`provider`/`model` 以 null 传给 `resolveConfig`，服务先启动；控制台打印「未检测到可用模型，服务先启动；请在面板「模型」里配置后再使用整理功能」，面板可正常打开并配置模型
 - [x] 验证：用 `SEEN_LLM_BASE_URL=http://127.0.0.1:9/v1` 起临时服务（不可达的模型地址），服务正常监听、`GET /api/status` 返回 200、provider/model 均为 null；正常环境启动仍探测到 magpie / auto/deepseek-v4.1-flash
 - [x] `cd core && node --test` 242 项全绿，`npm run check` 通过
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.1.dmg`（85M，universal）；bundle 内 `server/index.js` 含 `resolveStartupLlm`。安装待用户确认（重装会重置「文稿文件夹」授权）
 
 ## 2026-11-16 45 分钟 YouTube 笔记补章节
 
