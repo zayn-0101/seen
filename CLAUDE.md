@@ -78,7 +78,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 
 ## 重要事实
 
-- 模型配置在网页「模型」弹窗（24 个预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 `~/.seen/llm.json`（600）。
+- 模型配置在网页「模型」弹窗（23 个内置供应商预设 + 自定义），优先级：设置 → 环境变量 → 自动探测 Magpie；apiKey 存 `~/.seen/llm.json`（600）。
 - 服务启动时 Magpie 可能还没就绪：模型解析会重试几次；仍没有模型就先用 null 启动（面板提示「模型未配置」），不能让空字符串让 resolveConfig 抛错退出。
 - macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示；`SEEN_DISABLE_NOTIFY=1` 可关。
 - 每次生成笔记后重建「视频索引.md」「概念索引.md」「标签索引.md」（都是 AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入 `回顾/`，已存在不覆盖。
@@ -95,7 +95,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 笔记结构（paths.js）：根目录默认「视频笔记」，`structured`（默认）= `视频笔记/笔记/<学科>/<标题>.md` + `手册/<学科>.md` + `回顾/<周>.md`，根下放 `总览.md`、`视频索引.md`、`概念索引.md`、`标签索引.md`；`flat` = `视频笔记/<学科>/<标题>.md`（手册与笔记同学科目录）。布局可在面板工作台「目录」里切换（写 `~/.seen/ui.json` 的 `noteLayout`，`SEEN_NOTE_LAYOUT` 可覆盖），引擎的 `setNoteLayout` 只改运行中的配置、不搬文件；迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `_备份/`）；迁移会同时改写笔记里的手册双链和 state.json 里的 notePath（索引、概念索引、相关笔记都从 state 的路径生成，不同步会全指到旧位置）。旧路径引用（含没有前导斜杠的 `[[视频笔记/学科/…]]`、行首写法）统一由 `core/lib/legacy-refs.js` 的 `rewriteLegacyRefs` 重写，迁移脚本和事后修补共用同一套规则。
 - 字幕存档与重整理：有字幕或转写的视频，生成笔记时会把原文另存到 `<noteRoot>/字幕/<笔记名>.md`（frontmatter `type: transcript`、`format: 1`，不参与索引/概念/标签）；`transcript-note.js` 的 `renderTranscriptNote` / `parseTranscriptNote` 负责读写。面板「用存档字幕重新整理」走 `POST /api/resummarize` → `engine.resummarizeNote({notePath})`，读存档后按 `refresh: true` 重跑 `processTitle`，不再下载或转写。字幕缓存 `transcriptCacheDays` 默认 30 天。
 - 概念页与主题页：`topic-pages.js` 的 `collectConceptPages` 只给出现 ≥2 篇笔记的概念建页，`collectTopicPages` 只给出现 ≥3 篇的主题标签建页，路径分别是 `<noteRoot>/概念/<名字>.md`、`<noteRoot>/主题/<名字>.md`；主题页的「相关概念」只链接真实存在的概念页。全量重建由 `rebuild.js` 的 `rebuildKnowledgePages` 完成（索引 → 概念页 → 主题页 → 手册 → 总览），`engine.rebuildKnowledgePages` 暴露给服务，`scripts/maintain-vault.mjs` 可直接按 state 重建（`--dry-run` 只统计）。`GET /api/quality` 汇总 history 的 quality：`{total, scored, low}`，面板知识库对 quality ≤2 的笔记出提示。
-- 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、三层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 4` 标记当前版式（低于 4 的旧笔记只按旧规则告警），没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）；当前格式还会反查封面、思维导图、「所属章节」是否回潮。旧笔记清理（去封面）用 core/lib/note-clean.js 的 `stripCover` 与 `scripts/strip-cover.mjs`（默认预演，`--apply` 才写并先备份）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
+- 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、四层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 4` 标记当前版式（低于 4 的旧笔记只按旧规则告警），没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）；当前格式还会反查封面、思维导图、「所属章节」是否回潮。旧笔记清理（去封面）用 core/lib/note-clean.js 的 `stripCover` 与 `scripts/strip-cover.mjs`（默认预演，`--apply` 才写并先备份）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
 - 处理失败会记入 state.failures（含 title/url/source/bvid/videoId），面板「失败记录」可一键重试；`/api/retry` 先用保存的链接重跑，成功后清空记录。
 - B 站与 YouTube 的原生章节和知识点带 `t=` 时间链接；抖音没有原生章节，只有 AI 切出来的逻辑段。本地转写（whisper `-osrt`）会产出带时间戳的 `timedTranscript`，所以抖音/YouTube 的长视频同样能切段。

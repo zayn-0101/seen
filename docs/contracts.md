@@ -312,7 +312,7 @@ export function mergeTagInVideos(videos: any[], from: string, to: string): { cha
 ```
 
 规则：
-- 三层标签由同一篇笔记的那次 LLM 调用一并给出，主题靠词表收敛，本地不做语义聚类。
+- 四层标签由同一篇笔记的那次 LLM 调用一并给出，主题靠词表收敛，本地不做语义聚类。
 - 平台由 frontmatter `source` 表达、形态由 `类型/xxx` 表达，不再出现 `视频课程` / `B站` / `抖音精选` 这类零信息标签。
 
 ## lib/ask.js
@@ -529,7 +529,7 @@ export function parseNoteMarkdown(markdown: string): {
   conceptEntries, conceptBlockCount, relatedLinks, manualLinkTarget,
   manualMarkersOk, detailsOk, statsUrl,
 }
-export function checkNoteShape(note): Finding[]           // 版式区块与顺序、三层标签、概念块引用、章节时间轴
+export function checkNoteShape(note): Finding[]           // 版式区块与顺序、四层标签、概念块引用、章节时间轴
 export function checkNoteLinks(note, { exists, selfPath }): Finding[]   // 相关笔记 / 学科手册链接
 export function checkIndexLinks(markdown, { exists }): Finding[]        // 索引页里的 [[双链]]
 export function checkSummaryShape(summary): Finding[]     // 模型总结结构（回放回归）
