@@ -78,6 +78,8 @@
             <span class="utility-divider" aria-hidden="true"></span>
             <button id="scanForce" class="button text-button" type="button" title="重新生成已处理的视频">强制重生成</button>
             <span class="utility-divider" aria-hidden="true"></span>
+            <button id="reprocess" class="button text-button" type="button" title="用已缓存的内容重刷全部历史笔记">重刷历史</button>
+            <span class="utility-divider" aria-hidden="true"></span>
             <button id="check" class="button text-button" type="button">诊断</button>
             <span id="intervalHint" class="hint interval-hint">每 15 秒观察一次前台浏览器</span>
           </div>
@@ -173,6 +175,12 @@
         <input id="mnemonToggle" type="checkbox">
         <span>写入 mnemon 记忆库</span>
         <span id="mnemonHint" class="hint"></span>
+      </label>
+
+      <label class="switch-row">
+        <input id="settingsEditorPass" type="checkbox">
+        <span>发布前润色</span>
+        <span class="hint">多花一次模型调用，让摘要更顺</span>
       </label>
 
       <p id="settingsResult" class="hint"></p>

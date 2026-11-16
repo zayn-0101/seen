@@ -196,7 +196,7 @@ function renderSummary(data, stageText) {
       if (point.title) group.append(el('strong', '', point.title))
       if (Array.isArray(point.points) && point.points.length) {
         const ul = el('ul')
-        for (const item of point.points) ul.append(el('li', '', item))
+        for (const item of point.points) ul.append(el('li', '', typeof item === 'string' ? item : (item?.text || '')))
         group.append(ul)
       }
       section.append(group)
@@ -670,6 +670,8 @@ function renderSnapshot(snap) {
   renderVaultBanner(snap.status?.vault || snap.vault || null)
   const layoutSelect = $('noteLayout')
   if (layoutSelect && snap.config?.noteLayout) layoutSelect.value = snap.config.noteLayout
+  const editorPassToggle = $('settingsEditorPass')
+  if (editorPassToggle) editorPassToggle.checked = Boolean(snap.config?.editorPass)
   renderHistory(snap.history || [])
   renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
@@ -879,6 +881,21 @@ async function scan(force) {
   button.disabled = false
 }
 
+async function reprocessHistory() {
+  if (!window.confirm('用已缓存的内容重刷全部历史笔记？原笔记会先备份，「我的补充」会保留。')) return
+  const button = $('reprocess')
+  button.disabled = true
+  button.textContent = '重刷中…'
+  try {
+    const data = await api('/api/reprocess', { method: 'POST', body: '{}' })
+    showToast(data.message || '已开始重刷历史笔记', true)
+  } catch (error) {
+    showToast(error.message)
+    button.disabled = false
+    button.textContent = '重刷历史'
+  }
+}
+
 function renderCheckPanel(data) {
   const panel = $('checkPanel')
   const list = $('checkList')
@@ -1006,6 +1023,7 @@ $('historySearch').addEventListener('input', () => {
 })
 $('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))
+$('reprocess').addEventListener('click', reprocessHistory)
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
 $('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })
@@ -1182,6 +1200,7 @@ async function saveSettings(event) {
   try {
     const payload = { ...form, enableMnemon: $('mnemonToggle').checked }
     const data = await api('/api/llm', { method: 'POST', body: JSON.stringify(payload) })
+    await api('/api/config', { method: 'POST', body: JSON.stringify({ editorPass: $('settingsEditorPass').checked }) })
     $('settingsResult').textContent = (data.ok ? '已保存 ✓（' + data.test.latency + ' ms）' : '已保存，但测试未通过：' + data.test.detail) + (data.mnemonNote ? '　' + data.mnemonNote : '')
     showToast(data.ok ? '模型已保存：' + data.saved.model : '模型已保存，但暂时连不上')
     await load()

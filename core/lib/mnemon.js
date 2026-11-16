@@ -119,7 +119,9 @@ function flattenKeyPoints(keyPoints) {
     }
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue
     const title = oneLine(item.title ?? item.name)
-    const points = Array.isArray(item.points) ? item.points.map(oneLine).filter(Boolean) : []
+    const points = Array.isArray(item.points)
+      ? item.points.map((point) => oneLine(point && typeof point === 'object' ? point.text ?? point.content : point)).filter(Boolean)
+      : []
     if (points.length === 0) {
       if (title) result.push(title)
       continue

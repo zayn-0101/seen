@@ -10,10 +10,11 @@
  */
 
 import { conceptKey } from './concept.js'
+import { CONTENT_TYPES } from './note-content.js'
 import { TAG_TYPES } from './tags.js'
 
 /** 当前笔记版式版本；缺失视为 0.3 之前的旧格式，结构缺失只算警告。 */
-export const NOTE_FORMAT = 3
+export const NOTE_FORMAT = 4
 
 export const MANUAL_START = '<!-- MANUAL:START -->'
 export const MANUAL_END = '<!-- MANUAL:END -->'
@@ -22,8 +23,22 @@ const SECTION_ORDER = [
   '视频信息',
   '关键数字',
   '章节',
+  '前置条件',
+  '操作步骤',
+  '课程脉络',
+  '练习',
+  '论证结构',
+  '可质疑之处',
+  '机制与证据',
+  '常见误解',
+  '对比',
+  '人物观点',
+  '事件时间线',
   '核心知识点',
   '核心概念',
+  '原话摘录',
+  '术语表',
+  '提到的资源',
   '相关笔记',
   '讨论焦点',
   '弹幕与评论讨论焦点',
@@ -156,6 +171,8 @@ export function parseNoteMarkdown(markdown) {
     url: cleanInline(meta.url),
     type: cleanInline(meta.type),
     contentQuality: cleanInline(meta.contentQuality),
+    contentType: cleanInline(meta.contentType),
+    quality: Number(meta.quality) || 0,
     duration,
     sections,
     sectionTitles: sections.map((item) => item.title),
@@ -213,15 +230,15 @@ export function checkNoteShape(note) {
       findings.push(finding('manual-markers', 'error', '「我的补充」里缺 ' + MANUAL_START + ' / ' + MANUAL_END + ' 成对标记'))
     }
     if (!note.detailsOk) findings.push(finding('stats-details', 'error', '「来源统计」缺 <details> 折叠块'))
-    // format 3 去掉了封面、思维导图与「所属章节」标注，重新出现说明版式回退
+    // 当前格式去掉了封面、思维导图与「所属章节」标注，重新出现说明版式回退
     if (/^cover:/m.test(note.frontmatter) || /!\[封面/.test(note.body)) {
-      findings.push(finding('legacy-cover', 'error', 'format 3 不再抓封面，笔记里不该有 cover 字段或封面图'))
+      findings.push(finding('legacy-cover', 'error', '当前格式不再抓封面，笔记里不该有 cover 字段或封面图'))
     }
     if (note.sectionTitles.includes('思维导图')) {
-      findings.push(finding('legacy-mindmap', 'error', 'format 3 的视频笔记不再有「思维导图」，内容与知识点重复'))
+      findings.push(finding('legacy-mindmap', 'error', '当前格式的视频笔记不再有「思维导图」，内容与知识点重复'))
     }
     if (note.body.includes('所属章节：')) {
-      findings.push(finding('legacy-chapter-tag', 'error', 'format 3 不再标注「所属章节」，章节与知识点标题已能对照'))
+      findings.push(finding('legacy-chapter-tag', 'error', '当前格式不再标注「所属章节」，章节与知识点标题已能对照'))
     }
   }
 
@@ -318,6 +335,16 @@ export function checkNoteShape(note) {
   if (note.type && note.type !== 'video-note') {
     findings.push(finding('note-type', 'error', 'frontmatter type 应为 video-note，实际是「' + note.type + '」'))
   }
+  if (isCurrent) {
+    if (!note.contentType) {
+      findings.push(finding('content-type-missing', 'warn', 'frontmatter 缺 contentType'))
+    } else if (!CONTENT_TYPES.some((item) => item.id === note.contentType)) {
+      findings.push(finding('content-type-unknown', 'error', 'contentType「' + note.contentType + '」不在固定枚举里'))
+    }
+    if (!note.quality || note.quality < 1 || note.quality > 5) {
+      findings.push(finding('quality-range', 'warn', 'frontmatter quality 缺失或不在 1–5'))
+    }
+  }
 
   return findings
 }
@@ -367,6 +394,10 @@ export function checkSummaryShape(summary) {
   if (Boolean(question) !== Boolean(answer)) {
     findings.push(finding('summary-qa', 'warn', '「这期想回答」与「给出的答案」只填了一边'))
   }
+  const contentType = cleanInline(data.contentType)
+  if (contentType && !CONTENT_TYPES.some((item) => item.id === contentType)) {
+    findings.push(finding('summary-content-type', 'error', 'contentType「' + contentType + '」不在固定枚举里'))
+  }
   const keyPoints = Array.isArray(data.keyPoints) ? data.keyPoints : []
   if (keyPoints.length === 0) findings.push(finding('summary-keypoints', 'error', '没有核心知识点'))
   if (keyPoints.length > 20) findings.push(finding('summary-keypoints', 'error', '核心知识点超过 20 个'))
@@ -374,6 +405,17 @@ export function checkSummaryShape(summary) {
     if (!cleanInline(topic?.title)) findings.push(finding('summary-keypoints', 'error', '有知识点缺标题'))
     if (!Array.isArray(topic?.points) || topic.points.length === 0) {
       findings.push(finding('summary-keypoints', 'error', '知识点「' + cleanInline(topic?.title) + '」没有要点'))
+      continue
+    }
+    for (const point of topic.points) {
+      const pointText = cleanInline(typeof point === 'string' ? point : point?.text)
+      if (!pointText) findings.push(finding('summary-points', 'error', '知识点「' + cleanInline(topic?.title) + '」有要点缺文字'))
+      if (point && typeof point === 'object' && point.time !== undefined && point.time !== null && point.time !== '') {
+        const time = Number(point.time)
+        if (!Number.isFinite(time) || time < 0) {
+          findings.push(finding('summary-points', 'error', '知识点「' + cleanInline(topic?.title) + '」的要点时间不是整数秒'))
+        }
+      }
     }
   }
   const concepts = Array.isArray(data.concepts) ? data.concepts : []
@@ -393,6 +435,28 @@ export function checkSummaryShape(summary) {
   }
   const numbers = Array.isArray(data.numbers) ? data.numbers : []
   if (numbers.length > 6) findings.push(finding('summary-numbers', 'error', '关键数字超过 6 条'))
+  const quotes = Array.isArray(data.quotes) ? data.quotes : []
+  if (quotes.length > 3) findings.push(finding('summary-quotes', 'error', '原话摘录超过 3 条'))
+  for (const quote of quotes) {
+    const text = cleanInline(typeof quote === 'string' ? quote : quote?.text)
+    if (!text) findings.push(finding('summary-quotes', 'error', '有原话摘录缺文字'))
+    else if (charLength(text) > 80) findings.push(finding('summary-quotes', 'error', '原话摘录超过 80 字：' + text.slice(0, 20) + '…'))
+  }
+  const terms = Array.isArray(data.terms) ? data.terms : []
+  if (terms.length > 8) findings.push(finding('summary-terms', 'error', '术语表超过 8 条'))
+  for (const term of terms) {
+    const name = cleanInline(typeof term === 'string' ? term : term?.name)
+    if (!name) findings.push(finding('summary-terms', 'error', '有术语缺名称'))
+    else if (charLength(name) < 2 || charLength(name) > 12) {
+      findings.push(finding('summary-terms', 'error', '术语「' + name + '」长度不合规（2–12 字）'))
+    }
+  }
+  const resources = Array.isArray(data.resources) ? data.resources : []
+  if (resources.length > 6) findings.push(finding('summary-resources', 'error', '提到的资源超过 6 条'))
+  for (const resource of resources) {
+    const name = cleanInline(typeof resource === 'string' ? resource : resource?.name)
+    if (!name) findings.push(finding('summary-resources', 'error', '有资源缺名称'))
+  }
   return findings
 }
 

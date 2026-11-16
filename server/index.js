@@ -92,6 +92,7 @@ const baseConfig = resolveConfig({
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
   noteLayout: process.env.SEEN_NOTE_LAYOUT || ui.noteLayout || DEFAULTS.noteLayout,
+  editorPass: Boolean(ui.editorPass),
 })
 
 const tools = new Map()
@@ -160,6 +161,8 @@ const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '
 let installingWhisperCli = false
 // 面板「下载 Whisper 模型」触发的下载，同一时间只允许一个。
 let installingWhisperModel = false
+// 面板「重刷历史」一次只跑一批，避免重复触发。
+let refreshingHistory = false
 
 function platformName(source) {
   if (source === 'douyin') return '抖音'
@@ -380,6 +383,12 @@ const server = createServer(async (req, res) => {
         ui.started = Boolean(body.started)
         message = result.message
       }
+      if (body.editorPass !== undefined) {
+        const result = engine.setEditorPass(body.editorPass)
+        if (!result.ok) return json(res, 400, { error: result.message })
+        ui.editorPass = result.editorPass
+        message = result.message
+      }
       await writeJson(uiPath, ui)
       const data = await snapshot()
       return json(res, 200, { ok: true, message, ...data })
@@ -401,6 +410,23 @@ const server = createServer(async (req, res) => {
       const result = await engine.retryFailure(key)
       const data = await snapshot()
       return json(res, result.ok ? 200 : 500, { ...data, result })
+    }
+
+    // 重刷历史笔记：只重做整理与版式，内容/字幕走已有缓存。
+    if (pathname === '/api/reprocess' && req.method === 'POST') {
+      if (refreshingHistory) return json(res, 409, { ok: false, error: '正在重刷历史笔记，请稍候' })
+      const body = await readBody(req)
+      const limit = Math.max(0, Math.floor(Number(body.limit) || 0))
+      refreshingHistory = true
+      log('开始重刷历史笔记' + (limit ? '：前 ' + limit + ' 篇' : '：全部'))
+      engine.refreshHistory({ limit })
+        .then((result) => {
+          log('重刷历史完成：' + result.done + '/' + result.total + '，失败 ' + result.failed)
+          broadcast({ type: 'refresh-done', data: result, at: Date.now() })
+        })
+        .catch((error) => log('重刷历史失败：' + String(error?.message || error)))
+        .finally(() => { refreshingHistory = false })
+      return json(res, 202, { ok: true, message: '已开始重刷历史笔记' })
     }
 
     // 用户在面板点「重试」时重新探测 vault 权限（授权后无需重启服务）。

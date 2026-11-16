@@ -11,6 +11,17 @@
  */
 
 import { conceptKey } from './concept.js'
+import {
+  normalizeContentType,
+  normalizeKeyPointPoints,
+  normalizeQuality,
+  normalizeQuotes,
+  normalizeResources,
+  normalizeTemplate,
+  normalizeTerms,
+  scoreNoteQuality,
+  templateSections,
+} from './note-content.js'
 import { NOTE_FORMAT } from './note-check.js'
 import { manualNoteLinkTarget, normalizeNoteLayout } from './paths.js'
 
@@ -152,9 +163,7 @@ function normalizeKeyPoints(value) {
     }
     if (!isPlainObject(item)) continue
     const title = cleanInline(item.title ?? item.name)
-    const points = Array.isArray(item.points)
-      ? item.points.map((point) => oneLine(point)).filter(Boolean)
-      : []
+    const points = normalizeKeyPointPoints(item.points ?? item.items ?? item.details ?? item.bullets)
     const time = Number(item.time ?? item.start)
     const entry = { title: title || '要点', points }
     if (Number.isFinite(time) && time >= 0) entry.time = Math.floor(time)
@@ -324,6 +333,60 @@ function normalizeTags(value, subject, concepts = []) {
   return tags
 }
 
+const TEMPLATE_TABLE_SPECS = {
+  arguments: { headers: ['论点', '依据'], fields: ['claim', 'basis'] },
+  mechanisms: { headers: ['机制', '证据'], fields: ['point', 'evidence'] },
+  comparisons: { headers: ['对象', '结论', '依据'], fields: ['item', 'verdict', 'basis'] },
+  people: { headers: ['人物', '观点'], fields: ['name', 'view'] },
+  timeline: { headers: ['时间', '事件'], fields: [] },
+}
+
+function escapeCell(value) {
+  return cleanInline(value).replace(/\|/g, '\\|')
+}
+
+function timePrefix(time, url, platform) {
+  const seconds = Number(time)
+  if (!Number.isFinite(seconds) || seconds < 0) return ''
+  const label = formatDuration(seconds)
+  const link = buildTimeLink(url, platform, seconds)
+  return link ? `[${label}](${link}) ` : `${label} `
+}
+
+function renderTemplateSection(section, value, { url, platform }) {
+  const items = Array.isArray(value) ? value : []
+  if (!items.length) return []
+  const lines = [`## ${section.title}`, '']
+  if (section.kind === 'ordered') {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = typeof items[index] === 'string' ? { text: items[index] } : items[index]
+      lines.push(`${index + 1}. ${timePrefix(item?.time, url, platform)}${cleanInline(item?.text ?? item?.content ?? '')}`)
+    }
+  } else if (section.kind === 'list') {
+    for (const item of items) {
+      const text = typeof item === 'string' ? item : item?.text ?? item?.content ?? ''
+      if (cleanInline(text)) lines.push(`- ${cleanInline(text)}`)
+    }
+  } else {
+    const spec = TEMPLATE_TABLE_SPECS[section.key]
+    if (!spec) return []
+    lines.push(`| ${spec.headers.join(' | ')} |`)
+    lines.push(`| ${spec.headers.map(() => '---').join(' | ')} |`)
+    for (const item of items) {
+      if (section.key === 'timeline') {
+        const label = cleanInline(item?.label) || (Number.isFinite(Number(item?.time)) ? formatDuration(item.time) : '')
+        const event = cleanInline(item?.event ?? item?.text ?? '')
+        if (event) lines.push(`| ${escapeCell(label)} | ${escapeCell(event)} |`)
+        continue
+      }
+      const cells = spec.fields.map((field) => escapeCell(item?.[field]))
+      lines.push(`| ${cells.join(' | ')} |`)
+    }
+  }
+  lines.push('')
+  return lines
+}
+
 /** 视频笔记：frontmatter + 一句话简介 + 核心知识点 + 核心概念 + 讨论焦点 + 来源统计。 */
 export function renderVideoNote(input = {}) {
   const source = isPlainObject(input) ? input : {}
@@ -350,6 +413,22 @@ export function renderVideoNote(input = {}) {
   // 元数据版没有字幕支撑，概念和数字容易被模型编出来，整节省略
   const concepts = contentQuality === 'full' ? normalizeConcepts(source.concepts) : []
   const numbers = contentQuality === 'full' ? normalizeNumbers(source.numbers) : []
+  const contentType = normalizeContentType(source.contentType)
+  const template = contentQuality === 'full' ? normalizeTemplate(source.template, contentType) : {}
+  const quotes = contentQuality === 'full' ? normalizeQuotes(source.quotes) : []
+  const terms = contentQuality === 'full' ? normalizeTerms(source.terms) : []
+  const resources = contentQuality === 'full' ? normalizeResources(source.resources) : []
+  const transcriptLength = toCount(source.transcriptLength)
+  const quality = normalizeQuality(
+    source.quality,
+    scoreNoteQuality({
+      contentQuality,
+      transcriptSource: contentSource,
+      transcriptLength,
+      keyPointCount: keyPoints.length,
+      conceptCount: concepts.length,
+    })
+  )
   const relatedNotes = (Array.isArray(source.relatedNotes) ? source.relatedNotes : [])
     .map((item) => ({
       title: cleanInline(item?.title),
@@ -370,6 +449,8 @@ export function renderVideoNote(input = {}) {
     tags: normalizeTags(source.tags, subject, concepts),
     contentSource,
     contentQuality,
+    contentType,
+    quality,
     type: 'video-note',
     // 版式版本：自检用它区分当前格式与 0.3 之前的旧笔记
     format: NOTE_FORMAT,
@@ -437,6 +518,10 @@ export function renderVideoNote(input = {}) {
     lines.push('')
   }
 
+  for (const section of templateSections(contentType)) {
+    lines.push(...renderTemplateSection(section, template[section.key], { url, platform }))
+  }
+
   lines.push('## 核心知识点', '')
   if (keyPoints.length === 0) {
     lines.push('- （暂无知识点）', '')
@@ -447,7 +532,13 @@ export function renderVideoNote(input = {}) {
         ? `### ${topic.title} [${formatDuration(topic.time)}](${topicLink})`
         : `### ${topic.title}`, '')
       if (topic.points.length === 0) lines.push('- （暂无要点）')
-      else for (const point of topic.points) lines.push(`- ${point}`)
+      else {
+        for (const point of topic.points) {
+          const pointText = cleanInline(point?.text ?? point)
+          const pointPrefix = timePrefix(point?.time, url, platform)
+          lines.push(`- ${pointPrefix}${pointText}`)
+        }
+      }
       lines.push('')
     }
   }
@@ -462,6 +553,30 @@ export function renderVideoNote(input = {}) {
         ? `- **${concept.name}** — ${concept.brief}${aliasText}`
         : `- **${concept.name}**${aliasText}`
       lines.push(body + blockId)
+    }
+    lines.push('')
+  }
+
+  if (quotes.length > 0) {
+    lines.push('## 原话摘录', '')
+    for (const quote of quotes) {
+      const prefix = timePrefix(quote.time, url, platform)
+      lines.push(`> ${prefix}${quote.text}`, '')
+    }
+    if (lines[lines.length - 1] === '') lines.pop()
+    lines.push('')
+  }
+
+  if (terms.length > 0) {
+    lines.push('## 术语表', '', '| 术语 | 解释 |', '| --- | --- |')
+    for (const term of terms) lines.push(`| ${escapeCell(term.name)} | ${escapeCell(term.definition)} |`)
+    lines.push('')
+  }
+
+  if (resources.length > 0) {
+    lines.push('## 提到的资源', '')
+    for (const item of resources) {
+      lines.push(item.note ? `- **${item.name}** — ${item.note}` : `- **${item.name}**`)
     }
     lines.push('')
   }

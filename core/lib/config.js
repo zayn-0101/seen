@@ -42,6 +42,7 @@ export const DEFAULTS = Object.freeze({
   mnemonBin: null,
   mnemonStore: 'default',
   openInObsidian: false,
+  editorPass: false,
   browserNames: null,
   // 启动时探测到的笔记库权限状态（由服务端填入，不是用户配置）
   vaultAccess: null,
@@ -49,7 +50,7 @@ export const DEFAULTS = Object.freeze({
 
 const NOTE_LAYOUTS = ['flat', 'structured']
 const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays', 'youtubeCacheDays']
-const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian']
+const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian', 'editorPass']
 const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin', 'chromePath', 'ffmpegBin', 'whisperBin', 'whisperModel']
 
 function isPlainObject(value) {

@@ -25,6 +25,8 @@ function noteMarkdown(overrides = {}) {
     'created: "2026-11-15 10:00"',
     `tags: ${JSON.stringify(tags)}`,
     'contentQuality: "transcript"',
+    'contentType: "tutorial"',
+    'quality: 4',
     'type: "video-note"',
     'format: ' + (overrides.format ?? NOTE_FORMAT),
     '---',

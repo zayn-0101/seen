@@ -32,6 +32,7 @@ import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
 import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
+import { scoreNoteQuality } from './note-content.js'
 import { normalizeNoteLayout } from './paths.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
@@ -173,11 +174,13 @@ export function apply(ctx, rawConfig = {}) {
         || (source === 'youtube' ? extractYoutubeId(input?.url || '') : '')
       key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle })
       activeKey = key
+      // 重刷只重做整理与笔记，不重新抓内容/转写（缓存都还在）
+      const refresh = Boolean(input?.refresh)
 
-      if (!input?.force && isSeen(state, key)) {
+      if (!refresh && !input?.force && isSeen(state, key)) {
         return { ok: true, skipped: true, message: '已处理过该视频，保持静默' }
       }
-      if (!input?.force && shouldSkipFailure(state, key)) {
+      if (!refresh && !input?.force && shouldSkipFailure(state, key)) {
         return { ok: true, skipped: true, message: '该视频最近失败次数过多，已冷却；可稍后手动重试' }
       }
       if (!rawTitle && !input?.url && !input?.bvid && !input?.videoId) {
@@ -328,6 +331,18 @@ export function apply(ctx, rawConfig = {}) {
       // 元数据版没有字幕支撑，概念与数字容易被模型编出来，不写进笔记与状态
       const noteConcepts = contentQuality === 'full' ? summary.concepts : []
       const noteNumbers = contentQuality === 'full' ? summary.numbers : []
+      const noteContentType = summary.contentType || 'other'
+      const noteTemplate = contentQuality === 'full' ? summary.template : {}
+      const noteQuotes = contentQuality === 'full' ? summary.quotes : []
+      const noteTerms = contentQuality === 'full' ? summary.terms : []
+      const noteResources = contentQuality === 'full' ? summary.resources : []
+      const noteQuality = scoreNoteQuality({
+        contentQuality,
+        transcriptSource,
+        transcriptLength: transcript.length,
+        keyPointCount: summary.keyPoints.length,
+        conceptCount: noteConcepts.length,
+      })
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
       const createdAt = Date.now()
       let noteChapters = Array.isArray(content?.chapters) ? content.chapters : []
@@ -372,6 +387,13 @@ export function apply(ctx, rawConfig = {}) {
         numbers: noteNumbers,
         discussion: summary.discussion,
         duration: Number(content?.duration) || 0,
+        contentType: noteContentType,
+        template: noteTemplate,
+        quotes: noteQuotes,
+        terms: noteTerms,
+        resources: noteResources,
+        quality: noteQuality,
+        transcriptLength: transcript.length,
         relatedNotes,
         fetchStats: content?.fetchStats || null,
         tags: noteTags,
@@ -390,7 +412,7 @@ export function apply(ctx, rawConfig = {}) {
         title: finalTitle,
         bvid: content?.bvid || inputBvid || '',
         content: note,
-        force: Boolean(input?.force),
+        force: refresh || Boolean(input?.force),
       })
 
       const isNewSubject = !state.subjects[subject]
@@ -408,6 +430,8 @@ export function apply(ctx, rawConfig = {}) {
         summary: summary.summary.slice(0, 120),
         concepts: noteConcepts.map((item) => item.name),
         tags: noteTags,
+        contentType: noteContentType,
+        quality: noteQuality,
         createdAt,
       }
       const videos = state.subjects[subject].videos
@@ -615,6 +639,7 @@ export function apply(ctx, rawConfig = {}) {
       fetchTranscript: config.fetchTranscript,
       useBrowserCookies: config.useBrowserCookies,
       commentLimit: config.commentLimit,
+      editorPass: Boolean(config.editorPass),
     }
   }
 
@@ -635,6 +660,8 @@ export function apply(ctx, rawConfig = {}) {
           keywords: video.keywords || [],
           concepts: Array.isArray(video.concepts) ? video.concepts : [],
           tags: Array.isArray(video.tags) ? video.tags : [],
+          contentType: video.contentType || '',
+          quality: Number(video.quality) || 0,
           createdAt: video.createdAt || 0,
         })
       }
@@ -710,6 +737,16 @@ export function apply(ctx, rawConfig = {}) {
     return { ok: true, message, noteLayout: next }
   }
 
+  function setEditorPass(value) {
+    const next = Boolean(value)
+    if (next === Boolean(config.editorPass)) {
+      return { ok: true, message: '润色没有变化', editorPass: next }
+    }
+    config.editorPass = next
+    logger.log('editor.pass=' + next)
+    return { ok: true, message: next ? '已开启发布前润色' : '已关闭发布前润色', editorPass: next }
+  }
+
   async function scan(input) {
     if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     let waited = 0
@@ -734,6 +771,38 @@ export function apply(ctx, rawConfig = {}) {
     clearFailure(state, key)
     save()
     return await processTitle(input)
+  }
+
+  /** 用已缓存的内容重刷历史笔记（不重新抓取/转写）。 */
+  async function refreshHistory({ limit = 0, onProgress = null } = {}) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    const rows = []
+    for (const [subject, data] of Object.entries(state.subjects || {})) {
+      for (const video of data?.videos || []) {
+        if (!video?.title && !video?.url && !video?.bvid && !video?.videoId) continue
+        rows.push({ subject, video })
+      }
+    }
+    rows.sort((a, b) => (b.video.createdAt || 0) - (a.video.createdAt || 0))
+    const targets = limit > 0 ? rows.slice(0, limit) : rows
+    let done = 0
+    let failed = 0
+    for (const { video } of targets) {
+      const input = { title: video.title || '', url: video.url || '', source: video.source || '', bvid: video.bvid || '', videoId: video.videoId || '', refresh: true }
+      let result = null
+      try {
+        result = await processTitle(input)
+      } catch (error) {
+        result = { ok: false, message: error?.message || String(error) }
+      }
+      done += 1
+      if (!result?.ok) failed += 1
+      const progress = { done, total: targets.length, title: video.title || '', ok: Boolean(result?.ok) }
+      emit('refresh', progress)
+      if (typeof onProgress === 'function') onProgress(progress)
+      logger.log('refresh.note=' + done + '/' + targets.length + ' ok=' + Boolean(result?.ok) + ' title=' + JSON.stringify(video.title || ''))
+    }
+    return { ok: true, total: targets.length, done, failed }
   }
 
   /** 最近的失败记录（面板展示用） */
@@ -946,11 +1015,13 @@ export function apply(ctx, rawConfig = {}) {
     stop,
     setPollInterval,
     setNoteLayout,
+    setEditorPass,
     getVaultStatus,
     setVaultAccess,
     reprobeVault,
     scan,
     retryFailure,
+    refreshHistory,
     getFailures,
     getStatus: buildStatus,
     getSnapshot,

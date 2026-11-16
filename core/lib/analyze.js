@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { conceptKey } from './concept.js'
+import { normalizeContentType, normalizeKeyPointPoints, normalizeQuotes, normalizeResources, normalizeTemplate, normalizeTerms } from './note-content.js'
 import { normalizeTagTypes, normalizeThemes } from './tags.js'
 
 const DEFAULT_MAX_TOKENS = 4096
@@ -703,19 +704,12 @@ function normalizeKeyPoints(value) {
     }
     if (!item || typeof item !== 'object') continue
     const title = cleanText(item.title ?? item.topic ?? item.name ?? item.heading ?? '')
-    let points = item.points ?? item.items ?? item.details ?? item.bullets ?? []
-    if (typeof points === 'string') points = points.split(/\n+|；|;/)
-    points = Array.isArray(points)
-      ? points
-          .map((point) =>
-            cleanText(typeof point === 'string' ? point : point?.text ?? point?.content ?? point?.point ?? '')
-          )
-          .filter(Boolean)
-          .slice(0, 5)
-      : []
+    let rawPoints = item.points ?? item.items ?? item.details ?? item.bullets ?? []
+    if (typeof rawPoints === 'string') rawPoints = rawPoints.split(/\n+|；|;/)
+    const points = normalizeKeyPointPoints(rawPoints)
     if (!title && !points.length) continue
     const time = Number(item.time ?? item.start ?? item.at)
-    const entry = { title: title || points[0] || '', points }
+    const entry = { title: title || points[0]?.text || '', points }
     if (Number.isFinite(time) && time >= 0) entry.time = Math.floor(time)
     result.push(entry)
     if (result.length >= 20) break
@@ -819,6 +813,11 @@ export function normalizeSummary(raw, fallbackTitle) {
       numbers: [],
       discussion: [],
       tags: { themes: [], types: [] },
+      contentType: 'other',
+      template: {},
+      quotes: [],
+      terms: [],
+      resources: [],
       mnemonSummary: title,
     }
   }
@@ -844,7 +843,27 @@ export function normalizeSummary(raw, fallbackTitle) {
     800
   )
   const tags = normalizeSummaryTags(raw.tags ?? raw.tagSet ?? raw.tag_set)
-  return { summary, question, answer, keyPoints, concepts, numbers, discussion, tags, mnemonSummary }
+  const contentType = normalizeContentType(raw.contentType ?? raw.content_type ?? raw.videoType ?? raw.video_type)
+  const template = normalizeTemplate(raw.template, contentType)
+  const quotes = normalizeQuotes(raw.quotes ?? raw.quoteList ?? raw.quote_list)
+  const terms = normalizeTerms(raw.terms ?? raw.glossary)
+  const resources = normalizeResources(raw.resources ?? raw.mentionedResources ?? raw.mentioned_resources)
+  return {
+    summary,
+    question,
+    answer,
+    keyPoints,
+    concepts,
+    numbers,
+    discussion,
+    tags,
+    contentType,
+    template,
+    quotes,
+    terms,
+    resources,
+    mnemonSummary,
+  }
 }
 
 /** 把长文本切成带少量重叠的块，避免长视频字幕超过单次上下文。 */
@@ -1025,16 +1044,16 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '【内容依据规则】',
     '- 核心知识点必须优先来自【视频字幕/讲解文本】和【视频简介】；【观众弹幕】【观众评论】只能用于 discussion，不能作为核心知识点的唯一依据。',
     '- 如果字幕为 AI 自动识别，允许存在同音错字，按上下文纠正明显错误；不要把识别错误当成新事实。',
-    '- 如果没有字幕/讲解文本，summary 要明确写「未获取到完整视频内容，信息有限」，keyPoints 控制在 3~8 个；concepts 与 numbers 都输出空数组，不要编造具体操作步骤、时间点或数字。',
+    '- 如果没有字幕/讲解文本，summary 要明确写「未获取到完整视频内容，信息有限」，keyPoints 控制在 3~8 个；concepts、numbers、template、quotes、terms、resources 都输出空对象或空数组，不要编造具体操作步骤、时间点或数字。',
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
-    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","keyPoints":[{"title":"主题","time":123,"points":["要点1"]}],"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"tags":{"themes":["主题"],"types":["教程"]},"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
+    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","contentType":"tutorial","keyPoints":[{"title":"主题","time":123,"points":[{"text":"要点1","time":45}]}],"template":{"prerequisites":["前置条件"],"steps":[{"text":"操作步骤","time":123}]},"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"tags":{"themes":["主题"],"types":["教程"]},"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"quotes":[{"text":"原话","time":123}],"terms":[{"name":"术语","definition":"解释"}],"resources":[{"name":"资源名","note":"说明"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
     '',
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
     '2. question / answer：用一到两句话说清「这期试图回答什么问题」和「最终给出了什么答案」。若视频只是知识罗列、没有明确问题，两者都留空字符串。',
-    '3. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。',
+    '3. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。要点写成 {"text":"...","time":123} 对象，time 尽量给，拿不准省略。',
     '4. concepts：3~6 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；名称 2~8 个汉字，不要带括号或注释；同一概念如有别称，写进 aliases。',
     '5. tags.themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写这个视频所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；比 concepts 更宽，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
     '6. tags.types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用这些词，不要自造或改写。',
@@ -1042,7 +1061,12 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '8. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
     '9. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
     '10. 全部使用中文。',
-    '11. time：如果字幕素材带 [mm:ss] 时间标记，每个主题尽量给出大致开始时间（整数秒，例如 2:31 写作 151）；拿不准就省略该字段，不要编造。',
+    '11. time：主题与要点的 time 都写整数秒（例如 2:31 写作 151），只在字幕素材带 [mm:ss] 时间标记时给；拿不准就省略该字段，不要编造。',
+    '12. contentType：从「tutorial、opinion、science、review、interview、documentary、course、other」里选一个：操作教学选 tutorial，观点评论选 opinion，知识科普选 science，产品/作品评测选 review，访谈播客选 interview，纪录片/纪实选 documentary，系列课程选 course，其余 other。',
+    '13. template：只填与 contentType 对应的字段。tutorial 填 prerequisites 与 steps；course 填 prerequisites、steps（课程脉络）与 exercises；opinion 填 arguments（claim/basis）与 doubts；science 填 mechanisms（point/evidence）与 misconceptions；review 填 comparisons（item/verdict/basis）；interview 填 people（name/view）；documentary 填 timeline（label/time/event）；other 输出空对象。没有素材支撑的字段给空数组。',
+    '14. quotes：从字幕原文里摘 1~3 句最有代表性的原话，每句不超过 80 字，不改写、不拼接；带时间就写 time。没有字幕就给空数组。',
+    '15. terms：3~8 个本视频真正出现的专业术语或关键词，name 2~12 个字，definition 一句话解释（不超过 80 字）；没有就给空数组。',
+    '16. resources：只列视频里明确提到的书、文章、工具、网站、课程等，name 写名称，note 写一句说明；不要编 URL，没有就给空数组。',
   ].join('\n')
 }
 
@@ -1055,6 +1079,50 @@ function isValidSummaryRaw(raw) {
     pickString(raw.summary, raw.abstract, raw.overview) ||
       Array.isArray(raw.keyPoints ?? raw.key_points ?? raw.topics)
   )
+}
+
+/**
+ * 可选的二次润色：只改 summary/question/answer 的表达，不新增事实。
+ * 返回 null 表示失败或模型没给出可用内容，调用方保留原文。
+ */
+export async function editSummary(ctx, config, input = {}) {
+  const title = cleanText(input.title)
+  const summary = cleanText(input.summary)
+  const question = cleanText(input.question)
+  const answer = cleanText(input.answer)
+  if (!summary) return null
+  const prompt = [
+    '请润色下面这期视频的总结，让它更直接、更具体，去掉套话和空洞的形容词。',
+    '视频标题：' + title,
+    '',
+    '【原总结】',
+    'summary：' + summary,
+    'question：' + question,
+    'answer：' + answer,
+    '',
+    '【要求】',
+    '- 只改表达，不新增事实、不改变结论、不扩大范围。',
+    '- 保持中文，长度不要明显变长。',
+    '- 只输出严格 JSON：{"summary":"...","question":"...","answer":"..."}',
+  ].join('\n')
+  try {
+    const text = await callLlm(ctx, config, {
+      system: '你是文字编辑，只做表达润色，不补充任何新事实。只输出 JSON。',
+      messages: [userMessage(prompt)],
+      maxTokens: 1200,
+    })
+    const parsed = parseJson(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const nextSummary = truncateText(cleanText(parsed.summary), 120)
+    if (!nextSummary) return null
+    return {
+      summary: nextSummary,
+      question: truncateText(cleanText(parsed.question ?? question), 120),
+      answer: truncateText(cleanText(parsed.answer ?? answer), 200),
+    }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1097,7 +1165,17 @@ export async function summarize(ctx, config, input = {}) {
       '（注意：上一次你的回复无法解析为合法 JSON。请严格只输出一个合法 JSON 对象本身，前后不要任何解释文字、不要 markdown 代码块、不要尾逗号。）'
     )
   }
-  return result || normalizeSummary(null, fallbackTitle)
+  const finalResult = result || normalizeSummary(null, fallbackTitle)
+  if (config?.editorPass) {
+    const edited = await editSummary(ctx, config, {
+      title: fallbackTitle,
+      summary: finalResult.summary,
+      question: finalResult.question,
+      answer: finalResult.answer,
+    })
+    if (edited) Object.assign(finalResult, edited)
+  }
+  return finalResult
 }
 
 export default {
@@ -1106,6 +1184,7 @@ export default {
   callLlm,
   classify,
   summarize,
+  editSummary,
   normalizeClassify,
   normalizeSummary,
   normalizeSummaryTags,

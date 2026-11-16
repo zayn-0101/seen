@@ -125,11 +125,12 @@
 | state.js | 状态读写、去重、失败冷却 |
 | foreground*.js | 跨平台前台窗口读取 |
 | bilibili.js | URL/bvid 解析与 B 站内容抓取 |
-| analyze.js | LLM 提示词、JSON 解析、分类/总结、无章节视频的时间轴切段 |
+| analyze.js | LLM 提示词、JSON 解析、分类/总结、发布前润色、无章节视频的时间轴切段 |
+| note-content.js | 内容类型（8 类）、类型模板字段与上限、要点时间戳、原话/术语/资源归一、质量分 |
 | tags.js | 三层标签归一（学科/主题/类型/概念）、主题词表与包含合并 |
 | concept.js | 概念归一、跨笔记关联打分、概念索引 |
 | paths.js | 两种目录布局、笔记与手册相对路径、状态路径重映射 |
-| render.js | 三类 Markdown 渲染、Mermaid 转义 |
+| render.js | 三类 Markdown 渲染、类型模板区块与时间链接、Mermaid 转义 |
 | vault-access.js | 笔记库权限探针（子进程）、熔断守卫、串行队列、超时保护 |
 | obsidian.js | vault 路径、原子写、AUTO 区、冲突处理；全部 async 并经 runVaultTask 过守卫 |
 | index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |

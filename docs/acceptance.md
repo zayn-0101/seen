@@ -200,3 +200,16 @@
 - [x] 临时实例 E2E（B 站 BV1qqEj6oEEk，130 秒）：笔记 `format: 3`、无封面/思维导图/所属章节，区块为 视频信息 → 关键数字 → 章节 → 核心知识点 → 核心概念 → 讨论焦点 → 我的补充 → 来源统计；关键数字只剩「1 天左右」「6 级」这类真正有用的量化信息；知识点标题形如 `### 为什么适合 AI 时代 [01:05](…?t=65)`
 - [x] 同一实例验元数据版（B 站 BV11RWR64EYy 无字幕）：`contentQuality: "metadata-only"`，笔记里没有「## 关键数字」「## 核心概念」，标签只剩学科 + 3 个主题 + `类型/观点`，没有概念标签
 - [x] 测试 195 项全绿（新增 note-clean 3 项、format 3 回归 1 项、元数据降级 1 项），`npm run check` 通过
+
+## 2026-11-16 批次 2：类型模板、要点时间戳、原话/术语/资源与 format 4
+
+背景：不同内容的视频不该套同一张版式。教程需要操作步骤，观点需要论证结构，科普需要机制与证据；同时知识点只有标题带时间不够，具体要点也应能跳回原片。
+
+- [x] 新增 core/lib/note-content.js：8 类 contentType（教程/观点/科普/评测/访谈/播客/纪录/课程/其他），按类型给出模板区块与条数上限；normalizeQuotes 与 normalizeKeyPointPoints 只接受数组，normalizeTerms 按 Unicode 字符数判 2~12 字，超长直接丢弃
+- [x] 总结结构升级：SummaryResult 增加 contentType/template/quotes/terms/resources；核心知识点要点从字符串升级为 {text,time}；提示词规则覆盖新字段；contentType 与模板只在有字幕时使用
+- [x] 渲染升级：格式 4 按类型渲染 前置条件/操作步骤/课程脉络/练习/论证结构/可质疑之处/机制与证据/常见误解/对比/人物观点/事件时间线；要点与步骤带 t= 时间链接；新增 原话摘录（≤3 条、≤80 字）、术语表（≤8 个）、提到的资源（≤6 个）；frontmatter 增加 contentType 与 quality 1~5
+- [x] 编辑润色：config.editorPass（默认关闭，面板「发布前润色」）在总结后多调一次模型，只改表达不新增事实；失败时保留原总结
+- [x] 重刷历史：engine.refreshHistory 按 createdAt 倒序用缓存重跑 state 里的视频，跳过去重与失败冷却；POST /api/reprocess 后台执行并广播 refresh-done；工作台「重刷历史」按钮
+- [x] note-check 升级为 format 4：SECTION_ORDER 增加模板区块/原话摘录/术语表/提到的资源，parse 返回 contentType/quality，checkSummaryShape 校验 points {text,time}、quotes/terms/resources 上限与术语长度
+- [x] 临时实例 E2E（B 站 BV1qqEj6oEEk，约 110 秒）：笔记 `format: 4`、`contentType: "tutorial"`、`quality: 5`，前置条件/操作步骤（8 步均带 t=）/核心知识点（要点带 t=）/原话摘录/术语表/提到的资源全部出现；self-check 该库 1 篇当前格式、错误 0、警告 0
+- [x] 测试 208 项全绿（新增 note-content 测试），`npm run check` 通过

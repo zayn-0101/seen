@@ -131,7 +131,7 @@ test('mergeManualSection leaves note untouched when nothing handwritten', () => 
 
 test('renderVideoNote stamps the note format version', () => {
   const md = renderVideoNote({ title: '格式版本', subject: '写作', summary: 's', noteRoot: '视频笔记' })
-  assert.match(md, /^format: 3$/m)
+  assert.match(md, /^format: 4$/m)
   assert.match(md, /^type: "video-note"$/m)
 })
 
@@ -234,4 +234,73 @@ test('subjectManualAutoBody omits the section when no concept repeats', () => {
     videos: [{ title: '甲', notePath: 'a/甲.md', concepts: ['独一份'] }],
   })
   assert.ok(!body.includes('本学科核心概念'))
+})
+
+test('renderVideoNote renders tutorial template with step time links', () => {
+  const md = renderVideoNote({
+    title: '教程测试',
+    subject: '写作',
+    summary: '一篇教程',
+    url: 'https://www.bilibili.com/video/BV1test00002',
+    platform: 'bilibili',
+    contentQuality: 'full',
+    contentType: 'tutorial',
+    template: {
+      prerequisites: ['装好 Node'],
+      steps: [{ text: '打开终端', time: 12 }, { text: '运行命令', time: 75 }],
+    },
+    noteRoot: '视频笔记',
+  })
+  assert.match(md, /^contentType: "tutorial"$/m)
+  assert.match(md, /^quality: [1-5]$/m)
+  assert.ok(md.includes('## 前置条件'))
+  assert.ok(md.includes('- 装好 Node'))
+  assert.ok(md.includes('## 操作步骤'))
+  assert.ok(md.includes('1. [00:12](https://www.bilibili.com/video/BV1test00002?t=12) 打开终端'))
+  assert.ok(md.includes('2. [01:15](https://www.bilibili.com/video/BV1test00002?t=75) 运行命令'))
+})
+
+test('renderVideoNote renders opinion arguments table and doubts', () => {
+  const md = renderVideoNote({
+    title: '观点测试',
+    subject: '科技评论',
+    summary: '一篇观点',
+    contentQuality: 'full',
+    contentType: 'opinion',
+    template: {
+      arguments: [{ claim: '该换工具', basis: '旧工具太慢' }],
+      doubts: ['样本只有一台机器'],
+    },
+    noteRoot: '视频笔记',
+  })
+  assert.ok(md.includes('## 论证结构'))
+  assert.ok(md.includes('| 论点 | 依据 |'))
+  assert.ok(md.includes('| 该换工具 | 旧工具太慢 |'))
+  assert.ok(md.includes('## 可质疑之处'))
+  assert.ok(md.includes('- 样本只有一台机器'))
+})
+
+test('renderVideoNote renders key point times, quotes, terms and resources', () => {
+  const md = renderVideoNote({
+    title: '内容丰富测试',
+    subject: '写作',
+    summary: '一篇内容丰富的视频',
+    url: 'https://www.bilibili.com/video/BV1test00003',
+    platform: 'bilibili',
+    contentQuality: 'full',
+    contentType: 'science',
+    keyPoints: [{ title: '机制', time: 30, points: [{ text: '因为这样', time: 45 }, { text: '所以那样' }] }],
+    quotes: [{ text: '原话一句', time: 100 }],
+    terms: [{ name: '闭包', definition: '函数与其词法环境的组合' }],
+    resources: [{ name: 'MDN', note: '查文档' }],
+    noteRoot: '视频笔记',
+  })
+  assert.ok(md.includes('- [00:45](https://www.bilibili.com/video/BV1test00003?t=45) 因为这样'))
+  assert.ok(md.includes('- 所以那样'))
+  assert.ok(md.includes('## 原话摘录'))
+  assert.ok(md.includes('> [01:40](https://www.bilibili.com/video/BV1test00003?t=100) 原话一句'))
+  assert.ok(md.includes('## 术语表'))
+  assert.ok(md.includes('| 闭包 | 函数与其词法环境的组合 |'))
+  assert.ok(md.includes('## 提到的资源'))
+  assert.ok(md.includes('- **MDN** — 查文档'))
 })
