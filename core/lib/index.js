@@ -173,12 +173,16 @@ export function apply(ctx, rawConfig = {}) {
     running = true
     let key = ''
     let activeKey = ''
+    let rawTitle = ''
+    let source = ''
+    let inputBvid = null
+    let inputVideoId = null
     try {
-      const rawTitle = cleanTitle(input?.title || '')
-      const source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : 'bilibili')
+      rawTitle = cleanTitle(input?.title || '')
+      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : 'bilibili')
       const bvidFromUrl = source === 'bilibili' ? (extractBvid(input?.url || '') || null) : null
-      const inputBvid = input?.bvid || bvidFromUrl
-      const inputVideoId = input?.videoId
+      inputBvid = input?.bvid || bvidFromUrl
+      inputVideoId = input?.videoId
         || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
         || (source === 'youtube' ? extractYoutubeId(input?.url || '') : '')
       key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle })
