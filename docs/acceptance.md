@@ -260,5 +260,6 @@
 - [x] tags.js 新增 mergeTagInVideos；obsidian.js 新增 readVaultText / updateNoteTags；engine.renameTag 逐篇改 frontmatter、同步 state 的 video.tags 与 tagVocabulary，最后重建索引；类型/概念/学科标签拒绝合并；面板「标签」浏览 + 合并
 - [x] 服务新增 GET /api/tags（buildTagIndex → name/type/count）、POST /api/tags/merge、POST /api/ask
 - [x] 临时实例 E2E（复制真实 vault/state，SEEN_PORT=4818）：GET /api/tags 返回 98 个标签；POST /api/ask「Obsidian 的双链和反链有什么区别？」返回 200，答案带 2 条引用并映射回笔记路径；POST /api/tags/merge 把「效率工具」合并到「笔记工具」，changed=4，4 篇笔记 frontmatter 与标签索引同步更新
+- [x] 浏览器实测（Playwright）：知识库「标签」展开 23 个主题标签并可选择合并目标；「问笔记库」回答按 Markdown 渲染成标题/列表/加粗，`[[路径|标题]]` 双链变成可点击的 Obsidian 链接，页面无脚本报错
 - [x] 测试 233 项全绿（新增 ask 5 项、mergeTagInVideos 1 项），`npm run check` 通过
 
