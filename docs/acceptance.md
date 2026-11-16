@@ -263,3 +263,15 @@
 - [x] 浏览器实测（Playwright）：知识库「标签」展开 23 个主题标签并可选择合并目标；「问笔记库」回答按 Markdown 渲染成标题/列表/加粗，`[[路径|标题]]` 双链变成可点击的 Obsidian 链接，页面无脚本报错
 - [x] 测试 233 项全绿（新增 ask 5 项、mergeTagInVideos 1 项），`npm run check` 通过
 
+## 2026-11-16 真实笔记库全量重刷与 0.4.0
+
+背景：批次 1–6 完成后，按用户要求把 12 篇历史笔记一次性重刷到 format 4，并清理旧版留下的重复文件。
+
+- [x] 重刷前备份：`视频笔记/_备份/重刷-2026-11-16T06-31-06-981Z`（含笔记、手册、索引、总览与回顾）
+- [x] `POST /api/reprocess` 重刷 12 篇：14:31:39 开始，14:48:29「重刷历史完成：12/12，失败 0」；全部笔记为 `format: 4`
+- [x] 重刷后自检：笔记 12 篇（当前格式 12 / 旧格式 0）错误 0 警告 1（YouTube 长视频缓存里没有带时间轴的字幕，缺少章节；重新抓取时 yt-dlp 网络失败，保留原缓存）；索引 201 条双链 / 手册 6 篇 / 状态 12 条 / 路径缺失 0
+- [x] 清理旧文件：把旧版同名笔记 `英语播客：我为什么不回美国.md` 与 11 个 `.md.bak-*` 写入操作备份移到 `_备份/重刷-2026-11-16T06-31-06-981Z/旧文件/`，没有删除用户数据
+- [x] 字幕存档 11 篇（GTA6 为 metadata-only，无字幕）；`GET /api/quality` 12 篇全部有评分，`GET /api/reviews` 12 篇到期，`GET /api/tags` 93 个标签
+- [x] `package.json` 升到 0.4.0，`./scripts/make-release.sh` 产出 `dist/Seen-v0.4.0.dmg`（85M，universal）；安装到 `~/Applications/Seen.app` 后 `/api/status` 返回 200、vault ok、12 篇历史
+- [x] 测试 233 项全绿，`npm run check` 通过；修复 `processTitle` 失败分支变量作用域，避免真实错误被 `rawTitle is not defined` 覆盖
+
