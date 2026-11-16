@@ -6,7 +6,7 @@
  *
  * 依赖策略（尽量让用户省心）：
  *  - ffmpeg：缺失时自动下载 ffmpeg-static 的静态二进制到 ~/.seen/bin；
- *  - Whisper 模型：缺失时自动下载（HF_ENDPOINT / huggingface / hf-mirror 依次尝试）到 ~/.seen/models；
+ *  - Whisper 模型：缺失时由面板按推荐选择并下载（HF_ENDPOINT / huggingface / hf-mirror 依次尝试）到 ~/.seen/models；
  *  - whisper-cli：官方没有预编译二进制，只能提示用包管理器安装。
  * 系统里已装的始终优先，不会被自动下载的副本覆盖。
  */
@@ -300,6 +300,8 @@ let modelTask = null
 /** 下载 Whisper 模型到 ~/.seen/models；HF_ENDPOINT → huggingface → hf-mirror 依次尝试。 */
 export async function installWhisperModel({ model = DEFAULT_MODEL, force = false, onProgress } = {}) {
   const target = whisperModelPath(model)
+  const modelInfo = WHISPER_MODELS.find((item) => item.id === model)
+  const sizeText = modelInfo ? `（约 ${modelInfo.sizeMb}MB）` : ''
   if (!force && existsSync(target) && statSync(target).size > 100 * 1024 * 1024) {
     return { ok: true, path: target, skipped: true }
   }
@@ -309,7 +311,7 @@ export async function installWhisperModel({ model = DEFAULT_MODEL, force = false
     let lastError = null
     for (const url of urls) {
       try {
-        if (onProgress) onProgress({ stage: 'download', message: '正在下载 Whisper 模型（约 465MB）' })
+        if (onProgress) onProgress({ stage: 'download', message: `正在下载 Whisper 模型${sizeText}` })
         await downloadTo(url, target, {
           timeout: MODEL_DOWNLOAD_TIMEOUT_MS,
           minBytes: 100 * 1024 * 1024,
