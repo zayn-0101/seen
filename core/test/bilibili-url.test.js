@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { extractBvid, extractPage, cleanBiliTitle, titleSimilarity } from '../lib/bilibili.js'
+import { extractBvid, extractPage, cleanBiliTitle, titleSimilarity, buildBiliDisplayTitle } from '../lib/bilibili.js'
 
 test('extractBvid supports URLs and bare BV', () => {
   assert.equal(extractBvid('https://www.bilibili.com/video/BV1GJ411x7h7?p=2'), 'BV1GJ411x7h7')
@@ -25,4 +25,11 @@ test('titleSimilarity', () => {
   assert.equal(titleSimilarity('梯度下降详解', '梯度下降详解'), 1)
   assert.ok(titleSimilarity('梯度下降详解', '梯度下降') >= 0.5)
   assert.ok(titleSimilarity('完全不同的标题', '机器学习入门') < 0.5)
+})
+
+test('buildBiliDisplayTitle marks later parts without changing P1', () => {
+  assert.equal(buildBiliDisplayTitle({ seriesTitle: '新概念英语', part: '开篇', page: 1 }), '新概念英语')
+  assert.equal(buildBiliDisplayTitle({ seriesTitle: '新概念英语', part: '课前准备', page: 2 }), '新概念英语 - P2 课前准备')
+  assert.equal(buildBiliDisplayTitle({ seriesTitle: '新概念英语', part: '新概念英语', page: 3 }), '新概念英语')
+  assert.equal(buildBiliDisplayTitle({ seriesTitle: '', part: '单集', page: 2 }), 'P2 单集')
 })

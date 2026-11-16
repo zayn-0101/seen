@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { detectSource, extractDouyinId } from '../lib/source.js'
-import { parseRenderData } from '../lib/douyin.js'
+import { parseRenderData, buildDouyinChromeArgs, classifyDouyinPage } from '../lib/douyin.js'
 import { seenKey } from '../lib/state.js'
 import { renderVideoNote } from '../lib/render.js'
 
@@ -47,4 +47,24 @@ test('renderVideoNote marks Douyin source and stats', () => {
   assert.match(note, /videoId: "7699902138868059392"/)
   assert.match(note, /Whisper/)
   assert.match(note, /抖音精选/)
+})
+
+test('buildDouyinChromeArgs hardens the headless browser and extends retry time', () => {
+  const first = buildDouyinChromeArgs({ profile: '/tmp/p', url: 'https://www.douyin.com/video/1' })
+  assert.ok(first.includes('--headless=new'))
+  assert.ok(first.some((arg) => arg.startsWith('--user-agent=Mozilla/5.0')))
+  assert.ok(first.includes('--lang=zh-CN'))
+  assert.ok(first.includes('--disable-blink-features=AutomationControlled'))
+  assert.ok(first.includes('--virtual-time-budget=25000'))
+  const second = buildDouyinChromeArgs({ profile: '/tmp/p', url: 'https://www.douyin.com/video/1', attempt: 2 })
+  assert.ok(second.includes('--virtual-time-budget=35000'))
+  assert.equal(second.at(-1), 'https://www.douyin.com/video/1')
+})
+
+test('classifyDouyinPage separates captcha and missing pages from empty ones', () => {
+  assert.equal(classifyDouyinPage('<html>请完成安全验证</html>').reason, 'captcha')
+  assert.equal(classifyDouyinPage('<html>作品不存在</html>').reason, 'missing')
+  const empty = classifyDouyinPage('<html>nothing here</html>')
+  assert.equal(empty.ok, false)
+  assert.equal(empty.reason, 'empty')
 })

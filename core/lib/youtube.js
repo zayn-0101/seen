@@ -21,6 +21,7 @@ import { extractYoutubeId, sourceLabel } from './source.js'
 
 const execFileP = promisify(execFile)
 const CACHE_DIR = join(homedir(), '.seen', 'cache', 'youtube')
+const YOUTUBE_CACHE_VERSION = 2
 const META_TIMEOUT_MS = 120000
 const SUB_TIMEOUT_MS = 120000
 const MEDIA_TIMEOUT_MS = 600000
@@ -42,19 +43,20 @@ function readCache(id, config = {}) {
   try {
     const file = cachePath(id)
     if (!existsSync(file)) return null
-    const days = Number(config.youtubeCacheDays ?? 7)
-    const maxAge = (Number.isFinite(days) && days > 0 ? days : 7) * 24 * 60 * 60 * 1000
+    const days = Number(config.youtubeCacheDays ?? 30)
+    const maxAge = (Number.isFinite(days) && days > 0 ? days : 30) * 24 * 60 * 60 * 1000
     if (Date.now() - statSync(file).mtimeMs > maxAge) return null
     const data = JSON.parse(readFileSync(file, 'utf8'))
     if (!data || !data.content || String(data.content.videoId || '') !== String(id)) return null
-    return data.content
+    const version = Number(data.version) || 1
+    return { content: data.content, version }
   } catch { return null }
 }
 
 function writeCache(id, content) {
   try {
     mkdirSync(CACHE_DIR, { recursive: true })
-    writeFileSync(cachePath(id), JSON.stringify({ content, savedAt: new Date().toISOString() }, null, 2), 'utf8')
+    writeFileSync(cachePath(id), JSON.stringify({ version: YOUTUBE_CACHE_VERSION, content, savedAt: new Date().toISOString() }, null, 2), 'utf8')
   } catch { /* 缓存失败不影响主流程 */ }
 }
 
@@ -90,6 +92,7 @@ export function parseYoutubeJson(raw) {
     videoId,
     title: String(data.title || '').trim(),
     author: String(data.uploader || data.channel || '').trim(),
+    language: String(data.language || '').trim(),
     duration: Number(data.duration) || 0,
     desc: String(data.description || '').trim(),
     tags: Array.isArray(data.tags) ? data.tags.map(String).filter(Boolean) : [],
@@ -121,11 +124,13 @@ function pickTrack(tracks, priority) {
   return plain || keys[0]
 }
 
-/** 挑选字幕轨道：人工中文 > 人工英文 > 自动中文 > 自动英文 > 原声。 */
+/** 挑选字幕轨道：人工原声 > 人工中文/英文 > 自动原声 > 自动中文/英文；原声由 yt-dlp 的 language 字段决定。 */
 export function pickYoutubeSubtitle(meta) {
-  const manual = pickTrack(meta?.subtitles, MANUAL_LANGS)
+  const original = String(meta?.language || '').trim()
+  const originalPriority = original ? [original, original + '-orig'] : []
+  const manual = pickTrack(meta?.subtitles, [...originalPriority, ...MANUAL_LANGS])
   if (manual) return { lang: manual, auto: false }
-  const auto = pickTrack(meta?.automaticCaptions, AUTO_LANGS)
+  const auto = pickTrack(meta?.automaticCaptions, [...originalPriority, ...AUTO_LANGS])
   if (auto) return { lang: auto, auto: true }
   return null
 }
@@ -314,11 +319,18 @@ export function buildYoutubeContent({ meta = {}, id, url, transcript = '', timed
 export async function fetchYoutubeContent({ url = '', title = '', config = {}, force = false, onProgress } = {}) {
   const id = extractYoutubeId(url)
   if (!id) throw new Error('无法从链接中识别 YouTube 视频 ID')
+  let staleCache = null
   if (!force) {
-    const cached = readCache(id, config)
-    if (cached) {
-      if (onProgress) onProgress({ stage: 'cache', message: '命中 YouTube 缓存', videoId: id })
-      return cached
+    const hit = readCache(id, config)
+    if (hit) {
+      const content = hit.content
+      // 旧缓存没有 timedTranscript 字段时重建一次，否则无章节视频切不出逻辑段
+      const complete = hit.version >= YOUTUBE_CACHE_VERSION && typeof content.timedTranscript === 'string'
+      if (complete) {
+        if (onProgress) onProgress({ stage: 'cache', message: '命中 YouTube 缓存', videoId: id })
+        return content
+      }
+      staleCache = content
     }
   }
 
@@ -326,7 +338,16 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
   if (!ready.ok) throw new Error('未找到 yt-dlp，自动安装也失败：' + (ready.error || '未知原因'))
 
   const watchUrl = youtubeWatchUrl(id)
-  const meta = await fetchMetadata({ url: watchUrl, config, onProgress })
+  let meta = null
+  try {
+    meta = await fetchMetadata({ url: watchUrl, config, onProgress })
+  } catch (error) {
+    if (staleCache) {
+      if (onProgress) onProgress({ stage: 'cache', message: 'YouTube 信息刷新失败，沿用旧缓存', videoId: id })
+      return staleCache
+    }
+    throw error
+  }
   if (meta.isLive) throw new Error('该 YouTube 视频正在直播，暂不处理')
 
   let transcript = ''
@@ -350,6 +371,14 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
       timedTranscript = subtitle.timed || ''
       if (onProgress) onProgress({ stage: 'subtitle-ok', message: '已获取 YouTube 字幕', videoId: id, length: transcript.length })
     }
+  }
+
+  // 字幕抓取失败但旧缓存里还有逐字稿时，先沿用旧文本，避免长视频被降级成 metadata-only
+  if (!transcript && staleCache?.transcript) {
+    transcript = staleCache.transcript
+    timedTranscript = String(staleCache.timedTranscript || '')
+    transcriptSource = staleCache.transcriptSource || ''
+    if (onProgress) onProgress({ stage: 'cache', message: '字幕刷新失败，沿用旧转写', videoId: id })
   }
 
   if (!transcript && config.fetchTranscript !== false) {

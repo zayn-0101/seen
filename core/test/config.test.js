@@ -49,3 +49,9 @@ test('defaultStateDir and filename helpers', () => {
   assert.equal(normalizeSubjectName(''), '未分类')
   assert.deepEqual(Object.keys(DEFAULTS).includes('enableMnemon'), true)
 })
+
+test('cache windows default to thirty days', () => {
+  assert.equal(DEFAULTS.youtubeCacheDays, 30)
+  assert.equal(DEFAULTS.douyinCacheDays, 30)
+  assert.equal(resolveConfig({}).youtubeCacheDays, 30)
+})

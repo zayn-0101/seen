@@ -19,6 +19,8 @@ import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, findFfmpeg
 
 const execFileP = promisify(execFile)
 const CACHE_DIR = join(homedir(), '.seen', 'cache', 'douyin')
+const DOUYIN_CACHE_VERSION = 2
+const DOUYIN_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 const CHROME_TIMEOUT_MS = 70000
 const FFMPEG_TIMEOUT_MS = 600000
 const MAX_DOM_BYTES = 30 * 1024 * 1024
@@ -117,6 +119,39 @@ export function parseRenderData(html) {
   return found[0] || null
 }
 
+/** 组装无头 Chrome 参数；第二次尝试延长虚拟时间预算。 */
+export function buildDouyinChromeArgs({ profile = '', url = '', attempt = 1 } = {}) {
+  const args = [
+    '--headless=new',
+    '--disable-gpu',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-renderer-backgrounding',
+    '--mute-audio',
+    '--user-agent=' + DOUYIN_UA,
+    '--lang=zh-CN',
+    '--disable-blink-features=AutomationControlled',
+  ]
+  if (profile) args.push('--user-data-dir=' + String(profile))
+  args.push('--virtual-time-budget=' + (Number(attempt) >= 2 ? '35000' : '25000'), '--dump-dom', String(url ?? ''))
+  return args
+}
+
+/** 区分正常 RENDER_DATA、验证页、作品不存在与空页面。 */
+export function classifyDouyinPage(html) {
+  const detail = parseRenderData(html)
+  if (detail) return { ok: true, detail }
+  const text = String(html ?? '')
+  if (/验证|captcha|访问过于频繁|安全验证|滑动验证|人机验证|verify-center/i.test(text)) {
+    return { ok: false, reason: 'captcha', message: '抖音触发了安全验证，请稍后重试或先在 Chrome 打开该视频完成验证' }
+  }
+  if (/作品不存在|作品已删除|视频不存在|页面不存在|not found|404/i.test(text)) {
+    return { ok: false, reason: 'missing', message: '抖音作品不存在或已删除' }
+  }
+  return { ok: false, reason: 'empty', message: '抖音页面没有返回可解析的视频数据' }
+}
+
 function mediaUrl(videoDetail) {
   const list = videoDetail?.video?.playAddr
   if (Array.isArray(list)) {
@@ -190,11 +225,12 @@ function readCache(id, config = {}) {
   try {
     const file = cachePath(id)
     if (!existsSync(file)) return null
-    const days = Number(config.douyinCacheDays ?? 7)
-    const maxAge = (Number.isFinite(days) && days > 0 ? days : 7) * 24 * 60 * 60 * 1000
+    const days = Number(config.douyinCacheDays ?? 30)
+    const maxAge = (Number.isFinite(days) && days > 0 ? days : 30) * 24 * 60 * 60 * 1000
     if (Date.now() - statSync(file).mtimeMs > maxAge) return null
     const data = JSON.parse(readFileSync(file, 'utf8'))
     if (!data || !data.content || !data.content.videoId) return null
+    if ((Number(data.version) || 1) < DOUYIN_CACHE_VERSION) return null
     return data.content
   } catch { return null }
 }
@@ -202,36 +238,34 @@ function readCache(id, config = {}) {
 function writeCache(id, content) {
   try {
     mkdirSync(CACHE_DIR, { recursive: true })
-    writeFileSync(cachePath(id), JSON.stringify({ content, savedAt: new Date().toISOString() }, null, 2), 'utf8')
+    writeFileSync(cachePath(id), JSON.stringify({ version: DOUYIN_CACHE_VERSION, content, savedAt: new Date().toISOString() }, null, 2), 'utf8')
   } catch { /* 缓存失败不影响主流程 */ }
 }
 
-async function readPage(url, config) {
+async function readPage(url, config, onProgress) {
   const chrome = findChrome(config)
   if (!chrome) throw new Error('未找到 Google Chrome，无法解析抖音页面')
   const profile = mkdtempSync(join(tmpdir(), 'seen-douyin-chrome-'))
+  let last = null
   try {
-    const args = [
-      '--headless=new',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-background-networking',
-      '--disable-renderer-backgrounding',
-      '--mute-audio',
-      '--user-data-dir=' + profile,
-      '--virtual-time-budget=25000',
-      '--dump-dom',
-      url,
-    ]
-    const result = await execFileP(chrome, args, {
-      timeout: CHROME_TIMEOUT_MS,
-      maxBuffer: MAX_DOM_BYTES,
-      encoding: 'utf8',
-    })
-    const detail = parseRenderData(result.stdout)
-    if (!detail) throw new Error('抖音页面没有返回可解析的视频数据（可能触发了验证页）')
-    return detail
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (onProgress) onProgress({ stage: 'page', message: '第 ' + attempt + '/2 次解析抖音页面' })
+      try {
+        const args = buildDouyinChromeArgs({ profile, url, attempt })
+        const result = await execFileP(chrome, args, {
+          timeout: CHROME_TIMEOUT_MS,
+          maxBuffer: MAX_DOM_BYTES,
+          encoding: 'utf8',
+        })
+        const outcome = classifyDouyinPage(result.stdout)
+        if (outcome.ok) return outcome.detail
+        last = outcome
+      } catch (error) {
+        last = { reason: 'error', message: '解析抖音页面失败：' + (error?.message || error) }
+      }
+      if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 800))
+    }
+    throw new Error((last?.message || '抖音页面没有返回可解析的视频数据') + '（已尝试 2 次）')
   } finally {
     try { rmSync(profile, { recursive: true, force: true }) } catch { /* 忽略 */ }
   }
@@ -274,7 +308,7 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
   }
 
   if (onProgress) onProgress({ stage: 'page', message: '解析抖音精选页面', videoId: id })
-  let detail = await readPage(url, config)
+  let detail = await readPage(url, config, onProgress)
   if (String(detail.awemeId || '') !== String(id)) {
     throw new Error('抖音页面返回的视频与链接不一致')
   }

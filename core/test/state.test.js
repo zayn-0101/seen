@@ -91,3 +91,9 @@ test('markSeen and pruneSeen keep newest', () => {
   pruneSeen(state, 2)
   assert.deepEqual(Object.keys(state.seen).sort(), ['k3', 'k4'])
 })
+
+test('seenKey separates later pages of a multi-part video', () => {
+  assert.equal(seenKey({ bvid: 'BV1abc', title: 'x', page: 1 }), 'bvid:BV1abc')
+  assert.equal(seenKey({ bvid: 'BV1abc', title: 'x', page: 2 }), 'bvid:BV1abc:p2')
+  assert.equal(seenKey({ bvid: 'BV1abc', title: 'x' }), 'bvid:BV1abc')
+})

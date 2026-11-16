@@ -19,7 +19,7 @@
           → 无 URL 时 searchVideo(title) + 相似度 ≥0.5
           → fetchPlayerInfo()：AI 字幕列表 + view_points 章节
           → 并发抓弹幕（≤150）与评论（登录态最多 100，默认 50）
-      → transcript.fetchTranscript()：AI 字幕 / UP 主字幕 / yt-dlp SRT 兜底
+      → transcript.fetchTranscript()：AI 字幕 / UP 主字幕 / yt-dlp SRT，失败则下载音频 + 本地 Whisper 转写
       → classify()：LLM JSON → {isCourse, subject, title, keywords}
       → 非课程：markSeen，静默
       → summarize()：LLM JSON → {summary, keyPoints, discussion, mnemonSummary}
@@ -35,8 +35,8 @@
 
 当前支持三类来源：
 
-- **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie。
-- **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；ffmpeg 抽音频；本地 `whisper-cli` 转写。结果缓存到 `~/.seen/cache/douyin`。
+- **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie；没有字幕时用 yt-dlp 下载音频 + ffmpeg 转 wav + 本地 Whisper 转写。多 P 视频按 page/cid 区分，去重键带 `:p<n>`，字幕缓存按 `<bvid>__<cid>.json`。
+- **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；带 UA/中文 locale/反自动化参数，失败重试一次并区分验证页与作品不存在；ffmpeg 抽音频，本地 `whisper-cli` 转写。结果缓存到 `~/.seen/cache/douyin`（默认 30 天）。
 - **YouTube**：`youtube.js` 用本机 yt-dlp `-J` 取元数据（标题/频道/时长/简介/章节/字幕轨道），逐级降级取文本：
 
   1. 人工字幕：`--write-subs --sub-langs <精确键>`（只请求一条轨道，避免触发 YouTube 429）；
@@ -46,9 +46,9 @@
 
   依赖的外部工具由 `ytdlp.js` / `whisper.js` 统一解析：配置 → PATH → `~/.seen/bin`（或 `~/.seen/models`）→ 常见路径，系统里已装的始终优先。缺失时 yt-dlp、ffmpeg 自动下载（GitHub 失败走镜像，yt-dlp 校验 SHA256），Whisper 模型由面板列选项让用户选，whisper-cli 由面板按钮代跑 brew；只有 Chrome 需要用户自行安装。
 
-  结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 7 天）。
+  结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 30 天，带 version 2，缺 `timedTranscript` 的旧缓存会重建）。
 
-`source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:`、`douyin:<id>` 或 `youtube:<id>` 去重。抖音只取页面评论/弹幕总数、YouTube 不抓评论，两者的笔记都会明确标注「暂未抓取」。
+`source.js` 负责识别平台和视频 ID；`state.seenKey()` 用 `bvid:`（多 P 追加 `:p<n>`）、`douyin:<id>` 或 `youtube:<id>` 去重。抖音只取页面评论/弹幕总数、YouTube 不抓评论，两者的笔记都会明确标注「暂未抓取」。
 
 ## 独立运行模式
 
@@ -129,7 +129,8 @@
 | config.js | 默认配置、vault 自动检测、文件名清洗 |
 | state.js | 状态读写、去重、失败冷却 |
 | foreground*.js | 跨平台前台窗口读取 |
-| bilibili.js | URL/bvid 解析与 B 站内容抓取 |
+| bilibili.js | URL/bvid 解析与 B 站内容抓取（含多 P 的 page/part） |
+| transcript.js | B 站字幕抓取与缓存、无字幕音频下载 + 本地转写兜底 |
 | analyze.js | LLM 提示词、JSON 解析、分类/总结、发布前润色、无章节视频的时间轴切段 |
 | note-content.js | 内容类型（8 类）、类型模板字段与上限、要点时间戳、原话/术语/资源归一、质量分 |
 | review-schedule.js | 间隔复习调度：1/3/7/16/35 天阶梯、到期队列与统计 |

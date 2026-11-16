@@ -103,9 +103,10 @@ export function saveState(statePath, state) {
 }
 
 /** 生成去重键：优先 bvid / 平台视频 ID，否则标题小写去空白/标点 */
-export function seenKey({ bvid, videoId, source, title } = {}) {
+export function seenKey({ bvid, videoId, source, title, page } = {}) {
   if (bvid !== null && bvid !== undefined && String(bvid).trim() !== '') {
-    return 'bvid:' + String(bvid).trim()
+    const pageNum = Number(page)
+    return 'bvid:' + String(bvid).trim() + (Number.isInteger(pageNum) && pageNum > 1 ? ':p' + pageNum : '')
   }
   if (videoId !== null && videoId !== undefined && String(videoId).trim() !== '') {
     return String(source || 'video') + ':' + String(videoId).trim()

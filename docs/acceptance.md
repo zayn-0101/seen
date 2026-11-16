@@ -52,7 +52,7 @@
 - [x] 自动安装接入后重跑真实抓取：9.7 秒拿到 5,417 字字幕，行为不变
 - [x] `cd core && node --test`：74 tests / 74 pass
 - [ ] 会员 / 年龄限制 / 直播视频的失败提示待真实样本验证
-- [ ] YouTube 评论未接入（需要 OAuth，暂不做）
+- [x] YouTube 评论一期按成本取舍不做：公开评论可用 Data API key 或 yt-dlp --write-comments，但会带限流、超时与输出膨胀，不是技术必须；抖音评论正文同理一期不做（B 站评论保持现状）
 
 ## 自动安装（2026-11-14）
 
@@ -274,4 +274,16 @@
 - [x] 字幕存档 11 篇（GTA6 为 metadata-only，无字幕）；`GET /api/quality` 12 篇全部有评分，`GET /api/reviews` 12 篇到期，`GET /api/tags` 93 个标签
 - [x] `package.json` 升到 0.4.0，`./scripts/make-release.sh` 产出 `dist/Seen-v0.4.0.dmg`（85M，universal）；安装到 `~/Applications/Seen.app` 后 `/api/status` 返回 200、vault ok、12 篇历史
 - [x] 测试 233 项全绿，`npm run check` 通过；修复 `processTitle` 失败分支变量作用域，避免真实错误被 `rawTitle is not defined` 覆盖
+
+## 2026-11-16 平台内容提取改进（B站音频兜底、多P、YouTube 原声、抖音重试）
+
+- [x] B 站无字幕音频兜底：`fetchTranscript` 在字幕为空且未关闭转写时，用 yt-dlp `-f bestaudio` 下载音频、ffmpeg 转 16kHz 单声道、Whisper 转写；失败只返回空并记录 detail，不阻断仅元数据笔记。真实视频 `BV11RWR64EYy`（915 秒、无字幕）直测 230 秒拿到 4,608 字 / 8,024 字带时间轴文本，source=whisper
+- [x] B 站多 P 隔离：`fetchContent` 返回 page/part，P2 起标题自动拼「- Pn 分P名」；`seenKey` 用 `bvid:<BV>:p<n>` 去重（前台检测也按 URL 的 p 参数算键），字幕缓存按 `<bvid>__<cid>.json`，state 记录 page/cid。多 P 样本「新概念英语 第一册」的 P2（369 秒）直测 99 秒完成转写；临时库扫描 P2/P3 各生成独立笔记
+- [x] 多 P 状态覆盖 bug：`processTitle` 的 `existed` 匹配只比 bvid，P3 会覆盖 P2 的 history 记录；已加 page 比较（`(Number(v.page) || 1) === videoPage`），重扫 P2 后 state 恢复 P2+P3 两条
+- [x] YouTube 字幕语言：`parseYoutubeJson` 保留 `language`，`pickYoutubeSubtitle` 先原声语言（自动字幕先找 `<lang>-orig`），人工字幕仍优先自动；单元测试覆盖 ja 原声优先于 en/zh 机翻
+- [x] YouTube / 抖音缓存升到 version 2、默认 30 天；YouTube 旧缓存缺 `timedTranscript` 会重建，元数据/字幕刷新失败时可沿用旧转写
+- [x] 抖音页面解析加 UA、中文 locale、反自动化参数；首次失败等 800ms 重试一次（第二次 virtual-time-budget 35 秒），验证页 / 作品不存在 / 无可解析数据分别给 captcha / missing / empty 提示；历史抖音链接 E2E 成功生成 format 4 笔记（contentSource whisper、quality 4）
+- [x] 临时库 E2E（SEEN_PORT=4821、/tmp/seen-p0-vault、/tmp/seen-p0-state）：B站 GTA6、B站多P P2/P3、抖音各一篇笔记均生成，frontmatter 均为 `format: 4`；自检 4 篇（当前 4 / 旧 0）错误 0 警告 0，索引 73 条双链 / 手册 2 篇 / 状态 4 条 / 路径缺失 0
+- [x] 新增 9 项单元测试（transcriptCacheName、buildBilibiliAudioArgs、seenKey 多P、YouTube language/原声优先、Douyin classify/buildChromeArgs、缓存 30 天、buildBiliDisplayTitle），`cd core && node --test` 242 项全绿，`npm run check` 通过
+- [x] 一期不抓 YouTube / 抖音评论正文（按成本取舍，非技术必须）；B 站评论保持现状；未改动真实笔记库
 

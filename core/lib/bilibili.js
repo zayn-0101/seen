@@ -233,6 +233,17 @@ export function cleanBiliTitle(raw) {
   return title.replace(/\s+/g, ' ').trim()
 }
 
+/** 多 P 视频的展示标题：P1 保持系列名，P2+ 追加分 P 名。 */
+export function buildBiliDisplayTitle({ seriesTitle = '', part = '', page = 1 } = {}) {
+  const series = cleanBiliTitle(seriesTitle)
+  const partName = cleanBiliTitle(part)
+  const pageNum = Number(page)
+  if (pageNum > 1 && partName && partName !== series) {
+    return (series ? series + ' - ' : '') + 'P' + pageNum + ' ' + partName
+  }
+  return series || partName
+}
+
 /* ------------------------------------------------------------------ */
 /* 标题相似度                                                           */
 /* ------------------------------------------------------------------ */
@@ -645,6 +656,8 @@ function emptyContent(overrides = {}) {
     bvid: null,
     aid: null,
     cid: null,
+    page: 1,
+    part: '',
     url: '',
     duration: 0,
     title: '',
@@ -714,6 +727,7 @@ export async function fetchContent(input = {}) {
     if (!bvid) {
       return emptyContent({
         url: resolved.url || '',
+        page: p,
         title: displayTitle,
         desc: search?.desc || '',
         tags: search?.tags || [],
@@ -725,6 +739,7 @@ export async function fetchContent(input = {}) {
         matched: true,
         bvid,
         aid: search?.aid ?? null,
+        page: p,
         url: canonicalVideoUrl(bvid, p),
         title: displayTitle,
         desc: search?.desc || '',
@@ -743,6 +758,7 @@ export async function fetchContent(input = {}) {
     const cid = view?.cid ?? null
     const desc = String(view?.desc || search?.desc || '').trim()
     const owner = String(view?.owner || '')
+    const part = String(view?.part || '')
     const stat = view?.stat && typeof view.stat === 'object' ? view.stat : {}
 
     let playerInfo = { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
@@ -772,9 +788,11 @@ export async function fetchContent(input = {}) {
       bvid,
       aid,
       cid,
+      page: p,
+      part,
       url: canonicalVideoUrl(bvid, p),
       duration: Number(view?.duration) || 0,
-      title: cleanBiliTitle(view?.title || displayTitle),
+      title: buildBiliDisplayTitle({ seriesTitle: view?.title || displayTitle, part, page: p }),
       desc,
       tags,
       owner,

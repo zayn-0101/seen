@@ -56,8 +56,9 @@ export function loadState(statePath: string): State
 export function saveState(statePath: string, state: State): void
 export function atomicWrite(file: string, content: string): void
 
-export function seenKey({ bvid, title }: { bvid?: string|null, title: string }): string
-// 有 bvid → 'bvid:' + bvid；否则 'title:' + 归一化标题（小写、去空白/标点）
+export function seenKey({ bvid, videoId, source, title, page }: { bvid?: string|null, videoId?: string|null, source?: string, title?: string, page?: number }): string
+// 有 bvid：第 1 页 → 'bvid:' + bvid；第 2 页起 → 'bvid:' + bvid + ':p' + page（多 P 分开去重，旧记录兼容）
+// 有 videoId → '<source 或 video>:' + videoId；否则 'title:' + 归一化标题（小写、去空白/标点）
 
 export function isSeen(state: State, key: string): boolean
 export function markSeen(state: State, key: string, info: object): void
@@ -124,6 +125,7 @@ export function extractPage(input: string): number
 export async function resolveVideoInput(ref: string): Promise<{ bvid?: string, p?: number, title?: string, url?: string }>
 export function cleanBiliTitle(raw: string): string
 export function titleSimilarity(a: string, b: string): number
+export function buildBiliDisplayTitle({ seriesTitle, part, page = 1 }): string
 export async function searchVideo(title: string): Promise<{ bvid, aid, title, desc, tags } | null>
 export async function fetchView(bvid: string, p = 1): Promise<ViewInfo>
 export async function fetchDanmaku(cid: number|string): Promise<string[]>
@@ -137,6 +139,8 @@ export interface ContentResult {
   bvid: string | null
   aid: number | null
   cid: number | null
+  page: number
+  part: string
   url: string
   title: string
   desc: string
@@ -157,6 +161,27 @@ export interface ContentResult {
 - 评论匿名接口实际最多约 3 条，按实际数量返回。
 - 字幕接口失败静默返回空字符串。
 - `fetchContent` 不得抛错；内部捕获并返回 matched:false 或空字段。
+- 多 P：`fetchContent` 返回 `page`（从 URL 的 `?p=` 或默认 1）与 `part`（分 P 名）；P2 起标题用 `buildBiliDisplayTitle` 拼成「系列名 - Pn 分P名」，P1 保持系列名。
+
+## lib/transcript.js
+
+```js
+export function transcriptCacheName(bvid: string, cid?: number|string|null): string
+// 有 cid → '<bvid>__<cid>.json'；否则 '<bvid>.json'（多 P 各自一份缓存）
+
+export function parseSrtSegments(text: string): Array<{ from: number, to: number, text: string }>
+export function buildTimedTranscript(segments: Array<{ from: number, text: string }>, options?): string  // '[mm:ss] 一句'
+export function parseSrt(text: string): string
+export function chooseSubtitle(subtitles: any[]): any | null
+
+export function buildBilibiliAudioArgs({ url, dir, cookieBrowser }): string[]
+// --no-warnings --no-playlist -f bestaudio -o <dir>/audio.%(ext)s，可选 --cookies-from-browser，最后是 url
+
+export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', author = '', duration = 0, config = {}, cookieHeader = '', force = false, onProgress }): Promise<{ text: string, timed: string, source: string, detail: string, page?: number }>
+// 先读缓存 → yt-dlp 字幕 → 无字幕且 config.fetchTranscript !== false 时下载音频并用 Whisper 转写；
+// 进度阶段：audio → transcribe → transcribe-progress；失败不抛错，返回空 text/detail，不阻断仅元数据笔记。
+// 缓存 TTL 用 transcriptCacheDays（默认 30 天），写 version 2、bvid、cid。
+```
 
 ## lib/analyze.js
 
@@ -544,9 +569,12 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`。
 - `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
 - `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
+- 页面解析最多两次（第一次失败等 800ms 重试，第二次 `--virtual-time-budget` 放宽到 35 秒）；验证页、作品不存在、无可解析数据分别给 `captcha` / `missing` / `empty` 的明确提示；结果缓存 30 天（`douyinCacheDays`，version 2）。
+- 纯函数（可离线单测）：`buildDouyinChromeArgs({profile,url,attempt})`、`classifyDouyinPage(html)`。
 - 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-<model>.bin`（默认 large-v3-turbo，可在面板「诊断」里换）。
 - `fetchYoutubeContent({url,title,config,force,onProgress})` 返回同形对象：`source:'youtube'`、`videoId`、`bvid:null`、`transcript`、`transcriptSource:'youtube-subtitle'|'auto-subtitle'|'whisper'`、`fetchStats`、`chapters:[{from,content}]`、`comments:[]`、`danmaku:[]`。
-  取内容顺序：人工字幕 → 自动字幕 → 音频 + whisper.cpp → 仅元数据；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 7 天）。
+  取内容顺序：人工字幕 → 自动字幕 → 音频 + whisper.cpp → 仅元数据；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 30 天，缓存带 version 2；缺 `timedTranscript` 的旧缓存会重建，元数据/字幕刷新失败时可沿用旧转写）。
+  字幕语言：先原声语言（`parseYoutubeJson` 返回的 `language`，自动字幕先找 `<lang>-orig`），再按中英日韩兜底；人工字幕始终优先于自动字幕。
   纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。
 - YouTube 依赖：yt-dlp（元数据与字幕）、ffmpeg + whisper-cli + 模型（仅无字幕时）。
 

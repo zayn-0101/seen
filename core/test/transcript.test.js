@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseSrt, chooseSubtitle } from '../lib/transcript.js'
+import { parseSrt, chooseSubtitle, transcriptCacheName, buildBilibiliAudioArgs } from '../lib/transcript.js'
 
 test('parseSrt strips indexes timestamps and tags', () => {
   const srt = [
@@ -26,4 +26,19 @@ test('chooseSubtitle prefers AI Chinese', () => {
   assert.equal(chooseSubtitle(list).lan, 'ai-zh')
   assert.equal(chooseSubtitle([{ lan: 'zh-CN', subtitle_url: '//z' }]).lan, 'zh-CN')
   assert.equal(chooseSubtitle([]), null)
+})
+
+test('transcriptCacheName separates pages by cid', () => {
+  assert.equal(transcriptCacheName('BV1abc'), 'BV1abc.json')
+  assert.equal(transcriptCacheName('BV1abc', '123'), 'BV1abc__123.json')
+  assert.notEqual(transcriptCacheName('BV1abc', '111'), transcriptCacheName('BV1abc', '222'))
+})
+
+test('buildBilibiliAudioArgs asks yt-dlp for the best audio track', () => {
+  const args = buildBilibiliAudioArgs({ url: 'https://www.bilibili.com/video/BV1abc?p=2', dir: '/tmp/x' })
+  assert.ok(args.includes('--no-playlist'))
+  assert.deepEqual(args.slice(args.indexOf('-f'), args.indexOf('-f') + 2), ['-f', 'bestaudio'])
+  assert.ok(args.some((arg) => String(arg).endsWith('audio.%(ext)s')))
+  assert.equal(args.at(-1), 'https://www.bilibili.com/video/BV1abc?p=2')
+  assert.ok(buildBilibiliAudioArgs({ url: 'u', dir: '/tmp', cookieBrowser: 'chrome' }).includes('--cookies-from-browser'))
 })

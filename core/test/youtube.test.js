@@ -149,6 +149,27 @@ test('renderVideoNote renders YouTube source, chapters and timestamp links', () 
   assert.doesNotMatch(note, /## 弹幕与评论讨论焦点/)
 })
 
+test('parseYoutubeJson keeps the original language', () => {
+  const meta = parseYoutubeJson(JSON.stringify({ id: 'x', language: 'ja', title: 't' }))
+  assert.equal(meta.language, 'ja')
+  assert.equal(parseYoutubeJson(META_JSON).language, '')
+})
+
+test('pickYoutubeSubtitle prefers the original language over translations', () => {
+  const meta = parseYoutubeJson(JSON.stringify({
+    id: 'x', language: 'ja',
+    subtitles: {},
+    automatic_captions: { 'en': [{ ext: 'vtt' }], 'ja': [{ ext: 'vtt' }], 'zh-Hans': [{ ext: 'vtt' }] },
+  }))
+  assert.deepEqual(pickYoutubeSubtitle(meta), { lang: 'ja', auto: true })
+  const manual = parseYoutubeJson(JSON.stringify({
+    id: 'x', language: 'ja',
+    subtitles: { en: [{ ext: 'vtt' }] },
+    automatic_captions: { ja: [{ ext: 'vtt' }] },
+  }))
+  assert.deepEqual(pickYoutubeSubtitle(manual), { lang: 'en', auto: false })
+})
+
 test('buildTimeLink supports bilibili and youtube only', () => {
   assert.equal(buildTimeLink('https://www.bilibili.com/video/BV1xx?p=2', 'bilibili', 45), 'https://www.bilibili.com/video/BV1xx?p=2&t=45')
   assert.equal(buildTimeLink('https://www.youtube.com/watch?v=abc', 'youtube', 45), 'https://www.youtube.com/watch?v=abc&t=45s')

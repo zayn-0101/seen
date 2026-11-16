@@ -20,7 +20,7 @@ import {
 } from './state.js'
 import { observeForeground, isBrowserName } from './foreground.js'
 import { probeDarwinPermission } from './foreground-darwin.js'
-import { fetchContent, fetchComments, cleanBiliTitle, extractBvid } from './bilibili.js'
+import { fetchContent, fetchComments, cleanBiliTitle, extractBvid, extractPage } from './bilibili.js'
 import { classify, segmentTranscript, summarize, resolveModel } from './analyze.js'
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
@@ -185,7 +185,8 @@ export function apply(ctx, rawConfig = {}) {
       inputVideoId = input?.videoId
         || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
         || (source === 'youtube' ? extractYoutubeId(input?.url || '') : '')
-      key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle })
+      const inputPage = source === 'bilibili' ? extractPage(input?.url || '') : 1
+      key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle, page: inputPage })
       activeKey = key
       // 重刷只重做整理与笔记，不重新抓内容/转写（缓存都还在）
       const refresh = Boolean(input?.refresh)
@@ -266,7 +267,7 @@ export function apply(ctx, rawConfig = {}) {
             } catch { /* 降级 */ }
           }
           if (content?.bvid) {
-            const bvidKey = seenKey({ bvid: content.bvid, title: content.title || rawTitle })
+            const bvidKey = seenKey({ bvid: content.bvid, title: content.title || rawTitle, page: content.page || inputPage })
             if (!input?.force && bvidKey !== key && isSeen(state, bvidKey)) {
               return { ok: true, skipped: true, message: '该视频（bvid）已处理过，保持静默' }
             }
@@ -288,7 +289,7 @@ export function apply(ctx, rawConfig = {}) {
         throw new Error('视频分类失败（LLM 返回无法解析或调用失败），稍后重试')
       }
       if (cls.isCourse === false) {
-        markSeen(state, activeKey, { at: Date.now(), title, source, bvid: content?.bvid || inputBvid || null, videoId: content?.videoId || inputVideoId || null, isCourse: false })
+        markSeen(state, activeKey, { at: Date.now(), title, source, bvid: content?.bvid || inputBvid || null, videoId: content?.videoId || inputVideoId || null, page: content?.page || inputPage || 1, cid: content?.cid || null, isCourse: false })
         state.lastTitle = title
         state.stats.skipped += 1
         pruneSeen(state)
@@ -308,11 +309,16 @@ export function apply(ctx, rawConfig = {}) {
           const tr = await fetchTranscript({
             bvid: content.bvid,
             cid: content.cid,
+            page: content.page || inputPage,
             url: content.url || input?.url,
+            title: content.title || title,
+            author: content.owner || '',
+            duration: Number(content.duration) || 0,
             config,
             cookieHeader,
             force: Boolean(input?.force),
             playerInfo: { subtitles: content.subtitleEntries || [] },
+            onProgress: (progress) => emit('progress', { source, ...progress }),
           })
           if (tr?.text) {
             transcript = tr.text
@@ -378,8 +384,9 @@ export function apply(ctx, rawConfig = {}) {
       // 重刷时保留原有复习进度，新笔记从今天开始排期
       const noteBvid = content?.bvid || inputBvid || ''
       const noteVideoId = content?.videoId || inputVideoId || ''
+      const notePage = content?.page || inputPage || 1
       const previousRecord = historyVideos.find((item) =>
-        (noteBvid && item.bvid === noteBvid) ||
+        (noteBvid && item.bvid === noteBvid && (Number(item.page) || 1) === notePage) ||
         (noteVideoId && item.videoId === noteVideoId) ||
         (!noteBvid && !noteVideoId && item.title === finalTitle))
       const noteReview = previousRecord?.review && previousRecord.review.due ? previousRecord.review : initialReview(createdAt)
@@ -467,6 +474,8 @@ export function apply(ctx, rawConfig = {}) {
         source,
         bvid: content?.bvid || inputBvid || '',
         videoId: content?.videoId || inputVideoId || '',
+        page: notePage,
+        cid: content?.cid || null,
         url: content?.url || input?.url || '',
         author: content?.owner || content?.author || '',
         notePath: writeResult.relPath,
@@ -486,8 +495,10 @@ export function apply(ctx, rawConfig = {}) {
         createdAt,
       }
       const videos = state.subjects[subject].videos
+      // 多 P 视频同一个 bvid 会有多条记录，必须带上分 P 号一起比较。
+      const videoPage = Number(videoRecord.page) || 1
       const existed = videos.findIndex((v) =>
-        (videoRecord.bvid && v.bvid === videoRecord.bvid) ||
+        (videoRecord.bvid && v.bvid === videoRecord.bvid && (Number(v.page) || 1) === videoPage) ||
         (videoRecord.videoId && v.videoId === videoRecord.videoId) ||
         (!videoRecord.bvid && !videoRecord.videoId && v.title === videoRecord.title)
       )
@@ -527,6 +538,8 @@ export function apply(ctx, rawConfig = {}) {
         source,
         bvid: content?.bvid || inputBvid || null,
         videoId: content?.videoId || inputVideoId || null,
+        page: content?.page || inputPage || 1,
+        cid: content?.cid || null,
         subject,
         notePath: writeResult.relPath,
         isCourse: true,
@@ -624,7 +637,9 @@ export function apply(ctx, rawConfig = {}) {
       // 抖音首页、YouTube 主页/搜索页/频道页都没有视频 ID，静默忽略。
       return
     }
-    const key = seenKey({ bvid, videoId, source, title })
+    // 多 P 视频的前台 URL 带 ?p=n，去重键也要带分 P 号，否则看完 P1 后 P2 会被当成已看过
+    const page = source === 'bilibili' ? extractPage(rawUrl) : 1
+    const key = seenKey({ bvid, videoId, source, title, page })
     if (isSeen(state, key)) { pending = null; return }
     logger.logOnce('obs|' + key, 'foreground.browser app=' + JSON.stringify(fg.app) + ' title=' + JSON.stringify(title) + ' source=' + source + ' id=' + (bvid || videoId || 'none'))
     if (!pending || pending.key !== key) pending = { key, title, url: fg?.url || '', bvid, videoId, source, count: 1 }
