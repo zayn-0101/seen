@@ -236,3 +236,17 @@
 - [x] 质量可见：`GET /api/quality` 汇总 {total, scored, low}，知识库对 quality ≤2 的笔记出提示，历史卡片显示「质量 N/5」
 - [x] 临时实例 E2E（复制真实 vault）：重扫 B 站视频生成 format 4 笔记 + 字幕存档；全量重建生成 6 份手册、3 个主题页、总览与三篇索引；概念页 0（真实历史概念都只出现 1 次，符合 ≥2 门槛）；`GET /api/quality` 返回 {total:12, scored:1, low:[]}
 - [x] 测试 219 项全绿（新增 topic-pages 5 项、rebuild 2 项），`npm run check` 通过
+
+## 2026-11-16 批次 5：复习卡片与间隔重复
+
+背景：笔记生成后缺少「什么时候该回看」的机制。把知识点变成可复习的问答，并按间隔重复安排到期日。
+
+- [x] 新增 core/lib/review-schedule.js：REVIEW_RATINGS（again/hard/easy）、LADDER 1/3/7/16/35；initialReview 当天到期；nextReview 实现 again 明天重来并清零、hard 间隔 ×1.5、easy 逐级拉长；collectReviews 返回到期队列与 {total,reviewed,due,averageQuality,subjects} 统计
+- [x] 视频笔记新增「## 复习卡片」：一句话问答 + 每个核心知识点的标题与首条要点，格式为 `问题::答案`（兼容 Obsidian Spaced Repetition），最多 5 条；frontmatter 增加 `review` 进度
+- [x] 面板「今日复习」卡片：列到期笔记（学科/质量/到期日），三键「忘了 / 模糊 / 记住了」→ `POST /api/reviews`；`GET /api/reviews` 返回队列与统计
+- [x] 复习进度双写：state 的 video.review + 笔记 frontmatter 的 review（updateNoteReview 只改这一行，找不到文件返回错误）；重刷笔记时按 bvid/videoId/title 找回旧进度，不重置
+- [x] 周回顾升级：新增「## 复习情况」（已复习/待复习、本周优先）与「## 学习统计」（平均质量分、内容类型分布）；只列本周新增笔记的到期项，避免把上周内容带进来
+- [x] note-check 的 SECTION_ORDER 在「相关笔记」后加「复习卡片」，旧笔记没有该区块不报错
+- [x] 临时实例 E2E（复制真实 vault/state，SEEN_PORT=4817）：GET /api/reviews 返回 12 篇到期（旧笔记无 review 字段，均视为今天到期）；POST /api/reviews 对 GTA6 笔记评 easy 后返回 due 2026-11-17、interval 1、ease 2.6、reps 1，剩余到期 11 篇；该笔记 frontmatter 已写入 review 行
+- [x] 测试 227 项全绿（新增 review-schedule 6 项、format 复习卡片 1 项、周回顾 1 项），`npm run check` 通过
+

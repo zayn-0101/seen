@@ -269,6 +269,7 @@ async function snapshot() {
     status: { ...status, lastForeground },
     config: engine.getConfig(),
     history: engine.getHistory(),
+    reviews: engine.getReviews(),
     events: engine.getEvents(),
     update: updateInfo.available ? { ...updateInfo, current: APP_VERSION } : null,
     llm: {
@@ -370,6 +371,10 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { total: history.length, scored: scored.length, low })
     }
 
+    if (pathname === '/api/reviews' && req.method === 'GET') {
+      return json(res, 200, engine.getReviews())
+    }
+
     if (pathname === '/api/config' && req.method === 'POST') {
       const body = await readBody(req)
       let message = ''
@@ -435,6 +440,14 @@ const server = createServer(async (req, res) => {
         .catch((error) => log('重刷历史失败：' + String(error?.message || error)))
         .finally(() => { refreshingHistory = false })
       return json(res, 202, { ok: true, message: '已开始重刷历史笔记' })
+    }
+
+    // 记录一次复习反馈：again / hard / easy，按 SM-2 排下一次。
+    if (pathname === '/api/reviews' && req.method === 'POST') {
+      const body = await readBody(req)
+      const result = await engine.recordReview({ notePath: body.notePath, rating: body.rating })
+      const data = await snapshot()
+      return json(res, result.ok ? 200 : 400, { ...data, result })
     }
 
     // 用字幕存档重整理一篇历史笔记：不重新抓取/转写，只重跑总结与版式。

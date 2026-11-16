@@ -60,6 +60,44 @@ function yamlValue(value) {
   return yamlString(value)
 }
 
+/** 复习状态：只接受完整的 due/interval/ease/reps，缺失或非法时返回 null。 */
+function normalizeReviewState(value) {
+  if (!isPlainObject(value)) return null
+  const due = String(value.due ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null
+  const interval = Number(value.interval)
+  const ease = Number(value.ease)
+  const reps = Number(value.reps)
+  return {
+    due,
+    interval: Number.isFinite(interval) && interval >= 0 ? Math.round(interval) : 0,
+    ease: Number.isFinite(ease) && ease > 0 ? Math.round(ease * 10) / 10 : 2.5,
+    reps: Number.isFinite(reps) && reps >= 0 ? Math.round(reps) : 0,
+  }
+}
+
+/** 复习卡片：问题::答案，最多 5 条，供 Obsidian Spaced Repetition 插件识别。 */
+function buildReviewCards({ question, answer, keyPoints }) {
+  const clean = (text) => oneLine(text).replace(/::/g, '：')
+  const cards = []
+  const q = clean(question)
+  const a = clean(answer)
+  if (q && a) cards.push(q + '::' + a)
+  for (const topic of keyPoints) {
+    if (cards.length >= 5) break
+    const title = clean(topic.title)
+    const first = topic.points.length ? clean(topic.points[0]?.text ?? topic.points[0]) : ''
+    if (title && first) cards.push(title + '::' + first)
+  }
+  const seen = new Set()
+  return cards.filter((card) => {
+    const key = card.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 5)
+}
+
 /** 渲染 YAML frontmatter（含首尾 ---）。 */
 export function renderFrontmatter(obj = {}) {
   const lines = ['---']
@@ -442,6 +480,8 @@ export function renderVideoNote(input = {}) {
     }))
     .filter((item) => item.title)
     .slice(0, 5)
+  const review = normalizeReviewState(source.review)
+  const reviewCards = buildReviewCards({ question, answer, keyPoints })
 
   const frontmatterData = {
     title,
@@ -460,6 +500,7 @@ export function renderVideoNote(input = {}) {
     // 版式版本：自检用它区分当前格式与 0.3 之前的旧笔记
     format: NOTE_FORMAT,
   }
+  if (review) frontmatterData.review = review
   if (bvid) frontmatterData.bvid = bvid
   if (videoId) frontmatterData.videoId = videoId
   const frontmatter = renderFrontmatter(frontmatterData)
@@ -593,6 +634,13 @@ export function renderVideoNote(input = {}) {
       const link = target ? `[[${target}|${item.title}]]` : item.title
       lines.push(item.reason ? `- ${link} — ${item.reason}` : `- ${link}`)
     }
+    lines.push('')
+  }
+
+  // 复习卡片：Obsidian Spaced Repetition 的 Question::Answer 语法，纯文本也读得懂
+  if (reviewCards.length > 0) {
+    lines.push('## 复习卡片', '')
+    for (const card of reviewCards) lines.push(card)
     lines.push('')
   }
 

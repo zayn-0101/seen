@@ -230,6 +230,27 @@ export function scoreNoteQuality({ contentQuality, transcriptSource, transcriptL
 export function normalizeQuality(value: any, fallback: number): number
 ```
 
+## lib/review-schedule.js
+
+```js
+export const REVIEW_RATINGS = ['again', 'hard', 'easy']
+export const LADDER = [1, 3, 7, 16, 35]
+
+export function dateKey(input?: Date|number|string): string       // 本地 YYYY-MM-DD
+export function normalizeRating(value: any): string               // 只认 again/hard/easy，其他返回空串
+export function initialReview(now?: Date|number): { due, interval, ease, reps }
+// 新建笔记：due = 今天、interval 0、ease 2.5、reps 0
+export function nextReview(current: any, rating: string, now?: Date|number): { due, interval, ease, reps, lastAt }
+// easy：按 LADDER 阶梯（1/3/7/16/35）拉长、ease +0.1、reps +1
+// hard：间隔 <3 则 3，否则 ×1.5（上限 35）、ease -0.1、reps 不变
+// again：间隔 1 天、ease -0.2（下限 1.3）、reps 清零
+export function isDue(review: any, now?: Date|number): boolean     // 无 review/due 视为今天到期
+export function collectReviews(videos: any[], { now, limit = 20 } = {}): { due: Array<{title,subject,notePath,quality,review}>, stats: {total,reviewed,due,averageQuality,subjects} }
+// due 按到期日升序、quality 降序；reviewed = review.reps > 0；averageQuality 一位小数
+```
+
+复习进度同时存 state 的 video.review 和笔记 frontmatter 的 `review`；面板三档对应 again / hard / easy。
+
 ## lib/tags.js
 
 ```js
@@ -276,9 +297,10 @@ export function renderVideoNote(input: {
   title, subject, source, bvid, videoId, url, author, createdAt, summary, question, answer,
   keyPoints, concepts, numbers, discussion, fetchStats, chapters, contentSource, contentQuality,
   duration, relatedNotes, tags, noteRoot,
-  contentType, template, quotes, terms, resources, quality, transcriptLength
+  contentType, template, quotes, terms, resources, quality, transcriptLength, review
 }): string
 // format 4：不输出封面、封面字段与思维导图；关键数字、核心概念、类型模板、原话、术语与资源只在 contentQuality === 'full' 时渲染
+// review = { due, interval, ease, reps } 会写进 frontmatter，并在「相关笔记」后生成「## 复习卡片」（问题::答案，最多 5 条）
 // 类型模板按 contentType 展开（教程=前置条件+操作步骤、课程=再加练习、观点=论证结构+可质疑之处、科普=机制与证据+常见误解、评测=对比、访谈=人物观点、纪录=事件时间线）；要点与步骤带时间戳，B站/YouTube 生成 t= 链接
 export function buildTimeLink(url: string, platform: 'bilibili'|'youtube', seconds: number): string
 export function renderSubjectManual(input: { subject, videos, noteRoot, updatedAt }): string
@@ -312,6 +334,7 @@ export async function writeTranscriptNote({ vaultPath, noteRoot, noteName, conte
 export async function readTranscriptNote({ vaultPath, noteRoot, noteName }): Promise<string | null>  // 不存在返回 null
 export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
+export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 review 行
 // 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
 export async function readFrontmatterBvid(filePath: string): Promise<string | null>
 export async function openInObsidian({ vaultPath, notePath }): Promise<{ ok: boolean, error?: string }>
@@ -544,10 +567,11 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
-  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
+- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。

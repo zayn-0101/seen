@@ -344,6 +344,32 @@ export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {})
   })
 }
 
+/** 更新笔记 frontmatter 里的 review 字段（复习状态），保留其余内容。 */
+export function updateNoteReview({ vaultPath, notePath, review } = {}) {
+  const relPath = String(notePath || '').trim().replace(/\\/g, '/')
+  if (!relPath) return Promise.resolve({ ok: false, error: '缺少 notePath' })
+  const absPath = absoluteFromRel(vaultPath, relPath)
+  const json = JSON.stringify(review && typeof review === 'object' ? review : {})
+  return runVault(async () => {
+    let markdown
+    try {
+      markdown = await readFile(absPath, 'utf8')
+    } catch {
+      return { ok: false, error: '笔记不存在：' + relPath }
+    }
+    const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+    if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }
+    const block = match[1]
+    const line = 'review: ' + json
+    const nextBlock = /^review:.*$/m.test(block)
+      ? block.replace(/^review:.*$/m, line)
+      : block.replace(/\s*$/, '') + '\n' + line
+    const next = markdown.slice(0, match.index) + '---\n' + nextBlock + '\n---' + markdown.slice(match.index + match[0].length)
+    await atomicWrite(absPath, next)
+    return { ok: true, relPath }
+  })
+}
+
 /** 更新/创建总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
 export function updateOverview({ vaultPath, noteRoot, subjects, videos, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)

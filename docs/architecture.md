@@ -132,10 +132,11 @@
 | bilibili.js | URL/bvid 解析与 B 站内容抓取 |
 | analyze.js | LLM 提示词、JSON 解析、分类/总结、发布前润色、无章节视频的时间轴切段 |
 | note-content.js | 内容类型（8 类）、类型模板字段与上限、要点时间戳、原话/术语/资源归一、质量分 |
+| review-schedule.js | 间隔复习调度：1/3/7/16/35 天阶梯、到期队列与统计 |
 | tags.js | 三层标签归一（学科/主题/类型/概念）、主题词表与包含合并 |
 | concept.js | 概念归一、跨笔记关联打分、概念索引 |
 | paths.js | 两种目录布局、笔记/手册/字幕/概念页/主题页相对路径、状态路径重映射 |
-| render.js | 三类 Markdown 渲染、类型模板区块与时间链接、Mermaid 转义 |
+| render.js | 三类 Markdown 渲染、类型模板区块与时间链接、复习卡片、Mermaid 转义 |
 | vault-access.js | 笔记库权限探针（子进程）、熔断守卫、串行队列、超时保护 |
 | obsidian.js | vault 路径、原子写、AUTO 区、冲突处理；全部 async 并经 runVaultTask 过守卫 |
 | index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |

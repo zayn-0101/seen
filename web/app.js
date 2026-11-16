@@ -616,6 +616,59 @@ function renderVaultBanner(vault) {
   $('vaultText').textContent = reason + '。打开 系统设置 → 隐私与安全性 → 文件与文件夹，给 Seen 打开「文稿文件夹」，然后点「重新检测」。'
 }
 
+function renderReviews(reviews) {
+  const card = $('reviewCard')
+  const list = $('reviewList')
+  if (!card || !list) return
+  const rows = Array.isArray(reviews?.due) ? reviews.due : []
+  const stats = reviews?.stats || {}
+  const dueCount = Number(stats.due) || rows.length
+  if (dueCount === 0 && rows.length === 0) {
+    card.hidden = true
+    list.innerHTML = ''
+    return
+  }
+  card.hidden = false
+  const stat = $('reviewStats')
+  if (stat) stat.textContent = '待复习 ' + dueCount + ' · 已复习 ' + (Number(stats.reviewed) || 0)
+  list.innerHTML = ''
+  if (rows.length === 0) {
+    list.appendChild(el('p', 'review-empty', '今天的复习都完成了，明天见。'))
+    return
+  }
+  for (const row of rows) {
+    const item = el('div', 'review-item')
+    const body = el('div', 'review-body')
+    body.appendChild(el('strong', '', row.title || '未命名视频'))
+    const meta = [row.subject || '', row.quality ? '质量 ' + row.quality + '/5' : '', row.review?.due ? '到期 ' + row.review.due : ''].filter(Boolean).join(' · ')
+    body.appendChild(el('span', 'review-meta', meta))
+    item.appendChild(body)
+    const actions = el('div', 'review-actions')
+    for (const [rating, label] of [['again', '忘了'], ['hard', '模糊'], ['easy', '记住了']]) {
+      const button = el('button', 'button text-button review-' + rating, label)
+      button.type = 'button'
+      button.addEventListener('click', () => rateReview(row.notePath, rating, button))
+      actions.appendChild(button)
+    }
+    item.appendChild(actions)
+    list.appendChild(item)
+  }
+}
+
+async function rateReview(notePath, rating, button) {
+  if (!notePath) return
+  const label = button ? button.textContent : ''
+  if (button) { button.disabled = true; button.textContent = '…' }
+  try {
+    const data = await api('/api/reviews', { method: 'POST', body: JSON.stringify({ notePath, rating }) })
+    renderSnapshot(data)
+    showToast(data.result?.message || '已记录')
+  } catch (error) {
+    showToast('记录复习失败：' + (error?.message || error))
+    if (button) { button.disabled = false; button.textContent = label || '重试' }
+  }
+}
+
 function renderFailures(failures) {
   const card = $('failuresCard')
   const list = $('failures')
@@ -699,6 +752,7 @@ function renderSnapshot(snap) {
   const editorPassToggle = $('settingsEditorPass')
   if (editorPassToggle) editorPassToggle.checked = Boolean(snap.config?.editorPass)
   renderHistory(snap.history || [])
+  renderReviews(snap.reviews || { due: [], stats: {} })
   renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
   if (snap.status?.lastForeground) renderForeground({ ...snap.status.lastForeground, isBrowser: snap.status.lastForeground.isBrowser !== false })

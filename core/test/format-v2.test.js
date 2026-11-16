@@ -280,6 +280,27 @@ test('renderVideoNote renders opinion arguments table and doubts', () => {
   assert.ok(md.includes('- 样本只有一台机器'))
 })
 
+test('renderVideoNote writes review state and spaced repetition cards', () => {
+  const md = renderVideoNote({
+    title: '复习测试',
+    subject: '写作',
+    summary: 's',
+    question: '为什么要复习',
+    answer: '因为会忘',
+    keyPoints: [{ title: '间隔重复', points: ['按间隔安排复习'] }],
+    contentQuality: 'full',
+    review: { due: '2026-11-16', interval: 0, ease: 2.5, reps: 0 },
+    noteRoot: '视频笔记',
+  })
+  assert.match(md, /^review: \{"due":"2026-11-16","interval":0,"ease":2.5,"reps":0\}$/m)
+  assert.ok(md.includes('## 复习卡片'))
+  assert.ok(md.includes('为什么要复习::因为会忘'))
+  assert.ok(md.includes('间隔重复::按间隔安排复习'))
+  const plain = renderVideoNote({ title: '无复习', subject: '写作', summary: 's', noteRoot: '视频笔记' })
+  assert.ok(!/^review:/m.test(plain))
+  assert.ok(!plain.includes('## 复习卡片'))
+})
+
 test('renderVideoNote renders key point times, quotes, terms and resources', () => {
   const md = renderVideoNote({
     title: '内容丰富测试',

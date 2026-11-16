@@ -5,6 +5,8 @@
  * 只读取传入的 history 数据，不访问文件系统。
  */
 
+import { collectReviews } from './review-schedule.js'
+
 export const WEEK_FOLDER = '回顾'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -62,12 +64,14 @@ export function buildWeeklyReview({ videos = [], now = new Date() } = {}) {
   const { start, end } = weekRange(year, week)
   const label = weekLabel(year, week)
 
-  const rows = (Array.isArray(videos) ? videos : [])
+  const allRows = Array.isArray(videos) ? videos : []
+  const rows = allRows
     .filter((row) => {
       const at = Number(row && row.createdAt)
       return Number.isFinite(at) && at >= start.getTime() && at <= end.getTime()
     })
     .sort((a, b) => Number(a.createdAt) - Number(b.createdAt))
+  const reviewInfo = collectReviews(allRows, { now, limit: 100 })
 
   const subjectCounts = new Map()
   const sourceCounts = new Map()
@@ -128,6 +132,30 @@ export function buildWeeklyReview({ videos = [], now = new Date() } = {}) {
     if (keywordSet.size > 0) {
       lines.push('## 关键词', '', '- ' + [...keywordSet].join('、'), '')
     }
+
+    const stats = reviewInfo.stats
+    const weekPaths = new Set(rows.map((row) => String(row.notePath || '')))
+    const dueThisWeek = reviewInfo.due.filter((row) => weekPaths.has(String(row.notePath || ''))).slice(0, 5)
+    lines.push('## 复习情况', '', '- 已复习 ' + stats.reviewed + ' 篇 · 待复习 ' + stats.due + ' 篇')
+    if (dueThisWeek.length > 0) {
+      lines.push('- 本周优先：' + dueThisWeek.map((row) => noteLink(row)).join('、'))
+    } else {
+      lines.push('- 本周新增的笔记都还没到复习时间')
+    }
+    lines.push('')
+
+    const typeCounts = new Map()
+    for (const row of allRows) {
+      const type = String(row.contentType || '').trim()
+      if (type) typeCounts.set(type, (typeCounts.get(type) || 0) + 1)
+    }
+    lines.push('## 学习统计', '')
+    lines.push('- 平均质量分：' + (stats.averageQuality ? stats.averageQuality + ' / 5' : '暂无'))
+    if (typeCounts.size > 0) {
+      const typeText = [...typeCounts.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => name + ' ' + count).join(' · ')
+      lines.push('- 内容类型：' + typeText)
+    }
+    lines.push('')
 
     lines.push('## 值得重看', '')
     for (const row of rows.slice(-3).reverse()) {

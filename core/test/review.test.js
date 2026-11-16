@@ -48,6 +48,22 @@ test('buildWeeklyReview handles empty weeks', () => {
   assert.doesNotMatch(review.markdown, /## 按天记录/)
 })
 
+test('buildWeeklyReview adds review status and learning stats', () => {
+  const now = new Date(2026, 10, 18)
+  const { start } = weekRange(2026, 47)
+  const videos = [
+    { title: '本周视频', subject: '写作', source: 'bilibili', notePath: '视频笔记/写作/a.md', createdAt: start.getTime() + 3600000, quality: 4, contentType: 'tutorial', review: { due: '2026-11-18', interval: 1, ease: 2.5, reps: 1 } },
+    { title: '旧视频', subject: '写作', source: 'bilibili', notePath: '视频笔记/写作/b.md', createdAt: start.getTime() - 9 * 86400000, quality: 2, contentType: 'opinion', review: { due: '2026-11-01', interval: 3, ease: 2.4, reps: 2 } },
+  ]
+  const review = buildWeeklyReview({ videos, now })
+  assert.match(review.markdown, /## 复习情况/)
+  assert.match(review.markdown, /已复习 2 篇 · 待复习 2 篇/)
+  assert.match(review.markdown, /本周优先：\[\[视频笔记\/写作\/a\|本周视频\]\]/)
+  assert.match(review.markdown, /## 学习统计/)
+  assert.match(review.markdown, /平均质量分：3 \/ 5/)
+  assert.match(review.markdown, /内容类型：tutorial 1 · opinion 1/)
+})
+
 test('buildWeeklyReview survives malformed rows', () => {
   const review = buildWeeklyReview({ videos: [null, { title: 'x' }, { createdAt: 'bad' }], now: new Date(2026, 10, 18) })
   assert.equal(review.count, 0)

@@ -35,8 +35,9 @@ import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
 import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { scoreNoteQuality } from './note-content.js'
 import { normalizeNoteLayout } from './paths.js'
-import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, updateNoteReview, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
 import { parseTranscriptNote, renderTranscriptNote } from './transcript-note.js'
+import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
@@ -368,6 +369,14 @@ export function apply(ctx, rawConfig = {}) {
         historyVideos,
         { limit: 5 },
       )
+      // 重刷时保留原有复习进度，新笔记从今天开始排期
+      const noteBvid = content?.bvid || inputBvid || ''
+      const noteVideoId = content?.videoId || inputVideoId || ''
+      const previousRecord = historyVideos.find((item) =>
+        (noteBvid && item.bvid === noteBvid) ||
+        (noteVideoId && item.videoId === noteVideoId) ||
+        (!noteBvid && !noteVideoId && item.title === finalTitle))
+      const noteReview = previousRecord?.review && previousRecord.review.due ? previousRecord.review : initialReview(createdAt)
       // 四层标签：学科 → 主题 → 类型 → 概念，统一由 tags.js 组装
       const noteTags = mergeTags({
         subject,
@@ -400,6 +409,7 @@ export function apply(ctx, rawConfig = {}) {
         terms: noteTerms,
         resources: noteResources,
         quality: noteQuality,
+        review: noteReview,
         transcriptLength: transcript.length,
         relatedNotes,
         fetchStats: content?.fetchStats || null,
@@ -466,6 +476,7 @@ export function apply(ctx, rawConfig = {}) {
         tags: noteTags,
         contentType: noteContentType,
         quality: noteQuality,
+        review: noteReview,
         createdAt,
       }
       const videos = state.subjects[subject].videos
@@ -702,6 +713,7 @@ export function apply(ctx, rawConfig = {}) {
           tags: Array.isArray(video.tags) ? video.tags : [],
           contentType: video.contentType || '',
           quality: Number(video.quality) || 0,
+          review: video.review && typeof video.review === 'object' ? video.review : null,
           createdAt: video.createdAt || 0,
         })
       }
@@ -882,6 +894,40 @@ export function apply(ctx, rawConfig = {}) {
     })
   }
 
+  /** 今日复习队列与学习统计（只读）。 */
+  function getReviews() {
+    return collectReviews(getHistory(), { limit: 20 })
+  }
+
+  /** 记录一次复习反馈：更新 state、frontmatter，并按 SM-2 排下一次。 */
+  async function recordReview({ notePath, rating } = {}) {
+    const relPath = String(notePath || '').trim()
+    if (!relPath) return { ok: false, message: '缺少 notePath' }
+    const normalized = normalizeRating(rating)
+    if (!normalized) return { ok: false, message: '复习反馈只能是 again / hard / easy' }
+    let found = null
+    for (const [, data] of Object.entries(state.subjects || {})) {
+      const video = (Array.isArray(data?.videos) ? data.videos : []).find((item) => item.notePath === relPath)
+      if (video) { found = video; break }
+    }
+    if (!found) return { ok: false, message: '找不到这篇笔记：' + relPath }
+    const now = Date.now()
+    const current = found.review && found.review.due ? found.review : initialReview(now)
+    const review = nextReview(current, normalized, now)
+    let noteResult
+    try {
+      noteResult = await updateNoteReview({ vaultPath, notePath: relPath, review })
+    } catch (error) {
+      noteResult = { ok: false, error: error?.message || '更新笔记里的复习状态失败' }
+    }
+    if (!noteResult.ok) return { ok: false, message: noteResult.error || '更新笔记里的复习状态失败', review }
+    found.review = review
+    try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
+    logger.log('review.record title=' + JSON.stringify(found.title) + ' rating=' + normalized + ' due=' + review.due)
+    emit('review', { title: found.title, rating: normalized, review })
+    return { ok: true, message: normalized === 'easy' ? '记住了，下次 ' + review.due + ' 再见' : normalized === 'hard' ? '有点模糊，' + review.due + ' 再复习一次' : '没关系，明天再来', review }
+  }
+
   /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
   async function rebuildKnowledgePages() {
     const vault = vaultGuard.status()
@@ -901,6 +947,7 @@ export function apply(ctx, rawConfig = {}) {
       status: await buildStatus(),
       config: getSafeConfig(),
       history: getHistory(),
+      reviews: getReviews(),
       events: recentEvents.slice(-40),
     }
   }
@@ -1110,6 +1157,8 @@ export function apply(ctx, rawConfig = {}) {
     refreshHistory,
     resummarizeNote,
     rebuildKnowledgePages,
+    getReviews,
+    recordReview,
     getFailures,
     getStatus: buildStatus,
     getSnapshot,
