@@ -308,6 +308,10 @@ export async function writeIndexNote({ vaultPath, noteRoot, markdown }): Promise
 export async function writeConceptIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
 export async function writeTagIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
 export async function writeWeeklyReview({ vaultPath, noteRoot, label, markdown }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function writeTranscriptNote({ vaultPath, noteRoot, noteName, content }): Promise<{ relPath, absPath }>
+export async function readTranscriptNote({ vaultPath, noteRoot, noteName }): Promise<string | null>  // 不存在返回 null
+export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
+export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 // 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
 export async function readFrontmatterBvid(filePath: string): Promise<string | null>
 export async function openInObsidian({ vaultPath, notePath }): Promise<{ ok: boolean, error?: string }>
@@ -340,6 +344,9 @@ export function buildConceptIndex(videos: any[]): Array<{ name: string, videos: 
 export const VIDEO_DIR = '笔记'
 export const MANUAL_DIR = '手册'
 export const REVIEW_DIR = '回顾'
+export const TRANSCRIPT_DIR = '字幕'
+export const CONCEPT_DIR = '概念'
+export const TOPIC_DIR = '主题'
 export const BACKUP_DIR = '_备份'
 export const MANUAL_SUFFIX = ' 学习手册'
 
@@ -348,6 +355,9 @@ export function normalizeNoteLayout(value: any): 'flat' | 'structured'
 export function videoNoteRelPath({ noteRoot, subject, noteName, layout }): string
 export function manualNoteRelPath({ noteRoot, subject, layout }): string
 export function manualNoteLinkTarget({ noteRoot, subject, layout }): string  // 去掉 .md 的双链目标
+export function transcriptNoteRelPath({ noteRoot, noteName }): string  // <root>/字幕/<标题>.md
+export function conceptPageRelPath({ noteRoot, name }): string       // <root>/概念/<名字>.md
+export function topicPageRelPath({ noteRoot, name }): string         // <root>/主题/<名字>.md
 export function remapStateNotePaths(state: State, pathMap: Map<string,string> | object): number
 // 按旧 → 新相对路径改写 state.subjects[*].videos[].notePath，返回改写条数
 ```
@@ -360,6 +370,39 @@ export function remapStateNotePaths(state: State, pathMap: Map<string,string> | 
 export function buildIndexMarkdown(videos: any[], { noteRoot } = {}): string         // 视频索引.md 的 AUTO 正文
 export function buildConceptIndexMarkdown(concepts: any[], { noteRoot } = {}): string // 概念索引.md
 export function buildTagIndexMarkdown(tags: any[], { noteRoot } = {}): string         // 标签索引.md，按学科/主题/类型/概念分区
+```
+
+## lib/transcript-note.js
+
+```js
+export function renderTranscriptNote({ title, subject, source, url, bvid, videoId, author, createdAt, transcript, timedTranscript, notePath }): string
+// frontmatter: type "transcript"、format 1、notePath；正文 ## 带时间戳字幕 / ## 纯文本；createdAt 为毫秒时间戳时转 YYYY-MM-DD
+export function parseTranscriptNote(markdown): { text: string, timed: string }
+// 纯文本缺失时从带时间戳文本去掉 [mm:ss] 前缀还原
+```
+
+存档只作原始素材，不参与视频/概念/标签索引。
+
+## lib/topic-pages.js
+
+```js
+export function collectConceptPages(history, { minVideos = 2, max = 300 } = {}): Array<{ name, definition, videos, related }>
+export function collectTopicPages(history, { minVideos = 3, max = 200 } = {}): Array<{ name, videos, concepts }>
+// 概念页只收出现 ≥2 篇的概念；主题页只收 tags 里非学科、不含斜杠、2~12 字的主题标签且出现 ≥3 篇
+export function buildConceptPageMarkdown({ name, definition, videos, related, noteRoot }): string
+// ## 概念释义 / ## 出现笔记 / ## 相关概念
+export function buildTopicPageMarkdown({ name, videos, concepts, noteRoot }): string
+// ## 主题概览 / ## 视频笔记 / ## 相关概念
+```
+
+## lib/rebuild.js
+
+```js
+export function buildHistoryFromState(state): Array<VideoRecord>
+export function videosForManual(state, subject): Array<any>
+export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, log }): Promise<{ videos, concepts, topics, subjects }>
+// 顺序：视频索引 / 概念索引 / 标签索引 → 概念页 → 主题页 → 每学科手册 → 总览
+// 主题页的「相关概念」只保留真实存在的概念页，避免断链
 ```
 
 ## lib/vault-access.js
@@ -393,8 +436,9 @@ export function createVaultQueue(): { run(task): Promise }             // 串行
 ## lib/vault-search.js
 
 ```js
-export async function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Promise<Array<{ title, relPath, snippet, score }>>
+export async function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Promise<Array<{ title, relPath, snippet, score, kind, match }>>
 // 扫 <root> 下 .md（跳过 . 开头与 _备份，深度 ≤6，单文件 ≤200KB，≤2000 文件）；文件名命中 ×3、正文命中 ×1
+// kind：视频笔记 / 字幕 / 学科手册 / 概念页 / 主题综述 / 周回顾 / 索引；match：title（命中文件名）| content（命中正文）
 export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }): Promise<string[]>
 // 返回 .md 绝对路径；规则同 searchVault（自检脚本用它遍历笔记库）
 ```
@@ -500,8 +544,10 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
-  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
+- `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
+- `resummarizeNote({ notePath })` 读 `字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。

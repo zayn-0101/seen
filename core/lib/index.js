@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   resolveConfig,
 } from './config.js'
@@ -32,9 +32,11 @@ import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
 import { buildTagVocabulary, mergeTags, rememberTags } from './tags.js'
+import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { scoreNoteQuality } from './note-content.js'
 import { normalizeNoteLayout } from './paths.js'
-import { resolveVaultPath, ensureVaultDirs, writeVideoNote, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { parseTranscriptNote, renderTranscriptNote } from './transcript-note.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
 
@@ -88,6 +90,10 @@ function summarizeVideosForManual(state, subject) {
     notePath: v.notePath,
     summary: v.summary || '',
     concepts: Array.isArray(v.concepts) ? v.concepts : [],
+    terms: Array.isArray(v.terms) ? v.terms : [],
+    template: v.template && typeof v.template === 'object' ? v.template : {},
+    question: v.question || '',
+    answer: v.answer || '',
     createdAt: v.createdAt || Date.now(),
   }))
 }
@@ -286,9 +292,10 @@ export function apply(ctx, rawConfig = {}) {
 
       const subject = resolveSubjectName(cls.subject, existing)
       const keywords = Array.isArray(cls.keywords) ? cls.keywords.map(String).filter(Boolean).slice(0, 10) : []
-      let transcript = content?.transcript || ''
-      let timedTranscript = content?.timedTranscript || ''
-      let transcriptSource = content?.transcriptSource || (transcript ? 'up-subtitle' : '')
+      // 重整理时可以直接用已存档的字幕，不必重新转写
+      let transcript = input?.transcript || content?.transcript || ''
+      let timedTranscript = input?.timedTranscript || content?.timedTranscript || ''
+      let transcriptSource = input?.transcriptSource || content?.transcriptSource || (transcript ? 'up-subtitle' : '')
       if (!transcript && config.fetchTranscript && content?.bvid) {
         try {
           const tr = await fetchTranscript({
@@ -415,6 +422,27 @@ export function apply(ctx, rawConfig = {}) {
         force: refresh || Boolean(input?.force),
       })
 
+      // 字幕原文单独存档，之后「用已存字幕重新整理」不依赖缓存是否过期
+      let transcriptPath = ''
+      if (transcript) {
+        const noteName = basename(writeResult.relPath, '.md')
+        const archive = renderTranscriptNote({
+          title: finalTitle,
+          subject,
+          source,
+          url: content?.url || input?.url || '',
+          bvid: content?.bvid || inputBvid || '',
+          videoId: content?.videoId || inputVideoId || '',
+          author: content?.owner || content?.author || '',
+          createdAt,
+          transcript,
+          timedTranscript,
+          notePath: writeResult.relPath,
+        })
+        const saved = await writeTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName, content: archive })
+        transcriptPath = saved.relPath
+      }
+
       const isNewSubject = !state.subjects[subject]
       if (isNewSubject) state.subjects[subject] = { createdAt, updatedAt: createdAt, videos: [] }
       if (!Array.isArray(state.subjects[subject].videos)) state.subjects[subject].videos = []
@@ -426,9 +454,15 @@ export function apply(ctx, rawConfig = {}) {
         url: content?.url || input?.url || '',
         author: content?.owner || content?.author || '',
         notePath: writeResult.relPath,
+        transcriptPath,
         keywords,
         summary: summary.summary.slice(0, 120),
+        question: summary.question || '',
+        answer: summary.answer || '',
         concepts: noteConcepts.map((item) => item.name),
+        conceptDetails: noteConcepts.map((item) => ({ name: item.name, brief: item.brief || '', aliases: Array.isArray(item.aliases) ? item.aliases : [] })),
+        terms: summary.terms || [],
+        template: summary.template || {},
         tags: noteTags,
         contentType: noteContentType,
         quality: noteQuality,
@@ -445,7 +479,7 @@ export function apply(ctx, rawConfig = {}) {
       state.subjects[subject].updatedAt = createdAt
 
       await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
-      await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), layout: config.noteLayout })
+      await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), videos: getHistory(), layout: config.noteLayout })
       if (config.openInObsidian) {
         const opened = await openInObsidian({ vaultPath, notePath: writeResult.relPath })
         if (!opened.ok) logger.log('obsidian.open.error msg=' + (opened.error || 'unknown'))
@@ -656,9 +690,15 @@ export function apply(ctx, rawConfig = {}) {
           url: video.url || '',
           author: video.author || '',
           notePath: video.notePath || '',
+          transcriptPath: video.transcriptPath || '',
           summary: video.summary || '',
+          question: video.question || '',
+          answer: video.answer || '',
           keywords: video.keywords || [],
           concepts: Array.isArray(video.concepts) ? video.concepts : [],
+          conceptDetails: Array.isArray(video.conceptDetails) ? video.conceptDetails : [],
+          terms: Array.isArray(video.terms) ? video.terms : [],
+          template: video.template && typeof video.template === 'object' ? video.template : {},
           tags: Array.isArray(video.tags) ? video.tags : [],
           contentType: video.contentType || '',
           quality: Number(video.quality) || 0,
@@ -803,6 +843,52 @@ export function apply(ctx, rawConfig = {}) {
       logger.log('refresh.note=' + done + '/' + targets.length + ' ok=' + Boolean(result?.ok) + ' title=' + JSON.stringify(video.title || ''))
     }
     return { ok: true, total: targets.length, done, failed }
+  }
+
+  /** 用笔记旁的字幕存档重新整理一篇历史笔记（不重新转写）。 */
+  async function resummarizeNote({ notePath } = {}) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    const targetPath = toPosix(String(notePath || '').trim())
+    if (!targetPath) return { ok: false, message: '缺少笔记路径' }
+    let found = null
+    for (const [subject, data] of Object.entries(state.subjects || {})) {
+      for (const video of data?.videos || []) {
+        if (toPosix(video?.notePath || '') === targetPath) { found = { subject, video }; break }
+      }
+      if (found) break
+    }
+    if (!found) return { ok: false, message: '没有找到这条历史笔记' }
+    const noteName = basename(found.video.notePath || found.video.title || '未命名视频', '.md')
+    let markdown = null
+    try {
+      markdown = await readTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName })
+    } catch (error) {
+      return { ok: false, message: '读取字幕存档失败：' + String(error?.message || error) }
+    }
+    if (!markdown) return { ok: false, message: '这篇笔记还没有字幕存档，先重刷一次生成存档后再试' }
+    const parsed = parseTranscriptNote(markdown)
+    if (!parsed.text && !parsed.timed) return { ok: false, message: '字幕存档是空的' }
+    logger.log('resummarize.note=' + JSON.stringify(found.video.title || '') + ' chars=' + (parsed.text || parsed.timed).length)
+    return await processTitle({
+      title: found.video.title || '',
+      url: found.video.url || '',
+      source: found.video.source || '',
+      bvid: found.video.bvid || '',
+      videoId: found.video.videoId || '',
+      transcript: parsed.text || parsed.timed,
+      timedTranscript: parsed.timed,
+      transcriptSource: 'archive',
+      refresh: true,
+    })
+  }
+
+  /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
+  async function rebuildKnowledgePages() {
+    const vault = vaultGuard.status()
+    if (vault.ok === false) return { ok: false, message: VAULT_HINT }
+    await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+    const result = await rebuildPages({ vaultPath, noteRoot: config.noteRoot, state, layout: config.noteLayout, log: (line) => logger.log(line) })
+    return { ok: true, ...result }
   }
 
   /** 最近的失败记录（面板展示用） */
@@ -1022,6 +1108,8 @@ export function apply(ctx, rawConfig = {}) {
     scan,
     retryFailure,
     refreshHistory,
+    resummarizeNote,
+    rebuildKnowledgePages,
     getFailures,
     getStatus: buildStatus,
     getSnapshot,

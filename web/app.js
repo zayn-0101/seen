@@ -266,6 +266,14 @@ function renderSummary(data, stageText) {
     body.append(link)
   }
 
+  if (data.notePath && data.transcriptPath) {
+    const action = el('button', 'button text-button', '用存档字幕重新整理')
+    action.type = 'button'
+    action.title = '不重新转写，用这篇笔记旁的字幕存档重跑总结与版式'
+    action.addEventListener('click', () => resummarizeNote(data.notePath, action))
+    body.append(action)
+  }
+
   state.stageLabel = stageText || '已生成'
   state.processingStarted = 0
   $('summaryStage').textContent = state.stageLabel
@@ -317,7 +325,9 @@ function renderVaultSearch(results, query) {
     title.textContent = item.title
     const path = document.createElement('span')
     path.className = 'vault-search-path'
-    path.textContent = item.relPath
+    const label = item.kind || '视频笔记'
+    const hit = item.match === 'title' ? '命中文件名' : '命中正文'
+    path.textContent = '[' + label + ' · ' + hit + '] ' + item.relPath
     li.append(title, path)
     if (item.snippet) {
       const snippet = document.createElement('p')
@@ -433,12 +443,26 @@ function renderSubjectOptions(rows) {
   select.value = subjects.includes(current) ? current : ''
 }
 
+function renderQualityHint(history) {
+  const hint = $('qualityHint')
+  if (!hint) return
+  const low = (Array.isArray(history) ? history : []).filter((row) => Number(row.quality) > 0 && Number(row.quality) <= 2)
+  if (!low.length) {
+    hint.hidden = true
+    hint.textContent = ''
+    return
+  }
+  hint.hidden = false
+  hint.textContent = '有 ' + low.length + ' 篇笔记内容偏弱（质量 ≤2 分），可以点开用「存档字幕重新整理」或「重刷历史」再加工一次。'
+}
+
 function renderHistory(history) {
   const box = $('history')
   const all = Array.isArray(history) ? history : state.history || []
   if (Array.isArray(history)) {
     state.history = history
     renderSubjectOptions(history)
+    renderQualityHint(history)
   }
   box.replaceChildren()
   const rows = filterHistory(all)
@@ -485,7 +509,8 @@ function renderHistory(history) {
 function historyItem(row) {
   const button = el('button', 'history-item')
   button.type = 'button'
-  button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ')))
+  const quality = Number(row.quality) > 0 ? ' · 质量 ' + Number(row.quality) + '/5' : ''
+  button.append(el('div', 'h-subject', [row.subject || '未分类', platformLabel(row.source)].filter(Boolean).join(' · ') + quality))
   button.append(el('div', 'h-title', row.title || '（未命名视频）'))
   if (row.summary) button.append(el('div', 'h-summary', row.summary))
   button.addEventListener('click', () => {
@@ -498,6 +523,7 @@ function historyItem(row) {
       discussion: [],
       fetchStats: null,
       notePath: row.notePath,
+      transcriptPath: row.transcriptPath,
       contentQuality: 'history',
     }, '历史笔记')
   })
@@ -893,6 +919,23 @@ async function reprocessHistory() {
     showToast(error.message)
     button.disabled = false
     button.textContent = '重刷历史'
+  }
+}
+
+async function resummarizeNote(notePath, button) {
+  if (!window.confirm('用这篇笔记的字幕存档重新整理？原笔记会先备份，「我的补充」会保留。')) return
+  button.disabled = true
+  button.textContent = '重整理中…'
+  try {
+    const data = await api('/api/resummarize', { method: 'POST', body: JSON.stringify({ notePath }) })
+    if (data.status && data.config) state.snapshot = data
+    showToast(data.result?.message || '重整理完成')
+    if (data.result?.ok && data.history) renderHistory(data.history)
+  } catch (error) {
+    showToast(error.message)
+  } finally {
+    button.disabled = false
+    button.textContent = '用存档字幕重新整理'
   }
 }
 

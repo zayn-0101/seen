@@ -29,7 +29,7 @@ function readCache(bvid, config = {}) {
   try {
     const file = cachePath(bvid)
     if (!existsSync(file)) return null
-    const days = Number(config.transcriptCacheDays ?? 7)
+    const days = Number(config.transcriptCacheDays ?? 30)
     const maxAge = (Number.isFinite(days) && days > 0 ? days : 7) * 24 * 60 * 60 * 1000
     if (Date.now() - statSync(file).mtimeMs > maxAge) return null
     const data = JSON.parse(readFileSync(file, 'utf8'))

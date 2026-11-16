@@ -18,7 +18,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
-import { REVIEW_DIR, manualNoteRelPath, normalizeNoteLayout, videoNoteRelPath } from './paths.js'
+import { REVIEW_DIR, conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath } from './paths.js'
 import { VAULT_IO_TIMEOUT_MS, createVaultQueue, withVaultTimeout } from './vault-access.js'
 import {
   autoBlock,
@@ -318,17 +318,43 @@ export function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layo
   })
 }
 
+/** 写入字幕存档：<noteRoot>/字幕/<笔记名>.md（覆盖同名字幕）。 */
+export function writeTranscriptNote({ vaultPath, noteRoot, noteName, content } = {}) {
+  const root = normalizeNoteRoot(noteRoot)
+  const name = safeFilename(noteName || '未命名视频', 80)
+  const relPath = toPosix(transcriptNoteRelPath({ noteRoot: root, noteName: name }))
+  const target = { absPath: absoluteFromRel(vaultPath, relPath), relPath }
+  return runVault(async () => {
+    await atomicWrite(target.absPath, content)
+    return target
+  })
+}
+
+/** 读取字幕存档原文。文件不存在返回 null。 */
+export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {}) {
+  const root = normalizeNoteRoot(noteRoot)
+  const name = safeFilename(noteName || '未命名视频', 80)
+  const relPath = toPosix(transcriptNoteRelPath({ noteRoot: root, noteName: name }))
+  return runVault(async () => {
+    try {
+      return await readFile(absoluteFromRel(vaultPath, relPath), 'utf8')
+    } catch {
+      return null
+    }
+  })
+}
+
 /** 更新/创建总览：只替换 AUTO 区，保留用户内容；不存在时创建完整骨架。 */
-export function updateOverview({ vaultPath, noteRoot, subjects, layout } = {}) {
+export function updateOverview({ vaultPath, noteRoot, subjects, videos, layout } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, OVERVIEW_FILENAME))
   const target = { absPath: absoluteFromRel(vaultPath, relPath), relPath }
   return runVault(async () => {
     if (!(await pathExists(target.absPath))) {
-      await atomicWrite(target.absPath, renderOverview({ subjects, noteRoot: root, layout, updatedAt: Date.now() }))
+      await atomicWrite(target.absPath, renderOverview({ subjects, videos, noteRoot: root, layout, updatedAt: Date.now() }))
     } else {
       const current = await readFile(target.absPath, 'utf8')
-      const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, noteRoot: root, layout })))
+      const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, videos, noteRoot: root, layout })))
       await atomicWrite(target.absPath, next)
     }
     return target
@@ -473,4 +499,20 @@ export function writeConceptIndexNote({ vaultPath, noteRoot, markdown } = {}) {
 /** 写入标签索引；已有文件只更新 AUTO 区块，保留用户内容。 */
 export function writeTagIndexNote({ vaultPath, noteRoot, markdown } = {}) {
   return writeAutoNote({ vaultPath, noteRoot, filename: '标签索引.md', title: '标签索引', type: 'tag-index', markdown })
+}
+
+/** 写入概念页：<noteRoot>/概念/<概念>.md，只更新 AUTO 区。 */
+export function writeConceptPage({ vaultPath, noteRoot, name, markdown } = {}) {
+  const root = normalizeNoteRoot(noteRoot)
+  const label = safeFilename(name || '未命名概念', 80)
+  const relPath = conceptPageRelPath({ noteRoot: root, name: label })
+  return writeAutoNote({ vaultPath, noteRoot: root, filename: relPath.slice(root.length + 1), title: label, type: 'concept', markdown })
+}
+
+/** 写入主题综述：<noteRoot>/主题/<主题>.md，只更新 AUTO 区。 */
+export function writeTopicPage({ vaultPath, noteRoot, name, markdown } = {}) {
+  const root = normalizeNoteRoot(noteRoot)
+  const label = safeFilename(name || '未命名主题', 80)
+  const relPath = topicPageRelPath({ noteRoot: root, name: label })
+  return writeAutoNote({ vaultPath, noteRoot: root, filename: relPath.slice(root.length + 1), title: label, type: 'topic', markdown })
 }

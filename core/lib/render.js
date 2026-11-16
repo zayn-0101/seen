@@ -285,6 +285,11 @@ function normalizeVideos(videos) {
       notePath: String(item.notePath ?? '').trim(),
       summary: oneLine(item.summary),
       concepts: Array.isArray(item.concepts) ? item.concepts.map((c) => String(c ?? '').trim()).filter(Boolean) : [],
+      terms: Array.isArray(item.terms) ? item.terms : [],
+      template: isPlainObject(item.template) ? item.template : {},
+      question: oneLine(item.question),
+      answer: oneLine(item.answer),
+      quality: Number(item.quality) || 0,
       createdAt: item.createdAt,
     })
   }
@@ -651,20 +656,34 @@ export function subjectManualAutoBody(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const subject = cleanInline(source.subject) || DEFAULT_SUBJECT
   const videos = normalizeVideos(source.videos)
+  const videoLink = (video) => {
+    const target = toLinkPath(video.notePath || video.title)
+    return `[[${target}|${video.title}]]`
+  }
   const lines = ['## 学科总览', '', '```mermaid', 'mindmap', `  root((${mermaidSafe(subject) || DEFAULT_SUBJECT}))`]
   if (videos.length === 0) {
     lines.push('    （暂无视频）')
   } else {
     for (const video of videos) lines.push(`    ${mermaidSafe(video.title) || DEFAULT_TITLE}`)
   }
-  lines.push('```', '', '## 视频笔记', '')
+  lines.push('```', '', '## 学习路径', '')
+  if (videos.length === 0) {
+    lines.push('- （暂无视频，观看课程后会自动更新）')
+  } else {
+    const ordered = videos.slice().sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+    ordered.forEach((video, index) => {
+      const summary = video.summary ? ` — ${video.summary}` : ''
+      lines.push(`${index + 1}. ${videoLink(video)}${summary}`)
+    })
+  }
+
+  lines.push('', '## 视频笔记', '')
   if (videos.length === 0) {
     lines.push('- （暂无视频，观看课程后会自动更新）')
   } else {
     for (const video of videos) {
-      const target = toLinkPath(video.notePath || video.title)
       const summary = video.summary ? ` — ${video.summary}` : ''
-      lines.push(`- [[${target}|${video.title}]]${summary}`)
+      lines.push(`- ${videoLink(video)}${summary}`)
     }
   }
 
@@ -692,6 +711,71 @@ export function subjectManualAutoBody(input = {}) {
       lines.push(`- **${item.name}**（${item.videos.length}） — ${links}`)
     }
   }
+
+  // 术语表：跨本学科视频汇总，同一个词只留第一次的释义
+  const termMap = new Map()
+  for (const video of videos) {
+    const terms = Array.isArray(video.terms) ? video.terms : []
+    for (const item of terms) {
+      const name = cleanInline(typeof item === 'string' ? item : item?.name)
+      const brief = cleanInline(typeof item === 'string' ? '' : item?.brief)
+      const key = conceptKey(name)
+      if (!key) continue
+      if (!termMap.has(key)) termMap.set(key, { name, brief, videos: [] })
+      termMap.get(key).videos.push(video.title)
+      if (!termMap.get(key).brief && brief) termMap.get(key).brief = brief
+    }
+  }
+  const terms = [...termMap.values()].sort((a, b) => b.videos.length - a.videos.length || a.name.localeCompare(b.name)).slice(0, 30)
+  if (terms.length > 0) {
+    lines.push('', '## 术语表', '')
+    for (const item of terms) {
+      lines.push('- **' + item.name + '**' + (item.brief ? ' — ' + item.brief : ''))
+    }
+  }
+
+  // 常见对比：把各篇「对比」表里同一个对象合并，保留一句结论
+  const comparisonMap = new Map()
+  for (const video of videos) {
+    const rows = Array.isArray(video.template?.comparisons) ? video.template.comparisons : []
+    for (const row of rows) {
+      const item = cleanInline(row?.item)
+      const key = conceptKey(item)
+      if (!key) continue
+      if (!comparisonMap.has(key)) comparisonMap.set(key, { item, verdict: cleanInline(row?.verdict), basis: cleanInline(row?.basis), videos: [] })
+      const entry = comparisonMap.get(key)
+      entry.videos.push(video.title)
+      if (!entry.verdict && row?.verdict) entry.verdict = cleanInline(row.verdict)
+      if (!entry.basis && row?.basis) entry.basis = cleanInline(row.basis)
+    }
+  }
+  const comparisons = [...comparisonMap.values()].sort((a, b) => b.videos.length - a.videos.length || a.item.localeCompare(b.item)).slice(0, 12)
+  if (comparisons.length > 0) {
+    lines.push('', '## 常见对比', '')
+    for (const item of comparisons) {
+      const verdict = item.verdict ? '：' + item.verdict : ''
+      const basis = item.basis ? '（依据：' + item.basis + '）' : ''
+      lines.push('- **' + item.item + '**' + verdict + basis)
+    }
+  }
+
+  // 待解问题：各篇「可质疑之处」汇总
+  const doubts = []
+  const seenDoubts = new Set()
+  for (const video of videos) {
+    const rows = Array.isArray(video.template?.doubts) ? video.template.doubts : []
+    for (const row of rows) {
+      const text = cleanInline(row)
+      const key = conceptKey(text)
+      if (!key || seenDoubts.has(key)) continue
+      seenDoubts.add(key)
+      doubts.push({ text, video: video.title })
+    }
+  }
+  if (doubts.length > 0) {
+    lines.push('', '## 待解问题', '')
+    for (const item of doubts.slice(0, 12)) lines.push('- ' + item.text + '（来自《' + item.video + '》）')
+  }
   return lines.join('\n')
 }
 
@@ -701,6 +785,7 @@ export function overviewAutoBody(input = {}) {
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const layout = normalizeNoteLayout(source.layout)
   const subjects = normalizeSubjects(source.subjects)
+  const videos = normalizeVideos(source.videos)
   const lines = ['## 学科总览', '', '```mermaid', 'mindmap', `  root((${noteRoot}))`]
   if (subjects.length === 0) {
     lines.push('    （暂无学科）')
@@ -716,6 +801,31 @@ export function overviewAutoBody(input = {}) {
       const count = subject.count === null ? '' : ` — ${subject.count} 个视频`
       lines.push(`- [[${target}|${subject.name}]]${count}`)
     }
+  }
+
+  if (videos.length > 0) {
+    const ordered = videos.slice().sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    lines.push('', '## 最近更新', '')
+    for (const video of ordered.slice(0, 5)) {
+      const target = toLinkPath(video.notePath || video.title)
+      const day = formatDate(video.createdAt)
+      const subject = video.subject ? ' · ' + video.subject : ''
+      lines.push('- ' + (day ? day + ' ' : '') + `[[${target}|${video.title}]]` + subject)
+    }
+    const now = Number(source.now ?? Date.now())
+    const weekCount = videos.filter((video) => Number(video.createdAt || 0) >= now - 7 * 86400000).length
+    const conceptNames = new Set()
+    for (const video of videos) {
+      for (const name of video.concepts || []) {
+        const key = conceptKey(name)
+        if (key) conceptNames.add(key)
+      }
+    }
+    lines.push('', '## 知识库概况', '')
+    lines.push('- 视频笔记：' + videos.length + ' 篇')
+    lines.push('- 学科：' + subjects.length + ' 个')
+    lines.push('- 概念：' + conceptNames.size + ' 个')
+    lines.push('- 本周新增：' + weekCount + ' 篇')
   }
   return lines.join('\n')
 }
@@ -747,7 +857,7 @@ export function renderOverview(input = {}) {
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const updatedAt = formatDate(source.updatedAt ?? Date.now())
   const frontmatter = renderFrontmatter({ title: noteRoot, created: updatedAt, updated: updatedAt, type: 'course-overview' })
-  const body = overviewAutoBody({ subjects: source.subjects, noteRoot, layout: source.layout })
+  const body = overviewAutoBody({ subjects: source.subjects, videos: source.videos, noteRoot, layout: source.layout, now: source.now })
   return [
     frontmatter.trimEnd(),
     '',

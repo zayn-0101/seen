@@ -414,6 +414,7 @@ textarea.url-input { resize: none; font: inherit; line-height: 1.5; padding: 0; 
 .vault-close { border: 0; background: transparent; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
 .vault-close:hover { color: var(--ink); }
 
+.quality-hint { margin: 8px 0 4px; padding: 10px 14px; border: 1px solid #e7c46a; border-radius: 10px; background: rgba(231, 196, 106, 0.12); font-size: 12px; line-height: 1.5; color: #7a5b13; }
 .vault-search { margin: 8px 0 4px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface-soft, rgba(127, 127, 127, 0.04)); }
 .vault-search-head { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.04em; color: var(--muted); }
 .vault-search-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

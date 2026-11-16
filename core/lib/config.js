@@ -30,7 +30,7 @@ export const DEFAULTS = Object.freeze({
   cookieBrowser: 'chrome',
   transcriptLangs: ['ai-zh', 'zh-Hans', 'zh-CN', 'zh'],
   useTranscriptCache: true,
-  transcriptCacheDays: 7,
+  transcriptCacheDays: 30,
   douyinCacheDays: 7,
   youtubeCacheDays: 7,
   chromePath: null,

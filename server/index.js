@@ -16,11 +16,9 @@ import { apply } from '../core/lib/index.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { ensureVaultDirs, writeWeeklyReview, writeIndexNote, writeConceptIndexNote, writeTagIndexNote } from '../core/lib/obsidian.js'
+import { ensureVaultDirs, writeWeeklyReview } from '../core/lib/obsidian.js'
 import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
-import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from '../core/lib/index-note.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
-import { buildTagIndex } from '../core/lib/tags.js'
 import { searchVault } from '../core/lib/vault-search.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
@@ -163,6 +161,7 @@ let installingWhisperCli = false
 let installingWhisperModel = false
 // 面板「重刷历史」一次只跑一批，避免重复触发。
 let refreshingHistory = false
+let resummarizing = false
 
 function platformName(source) {
   if (source === 'douyin') return '抖音'
@@ -362,6 +361,15 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { concepts })
     }
 
+    if (pathname === '/api/quality' && req.method === 'GET') {
+      const history = engine.getHistory()
+      const scored = history.filter((item) => Number(item.quality) > 0)
+      const low = history
+        .filter((item) => Number(item.quality) > 0 && Number(item.quality) <= 2)
+        .map((item) => ({ title: item.title, subject: item.subject, quality: item.quality, notePath: item.notePath }))
+      return json(res, 200, { total: history.length, scored: scored.length, low })
+    }
+
     if (pathname === '/api/config' && req.method === 'POST') {
       const body = await readBody(req)
       let message = ''
@@ -427,6 +435,23 @@ const server = createServer(async (req, res) => {
         .catch((error) => log('重刷历史失败：' + String(error?.message || error)))
         .finally(() => { refreshingHistory = false })
       return json(res, 202, { ok: true, message: '已开始重刷历史笔记' })
+    }
+
+    // 用字幕存档重整理一篇历史笔记：不重新抓取/转写，只重跑总结与版式。
+    if (pathname === '/api/resummarize' && req.method === 'POST') {
+      if (resummarizing) return json(res, 409, { ok: false, error: '正在重整理笔记，请稍候' })
+      const body = await readBody(req)
+      const notePath = String(body.notePath || '').trim()
+      if (!notePath) return json(res, 400, { ok: false, error: '缺少 notePath' })
+      resummarizing = true
+      log('用字幕存档重新整理：' + notePath)
+      try {
+        const result = await engine.resummarizeNote({ notePath })
+        const data = await snapshot()
+        return json(res, result.ok ? 200 : 500, { ...data, result })
+      } finally {
+        resummarizing = false
+      }
     }
 
     // 用户在面板点「重试」时重新探测 vault 权限（授权后无需重启服务）。
@@ -626,18 +651,8 @@ async function rebuildIndexNote() {
     const status = await engine.getStatus()
     if (!status.vaultPath) return
     if (status.vault && status.vault.ok === false) return
-    const history = engine.getHistory()
-    await writeIndexNote({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, markdown: buildIndexMarkdown(history, { noteRoot: status.noteRoot }) })
-    await writeConceptIndexNote({
-      vaultPath: status.vaultPath,
-      noteRoot: status.noteRoot,
-      markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot: status.noteRoot }),
-    })
-    await writeTagIndexNote({
-      vaultPath: status.vaultPath,
-      noteRoot: status.noteRoot,
-      markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot: status.noteRoot }),
-    })
+    const result = await engine.rebuildKnowledgePages()
+    if (!result?.ok) log('更新索引失败：' + String(result?.message || '未知原因'))
   } catch (error) {
     log('更新索引失败：' + String(error?.message || error))
   }

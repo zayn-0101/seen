@@ -69,6 +69,20 @@ function makeSnippet(text, term) {
   return (start > 0 ? '…' : '') + text.slice(start, end).replace(/\s+/g, ' ').trim() + (end < text.length ? '…' : '')
 }
 
+function kindOf(relPath) {
+  const parts = toPosix(relPath).split('/')
+  const first = parts[0] || ''
+  if (first === '笔记') return '视频笔记'
+  if (first === '字幕') return '字幕'
+  if (first === '手册') return '学科手册'
+  if (first === '概念') return '概念页'
+  if (first === '主题') return '主题综述'
+  if (first === '回顾') return '周回顾'
+  if (first === '总览.md' || first === '视频索引.md' || first === '概念索引.md' || first === '标签索引.md') return '索引'
+  if (String(parts[parts.length - 1] || '').includes('学习手册')) return '学科手册'
+  return '视频笔记'
+}
+
 async function search(vaultPath, noteRoot, terms, limit) {
   const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
   const files = []
@@ -89,16 +103,21 @@ async function search(vaultPath, noteRoot, terms, limit) {
     const lowerContent = content.toLowerCase()
     let score = 0
     let firstSnippet = ''
+    let nameHit = false
+    let contentHit = false
     for (const term of terms) {
-      if (lowerName.includes(term)) score += 3
-      else if (lowerContent.includes(term)) {
+      if (lowerName.includes(term)) {
+        score += 3
+        nameHit = true
+      } else if (lowerContent.includes(term)) {
         score += 1
+        contentHit = true
         if (!firstSnippet) firstSnippet = makeSnippet(content, term)
       }
     }
     if (score === 0) continue
     const relPath = toPosix(file).slice(toPosix(rootAbs).length + 1)
-    results.push({ title: name, relPath, snippet: firstSnippet, score })
+    results.push({ title: name, relPath, snippet: firstSnippet, score, kind: kindOf(relPath), match: nameHit ? 'title' : 'content' })
   }
 
   results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))

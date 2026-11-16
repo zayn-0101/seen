@@ -213,3 +213,26 @@
 - [x] note-check 升级为 format 4：SECTION_ORDER 增加模板区块/原话摘录/术语表/提到的资源，parse 返回 contentType/quality，checkSummaryShape 校验 points {text,time}、quotes/terms/resources 上限与术语长度
 - [x] 临时实例 E2E（B 站 BV1qqEj6oEEk，约 110 秒）：笔记 `format: 4`、`contentType: "tutorial"`、`quality: 5`，前置条件/操作步骤（8 步均带 t=）/核心知识点（要点带 t=）/原话摘录/术语表/提到的资源全部出现；self-check 该库 1 篇当前格式、错误 0、警告 0
 - [x] 测试 208 项全绿（新增 note-content 测试），`npm run check` 通过
+
+## 2026-11-16 批次 3：字幕存档、重整理与搜索来源
+
+背景：重做笔记时不该重新下载/转写；字幕缓存 7 天也太短。字幕原文本身值得留一份，但不应混进索引。
+
+- [x] 字幕存档：有字幕或转写的视频生成笔记时，同时写 `<noteRoot>/字幕/<笔记名>.md`（frontmatter `type: transcript`、`format: 1`、`notePath`；正文「## 带时间戳字幕」「## 纯文本」），不参与视频/概念/标签索引
+- [x] 重整理：面板「用存档字幕重新整理」→ `POST /api/resummarize` → `engine.resummarizeNote({ notePath })` 读存档后按 `refresh: true` 重跑，不再下载或转写；无存档时提示先重刷一次
+- [x] 缓存 30 天：`transcriptCacheDays` 默认从 7 改 30
+- [x] 搜索标注来源：`searchVault` 返回 `kind`（视频笔记/字幕/学科手册/概念页/主题综述/周回顾/索引）与 `match`（title/content），面板列出「[kind · 命中文件名/命中正文] 路径」
+- [x] 临时实例 E2E（B 站 BV1qqEj6oEEk）：字幕存档生成、frontmatter 与两段正文齐全；历史接口返回 transcriptPath
+
+## 2026-11-16 批次 4：概念页、主题综述、手册与总览升级
+
+背景：概念索引只有一行链接，手册和总览也缺少「怎么学、还缺什么」的视角；重建逻辑散在服务里。
+
+- [x] 概念页：同一概念出现 ≥2 篇时建 `概念/<概念名>.md`（概念释义 / 出现笔记 / 相关概念），只维护 AUTO 区
+- [x] 主题综述：同一主题标签出现 ≥3 篇时建 `主题/<主题名>.md`（主题概览 / 视频笔记 / 相关概念）；相关概念只链接真实存在的概念页，避免断链
+- [x] 学科手册升级：新增学习路径（按时间顺序）、术语表（跨视频汇总，≤30）、常见对比（≤12）、待解问题（≤12）
+- [x] 总览升级：新增最近更新（5 篇）与知识库概况（视频数/学科数/概念数/本周新增）
+- [x] 全量重建：新增 core/lib/rebuild.js 的 rebuildKnowledgePages（索引 → 概念页 → 主题页 → 手册 → 总览）与 scripts/maintain-vault.mjs（`--dry-run` 只统计）；engine 暴露 rebuildKnowledgePages，服务每次保存后调用
+- [x] 质量可见：`GET /api/quality` 汇总 {total, scored, low}，知识库对 quality ≤2 的笔记出提示，历史卡片显示「质量 N/5」
+- [x] 临时实例 E2E（复制真实 vault）：重扫 B 站视频生成 format 4 笔记 + 字幕存档；全量重建生成 6 份手册、3 个主题页、总览与三篇索引；概念页 0（真实历史概念都只出现 1 次，符合 ≥2 门槛）；`GET /api/quality` 返回 {total:12, scored:1, low:[]}
+- [x] 测试 219 项全绿（新增 topic-pages 5 项、rebuild 2 项），`npm run check` 通过

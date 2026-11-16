@@ -11,6 +11,9 @@
 export const VIDEO_DIR = '笔记'
 export const MANUAL_DIR = '手册'
 export const REVIEW_DIR = '回顾'
+export const TRANSCRIPT_DIR = '字幕'
+export const CONCEPT_DIR = '概念'
+export const TOPIC_DIR = '主题'
 export const BACKUP_DIR = '_备份'
 export const MANUAL_SUFFIX = ' 学习手册'
 
@@ -36,6 +39,25 @@ export function videoNoteRelPath({ noteRoot, subject, noteName, layout } = {}) {
   return normalizeNoteLayout(layout) === 'structured'
     ? `${root}/${VIDEO_DIR}/${dir}/${name}.md`
     : `${root}/${dir}/${name}.md`
+}
+
+/** 字幕存档相对路径：<noteRoot>/字幕/<笔记名>.md，不参与索引与概念。 */
+export function transcriptNoteRelPath({ noteRoot, noteName } = {}) {
+  const root = cleanRoot(noteRoot)
+  const name = cleanSegment(noteName, '未命名视频')
+  return `${root}/${TRANSCRIPT_DIR}/${name}.md`
+}
+
+/** 概念页相对路径：<noteRoot>/概念/<概念>.md。 */
+export function conceptPageRelPath({ noteRoot, name } = {}) {
+  const root = cleanRoot(noteRoot)
+  return `${root}/${CONCEPT_DIR}/${cleanSegment(name, '未命名概念')}.md`
+}
+
+/** 主题综述相对路径：<noteRoot>/主题/<主题>.md。 */
+export function topicPageRelPath({ noteRoot, name } = {}) {
+  const root = cleanRoot(noteRoot)
+  return `${root}/${TOPIC_DIR}/${cleanSegment(name, '未命名主题')}.md`
 }
 
 /** 学科学习手册相对路径。 */
