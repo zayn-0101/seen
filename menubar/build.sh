@@ -113,7 +113,18 @@ if [ "$BUNDLE" = "1" ]; then
   echo "  运行时 + 代码：$(du -sh "$APP/Contents/Resources" | cut -f1)"
 fi
 
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+SIGN_IDENTITY="${SEEN_SIGN_IDENTITY:-Seen Local Signing}"
+if security find-certificate -c "$SIGN_IDENTITY" >/dev/null 2>&1; then
+  if codesign --force --deep --sign "$SIGN_IDENTITY" "$APP" >/dev/null 2>&1; then
+    echo "已用固定证书签名：${SIGN_IDENTITY}（重装后系统权限可保留）"
+  else
+    echo "警告：固定证书 ${SIGN_IDENTITY} 签名失败，回退 ad-hoc"
+    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+  fi
+else
+  echo "未找到固定证书 ${SIGN_IDENTITY}，使用 ad-hoc 签名（每次重打包会重置系统权限）"
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+fi
 echo "构建完成：${REPO}/menubar/${APP}（版本 ${VERSION}，${ARCH_MODE}$([ "$BUNDLE" = "1" ] && echo "，含运行时" || echo "，不含运行时")）"
 
 if [ "$INSTALL" = "1" ]; then

@@ -305,3 +305,15 @@
 - [x] 网络恢复后 `POST /api/scan { url, force: true }` 重抓：YouTube 无字幕 → 下载音频 + Whisper 转写，21:04–21:15 完成（约 11 分钟），生成 `format: 4`、`contentSource: "whisper"`、`contentType: "opinion"`、`quality: 5`
 - [x] 笔记补上 `## 章节` 5 段（00:00 / 03:09 / 14:34 / 25:56 / 38:10，均带 `t=` 链接）
 - [x] 真实库自检：12 篇（当前格式 12 / 旧格式 0）错误 0 警告 0；索引 217 条双链 / 手册 6 篇 / 状态 12 条 / 路径缺失 0
+
+## 2026-11-16 固定代码签名（TCC 授权跨版本保留）
+
+背景：每次重打包 ad-hoc 签名的 cdhash 都会变，macOS TCC 把新包当成新应用，导致「文稿文件夹」权限反复失效。
+
+- [x] 在登录钥匙串创建自签名证书 `Seen Local Signing`（证书类型「代码签名」，2026-11-16 至 2027-11-16）
+- [x] `menubar/build.sh` 优先用 `Seen Local Signing` 签名（可用 `SEEN_SIGN_IDENTITY` 覆盖），证书缺失或签名失败时回退 ad-hoc 并打印警告
+- [x] 签名验证：`codesign -d -r- menubar/dist/Seen.app` → `designated => identifier "com.zayn0101.seen" and certificate leaf = H"61dd4d0d29a732f49419f2f79df3f0e67713fd7a"`；`codesign --verify --deep --strict` 通过
+- [x] 构建验证：`cd menubar && ./build.sh` 输出「已用固定证书签名：Seen Local Signing」
+- [x] `package.json` 升到 0.5.2；README/CLAUDE 说明固定签名、首次授权与证书缺失回退
+- [x] 安装验证：`dist/Seen-v0.5.2.dmg`（86M）内 app 版本 0.5.2、Authority=Seen Local Signing、DR 为 `identifier "com.zayn0101.seen" and certificate leaf = H"61dd4d0d29a732f49419f2f79df3f0e67713fd7a"`；`codesign --verify --deep --strict` 通过
+- [x] 安装到 `~/Applications/Seen.app` 并重启：`GET /api/status` 返回 200，`vault.ok=true`（「文稿文件夹」权限保留），历史笔记 12 篇正常载入
