@@ -60,7 +60,7 @@ Seen 在本机跑一个轻量服务，自动发现你在浏览器里看的 **B �
 
 从 [Releases](https://github.com/zayn-0101/seen/releases) 下载最新的 `Seen-v<版本>.dmg`，打开后把 `Seen.app` 拖进「应用程序」。
 
-应用未做开发者签名，首次打开需要绕过 Gatekeeper：在「应用程序」里**右键点 Seen → 打开**，弹窗里再点一次「打开」。或者执行：
+应用没有 Apple 开发者签名（安装包用本地固定证书签名），首次打开可能被 Gatekeeper 拦截：在「应用程序」里**右键点 Seen → 打开**，弹窗里再点一次「打开」。或者执行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Seen.app

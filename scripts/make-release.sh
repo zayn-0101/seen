@@ -42,5 +42,5 @@ hdiutil create -volname "Seen $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$D
 
 echo
 echo "完成：${REPO}/${DMG}（$(du -h "${DMG}" | cut -f1)）"
-echo "未签名应用首次打开需右键 → 打开，或执行："
+echo "首次打开若被 Gatekeeper 拦截，右键 → 打开，或执行："
 echo "  xattr -dr com.apple.quarantine /Applications/Seen.app"
