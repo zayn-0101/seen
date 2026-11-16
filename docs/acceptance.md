@@ -287,3 +287,12 @@
 - [x] 新增 9 项单元测试（transcriptCacheName、buildBilibiliAudioArgs、seenKey 多P、YouTube language/原声优先、Douyin classify/buildChromeArgs、缓存 30 天、buildBiliDisplayTitle），`cd core && node --test` 242 项全绿，`npm run check` 通过
 - [x] 一期不抓 YouTube / 抖音评论正文（按成本取舍，非技术必须）；B 站评论保持现状；未改动真实笔记库
 
+
+## 2026-11-16 服务启动健壮性：Magpie 未就绪不再导致服务退出
+
+背景：重启电脑后菜单栏应用先于 Magpie 网关启动，`resolveLlmConfig` 返回空 model，`resolveConfig` 校验 `model` 必须为 null 或非空字符串时抛错，服务进程直接退出，页面打不开。
+
+- [x] server/index.js 新增 `resolveStartupLlm`：启动时探测不到模型会重试 4 次（每次间隔 1.5 秒），给 Magpie 留出启动时间
+- [x] 重试后仍没有模型时，`provider`/`model` 以 null 传给 `resolveConfig`，服务先启动；控制台打印「未检测到可用模型，服务先启动；请在面板「模型」里配置后再使用整理功能」，面板可正常打开并配置模型
+- [x] 验证：用 `SEEN_LLM_BASE_URL=http://127.0.0.1:9/v1` 起临时服务（不可达的模型地址），服务正常监听、`GET /api/status` 返回 200、provider/model 均为 null；正常环境启动仍探测到 magpie / auto/deepseek-v4.1-flash
+- [x] `cd core && node --test` 242 项全绿，`npm run check` 通过
