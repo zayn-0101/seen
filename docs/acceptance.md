@@ -296,3 +296,11 @@
 - [x] 重试后仍没有模型时，`provider`/`model` 以 null 传给 `resolveConfig`，服务先启动；控制台打印「未检测到可用模型，服务先启动；请在面板「模型」里配置后再使用整理功能」，面板可正常打开并配置模型
 - [x] 验证：用 `SEEN_LLM_BASE_URL=http://127.0.0.1:9/v1` 起临时服务（不可达的模型地址），服务正常监听、`GET /api/status` 返回 200、provider/model 均为 null；正常环境启动仍探测到 magpie / auto/deepseek-v4.1-flash
 - [x] `cd core && node --test` 242 项全绿，`npm run check` 通过
+
+## 2026-11-16 45 分钟 YouTube 笔记补章节
+
+背景：0.5.0 重刷时《黄仁勋困在网中央｜中美AI的鬼故事讲不下去了》因 yt-dlp 临时断连沿用旧缓存（无 timedTranscript），是唯一一条自检警告。
+
+- [x] 网络恢复后 `POST /api/scan { url, force: true }` 重抓：YouTube 无字幕 → 下载音频 + Whisper 转写，21:04–21:15 完成（约 11 分钟），生成 `format: 4`、`contentSource: "whisper"`、`contentType: "opinion"`、`quality: 5`
+- [x] 笔记补上 `## 章节` 5 段（00:00 / 03:09 / 14:34 / 25:56 / 38:10，均带 `t=` 链接）
+- [x] 真实库自检：12 篇（当前格式 12 / 旧格式 0）错误 0 警告 0；索引 217 条双链 / 手册 6 篇 / 状态 12 条 / 路径缺失 0
