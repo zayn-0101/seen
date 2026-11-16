@@ -65,6 +65,19 @@ async function writeJson(file, value) {
   await writeFile(file, JSON.stringify(value, null, 2) + '\n', 'utf8')
 }
 
+/**
+ * 解析启动时的模型配置。刚开机时 Magpie 网关可能还没起来，
+ * 探测失败就过一会儿再试，避免服务因为「暂时没有模型」直接退出。
+ */
+async function resolveStartupLlm({ attempts = 4, delayMs = 1500 } = {}) {
+  let resolved = await resolveLlmConfig()
+  for (let i = 0; resolved.source === 'none' && i < attempts; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+    resolved = await resolveLlmConfig()
+  }
+  return resolved
+}
+
 const ui = {
   pollIntervalMs: 15000,
   started: false,
@@ -72,9 +85,13 @@ const ui = {
 }
 if (!Number.isFinite(Number(ui.pollIntervalMs))) ui.pollIntervalMs = 15000
 
-const resolvedLlm = await resolveLlmConfig()
+const resolvedLlm = await resolveStartupLlm()
 let llmConfig = resolvedLlm.config
 let llmSource = resolvedLlm.source
+if (!llmConfig.model) {
+  llmSource = 'none'
+  console.warn('未检测到可用模型，服务先启动；请在面板「模型」里配置后再使用整理功能。')
+}
 const llm = createLlmClient(llmConfig)
 let llmHealth = await llm.health()
 const mnemonBin = await findMnemon({})
@@ -84,8 +101,8 @@ const baseConfig = resolveConfig({
   pollIntervalMs: Number(ui.pollIntervalMs) || 15000,
   autoStart: false,
   exposeController: true,
-  provider: llmConfig.provider,
-  model: llmConfig.model,
+  provider: llmConfig.model && llmConfig.provider && llmConfig.provider !== 'none' ? llmConfig.provider : null,
+  model: llmConfig.model || null,
   enableMnemon: mnemonAvailable && process.env.SEEN_DISABLE_MNEMON !== '1' && ui.mnemonEnabled !== false,
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
