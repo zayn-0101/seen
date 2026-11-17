@@ -269,7 +269,7 @@ cd menubar
 
 ### 字幕存档
 
-有字幕或本地转写的视频，处理时会把原文另存一份到 `视频笔记/资料/字幕/<笔记名>.md`，同名冲突时生成带标识的副本（frontmatter 为 `type: transcript`）。它不参与视频索引、概念索引和标签索引，可以作为换模型或修改提示词后重新整理的素材。面板里打开一篇有存档的笔记，点「用存档字幕重新整理」即可；当前版本在内容缓存失效时仍可能重新抓取或转写。
+有字幕或本地转写的视频，处理时会把原文另存一份到 `视频笔记/资料/字幕/<笔记名>.md`，同名冲突时生成带标识的副本（frontmatter 为 `type: transcript`）。它不参与视频索引、概念索引和标签索引，可以作为换模型或修改提示词后重新整理的素材。面板里打开一篇有存档的笔记，点「用存档字幕重新整理」即可；重整理只读本地字幕存档，不重新抓取平台内容、不下载音频、不转写。
 
 字幕缓存（`~/.seen/cache/`）保留 30 天；存档本身不自动删除。
 
@@ -364,7 +364,7 @@ cd menubar
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `SEEN_PORT` | 4780 | 服务端口 |
-| `SEEN_HOST` | 127.0.0.1 | 监听地址 |
+| `SEEN_HOST` | 127.0.0.1 | 监听地址；仅支持本机回环地址（localhost / 127.0.0.1 / ::1），其他地址会拒绝启动 |
 | `SEEN_NO_OPEN` | — | 设为 1 不自动打开浏览器 |
 | `SEEN_VAULT` | 自动检测 | Obsidian vault 路径 |
 | `SEEN_NOTE_ROOT` | 视频笔记 | vault 下的笔记根目录 |
@@ -499,6 +499,8 @@ macOS 27 已移除独立的「辅助功能」分类，网上旧教程的路径�
 SEEN_PORT=4781 node server/index.js
 ```
 
+`SEEN_PORT` 只用于单独调试服务；菜单栏应用固定连接 `127.0.0.1:4780`，不会跟随这个环境变量。
+
 ### 如何卸载
 
 ```bash
@@ -534,7 +536,7 @@ Obsidian     vault 中的 Markdown
 ```bash
 cd core && node --test          # 引擎与服务测试
 cd menubar && ./build.sh        # 编译菜单栏应用
-npm run check                   # 服务端入口语法检查
+npm run check                   # 全仓 JavaScript 语法检查
 npm run self-check              # 体检库里的笔记：结构、标签、双链、状态一致性
 npm run self-check:llm          # 再用缓存回放，跑分段与总结的模型回归
 node scripts/maintain-vault.mjs # 按 state 重建索引、概念页、主题页、手册与总览（--dry-run 只统计）

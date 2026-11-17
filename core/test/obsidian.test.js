@@ -79,6 +79,24 @@ test('不同分 P、其他平台视频或身份不明的同名文件不会被强
   }
 })
 
+test('previousNotePath 不能在没有目标身份时覆盖无身份同名笔记', async () => {
+  const vault = await setup()
+  try {
+    const common = { vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '手写文件' }
+    const manual = await writeVideoNote({ ...common, content: '用户原始手写内容' })
+    const unknown = await writeVideoNote({
+      ...common,
+      previousNotePath: manual.relPath,
+      force: true,
+      content: '新的未知身份内容',
+    })
+    assert.notEqual(unknown.relPath, manual.relPath)
+    assert.equal(readFileSync(manual.absPath, 'utf8'), '用户原始手写内容')
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+  }
+})
+
 test('subject manual preserves user content', async () => {
   const vault = await setup()
   try {

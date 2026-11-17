@@ -597,9 +597,9 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `findYtDlp(config)`：同步探测，顺序为 配置 `ytdlpBin` → PATH → `~/.seen/bin/yt-dlp` → 常见安装位置；返回绝对路径或 null。
 - `ensureYtDlp(config, { onProgress })`：异步；有就返回 `{ ok, path, skipped }`，没有则自动下载一次官方二进制到 `~/.seen/bin` 并校验 `--version`。失败返回 `{ ok: false, error }`，不抛错。
 - `installYtDlp({ force, onProgress })`：单独执行下载安装；并发调用共享同一次下载。
-- `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform)` / `ytDlpReleaseUrl(platform)`：安装位置、官方资产名（darwin→`yt-dlp_macos`、linux→`yt-dlp_linux`、win32→`yt-dlp.exe`）与下载地址。
+- `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform, arch)` / `ytDlpReleaseUrl(platform, arch)`：安装位置、官方资产名与下载地址；darwin→`yt-dlp_macos`，linux x64/arm64→`yt-dlp_linux` / `yt-dlp_linux_aarch64`，win32 x64/arm64/ia32→`yt-dlp.exe` / `yt-dlp_arm64.exe` / `yt-dlp_x86.exe`；没有可用二进制的平台返回 `null`。
 - `ytDlpChecksumUrl()` / `parseChecksums(text)`：官方 `SHA2-256SUMS` 地址与解析（每行「hash  文件名」，纯函数）。
-- 下载校验：校验文件只从官方 `SHA2-256SUMS` 取得（镜像不提供摘要，避免自己证明自己）；官方地址下载且取不到校验文件时放行，**走镜像下载时必须有官方校验且通过**，否则中止安装。先落 `.part` 再 `rename`，保证原子性。
+- 下载校验：校验文件只从官方 `SHA2-256SUMS` 取得（镜像不提供摘要，避免自己证明自己）；任何来源取不到校验值或校验不符都中止安装。先落 `.part` 再 `rename`，保证原子性。
 
 ## lib/download.js
 
@@ -632,10 +632,10 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
   `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。`getStatus()` 与 `getConfig()` 都返回 `readOnly` / `readOnlyReason`（`locked-by-other` / `lock-write-failed` / `lock-stale-unlink-failed`），状态消息里同步说明只读原因。
-- `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
+- `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。返回 `{ ok, total, done, failed, stateSaved, warnings }`，状态保存失败或单篇警告会汇总到 `warnings`。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。
-- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
+- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, stateSaved, warnings, message, review }`，状态保存失败时 `stateSaved:false` 并在 `warnings` 中说明。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
 - `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。

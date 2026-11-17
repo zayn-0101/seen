@@ -27,6 +27,7 @@ seen/
 │   └── llm.js                供应商预设与 OpenAI-compatible 适配
 ├── web/                      前端（原生 HTML/CSS/JS，无构建）
 ├── scripts/
+│   ├── check-syntax.mjs          全仓 JavaScript 语法检查
 │   ├── export-icons.mjs          图标导出
 │   ├── install-ffmpeg.mjs        下载 ffmpeg 到 ~/.seen/bin
 │   ├── install-launchd.mjs       服务开机自启
@@ -113,7 +114,7 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - YouTube 走本机 yt-dlp：`-J` 取元数据；字幕按「人工优先自动」且先原声语言（`parseYoutubeJson` 的 `language`，自动字幕先找 `<lang>-orig`），再按中英日韩兜底；都没有则下载音频本地转写（下载音频必须加 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；不读取浏览器 Cookie，不用 YouTube Data API。
 - YouTube 自动字幕接口限制严格（实测多为 429），实际常落到本地转写；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 30 天，缓存带 version 2，缺 `timedTranscript` 的旧缓存会重建并沿用旧转写）。抖音缓存同样 30 天（`douyinCacheDays`）。
 - 外部工具统一策略：「配置 → PATH → `~/.seen/bin` → 常见路径」，系统已装的优先、不会被覆盖：
-  - yt-dlp：GitHub releases 官方二进制（37MB），fetch 失败回退 curl；官方失败按 `SEEN_GH_MIRROR`（默认 ghproxy.net / gh-proxy.com）镜像重试；下载后用官方 `SHA2-256SUMS` 校验，镜像来源校验不通即中止；
+  - yt-dlp：GitHub releases 官方二进制（37MB），fetch 失败回退 curl；官方失败按 `SEEN_GH_MIRROR`（默认 ghproxy.net / gh-proxy.com）镜像重试；下载后必须用官方 `SHA2-256SUMS` 校验，任何来源取不到校验值或校验不通都中止；
   - ffmpeg：ffmpeg-static 静态二进制（45MB，固定 `b6.1.1`），同样官方 → 镜像；下载后必须匹配内置 SHA256，不匹配中止；
   - Whisper 模型：不静默下载，面板按推荐列出 turbo / small / medium / base，源按 HF_ENDPOINT → huggingface → hf-mirror；
   - whisper-cli：无免安装包，面板按钮代跑 `brew install whisper.cpp`。

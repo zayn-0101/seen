@@ -218,8 +218,8 @@
 
 背景：重做笔记时不该重新下载/转写；字幕缓存 7 天也太短。字幕原文本身值得留一份，但不应混进索引。
 
-- [x] 字幕存档：有字幕或转写的视频生成笔记时，同时写 `<noteRoot>/字幕/<笔记名>.md`（frontmatter `type: transcript`、`format: 1`、`notePath`；正文「## 带时间戳字幕」「## 纯文本」），不参与视频/概念/标签索引
-- [x] 重整理：面板「用存档字幕重新整理」→ `POST /api/resummarize` → `engine.resummarizeNote({ notePath })` 读存档后按 `refresh: true` 重跑；无存档时提示先重刷一次。当前缓存失效时仍可能重新抓取或转写，待优化。
+- [x] 字幕存档：有字幕或转写的视频生成笔记时，同时写 `<noteRoot>/资料/字幕/<笔记名>.md`（frontmatter `type: transcript`、`format: 1`、`notePath`；正文「## 带时间戳字幕」「## 纯文本」），不参与视频/概念/标签索引
+- [x] 重整理：面板「用存档字幕重新整理」→ `POST /api/resummarize` → `engine.resummarizeNote({ notePath })` 读存档后按 `refresh: true` 重跑；无存档时提示先重刷一次。存档模式只读本地字幕，不重新抓取平台内容、不下载音频、不转写。
 - [x] 缓存 30 天：`transcriptCacheDays` 默认从 7 改 30
 - [x] 搜索标注来源：`searchVault` 返回 `kind`（视频笔记/字幕/学科手册/概念页/主题综述/周回顾/索引）与 `match`（title/content），面板列出「[kind · 命中文件名/命中正文] 路径」
 - [x] 临时实例 E2E（B 站 BV1qqEj6oEEk）：字幕存档生成、frontmatter 与两段正文齐全；历史接口返回 transcriptPath
@@ -343,17 +343,18 @@
 - [x] `cd core && node --test`：244 tests / 244 pass；`npm run check` 通过
 - [x] `package.json` 升到 0.5.3；`cd menubar && ./build.sh --bundle --arch=universal` 产出 universal app（232M），固定证书 `Seen Local Signing` 签名验证通过；安装到 `~/Applications/Seen.app`（旧 0.5.2 保留备份），启动后 `GET /api/status` 返回 200、vault ok、历史 13 篇，搜索返回新 `笔记/…` 与 `资料/…` 路径
 
-## 2026-11-17 审计修复（codex/project-audit-20261117）
+## 2026-11-17 审计修复（codex/project-audit-20261117 → main）
 
 背景：基于 `main` 的 `916b977` 做只读审计，修复有把握的问题，其余列入 `docs/audit-2026-11-17.md` 待审查。
 
-- [x] 实例锁原子化：`core/lib/index.js` 的 `acquireInstanceLock` 用 `open(lockPath,'wx',0o600)` + PID 抢占，处理失效/损坏锁；拿不到锁进入只读，`getStatus()`/`getConfig()` 带 `readOnlyReason`，状态消息说明原因；controller 测试覆盖「另一个实例持有锁时进入只读状态并说明原因」
+- [x] 实例锁原子化：`core/lib/index.js` 先把 owner 写入唯一临时目录，再用 `renameSync` 原子替换/创建 `instance.lock` 目录；清理陈旧锁前核对目录 inode/dev，只删除自己的 owner 文件再 `rmdir`，非空目录不删，避免误删其他进程刚创建的新锁；同 PID 重复启动按占用处理。拿不到锁进入只读，`getStatus()`/`getConfig()` 带 `readOnlyReason`，状态消息说明原因；新增并发创建、空锁、陈旧 PID、同进程重复获取、inode 竞态与 8 进程跨进程抢锁测试
 - [x] 存档重整理离线化：`resummarizeNote` 读 `资料/字幕` 存档后传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台、不下载音频、不转写
 - [x] 状态辅助路径归一化：`paths.js` 的 `normalizeAuxRelPath` / `normalizeStateAuxPaths` 在启动时修正旧字幕路径；`scripts/migrate-vault.mjs --state-only` 可单独修状态；`self-check.mjs` 报告字幕路径缺失/遗留
 - [x] 保存失败可见：`save()` 返回布尔值，状态保存失败时笔记仍返回但带 `warnings` / `stateSaved:false`；手册、总览、字幕存档失败也收集警告
-- [x] 供应链校验：ffmpeg-static 固定 `b6.1.1` 并内置各平台 SHA256；yt-dlp `SHA2-256SUMS` 只从官方取得，镜像下载必须有官方校验；`menubar/build.sh` 用 `SHASUMS256.txt` 校验 Node 运行时
+- [x] 无身份笔记覆盖防护：`writeVideoNote` 的 `trustedLegacy` 只在目标视频身份明确时信任同路径旧笔记；`previousNotePath` 只来自身份匹配的历史记录，避免重刷另一条无身份视频覆盖同名手写笔记；新增回归测试
+- [x] 供应链校验：ffmpeg-static 固定 `b6.1.1` 并内置各平台 SHA256；yt-dlp `SHA2-256SUMS` 只从官方取得，任何来源取不到校验值或校验不符都中止；yt-dlp 下载 asset 按平台和 CPU 架构选择（linux arm64 / win32 arm64 / ia32），官方没有可直接安装二进制的平台明确报错；`menubar/build.sh` 用 `SHASUMS256.txt` 校验 Node 运行时
 - [x] 搜索可见性：`searchVaultDetailed` 返回 `{results,scanned,skipped,truncated}`；中文用 `Intl.Segmenter('zh')` 分词；`/api/search` 和面板显示截断/跳过提示
 - [x] 学科上限：达到 12 个学科且无相似学科归入「未分类」；`resolveSubjectName` 支持 `maxSubjects`
-- [x] 本机 API 防护：所有请求始终校验 Host（本机名 + 实际绑定地址）；删除 `GET /api/llm/models`，只保留 POST
-- [x] `cd core && node --test`：272 tests / 272 pass / 0 fail；`npm run check` 通过
-- [x] 未迁移或改写真实笔记与历史字幕，未执行安装、发布和推送
+- [x] 本机 API 防护：所有 API 请求始终校验 Host / Origin / Sec-Fetch-Site / JSON Content-Type；服务只允许绑定本机回环地址，非回环 `SEEN_HOST` 直接拒绝启动；删除 `GET /api/llm/models`，只保留 POST
+- [x] `cd core && node --test`：283 tests / 283 pass / 0 fail；`npm run check` 通过
+- [x] 未迁移或改写真实笔记与历史字幕，未执行安装或发布

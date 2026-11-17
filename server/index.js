@@ -43,7 +43,24 @@ const webRoot = join(here, '..', 'web')
 const uiDir = process.env.SEEN_STATE_DIR ? process.env.SEEN_STATE_DIR : join(homedir(), '.seen')
 const uiPath = join(uiDir, 'ui.json')
 const PORT = Number(process.env.SEEN_PORT || 4780)
-const HOST = process.env.SEEN_HOST || '127.0.0.1'
+
+function normalizeBindHost(value) {
+  const host = String(value ?? '').trim()
+  if (host.startsWith('[') && host.endsWith(']')) return host.slice(1, -1)
+  return host || '127.0.0.1'
+}
+
+function hostForUrl(host) {
+  const value = normalizeBindHost(host)
+  return value.includes(':') ? '[' + value + ']' : value
+}
+
+const HOST = normalizeBindHost(process.env.SEEN_HOST || '127.0.0.1')
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+if (!LOOPBACK_HOSTS.has(HOST.toLowerCase())) {
+  console.error('SEEN_HOST 只支持本机回环地址（127.0.0.1 / localhost / ::1）；本地服务不提供局域网认证，拒绝启动。')
+  process.exit(1)
+}
 const OPEN_BROWSER = !process.argv.includes('--no-open') && process.env.SEEN_NO_OPEN !== '1'
 
 function log(...args) {
@@ -393,7 +410,7 @@ async function serveStatic(req, res, pathname) {
 
 const server = createServer(async (req, res) => {
   try {
-    const url = new URL(req.url || '/', 'http://' + HOST + ':' + PORT)
+    const url = new URL(req.url || '/', 'http://' + hostForUrl(HOST) + ':' + PORT)
     const pathname = url.pathname
     if (pathname.startsWith('/api/')) {
       const problem = validateApiRequest(req)
@@ -545,7 +562,7 @@ const server = createServer(async (req, res) => {
       return json(res, result.ok ? 200 : 400, { ...data, result })
     }
 
-    // 用字幕存档重整理一篇历史笔记；缓存失效时内容抓取仍可能重新执行。
+    // 用字幕存档重整理一篇历史笔记；只读存档，不重新抓取或转写。
     if (pathname === '/api/resummarize' && req.method === 'POST') {
       if (resummarizing) return json(res, 409, { ok: false, error: '正在重整理笔记，请稍候' })
       const body = await readBody(req)
@@ -794,7 +811,7 @@ async function ensureLastWeekReview() {
 }
 
 server.listen(PORT, HOST, () => {
-  const url = 'http://' + HOST + ':' + PORT
+  const url = 'http://' + hostForUrl(HOST) + ':' + PORT
   log('Seen 独立服务已启动：' + url)
   log('模型：' + (llmSource === 'none' ? '未配置，请在面板里设置' : llm.id + ' / ' + llm.model + '（来源：' + llmSource + '）'))
   log('状态目录：' + baseConfig.stateDir)

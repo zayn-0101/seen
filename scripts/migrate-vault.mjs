@@ -21,8 +21,8 @@
  *   5. 当前旧布局：<root>/手册、回顾、概念、主题、字幕 → <root>/资料/...
  *
  * 默认只打印计划（dry-run）；加 --apply 才真正移动。
- * 动之前会把笔记根目录里的 Markdown 复制到 <stateDir>/backups/迁移-<时间戳>/，
- * 旧的 <root>/_备份 会移到同一处；之后所有写入备份也都在 <stateDir>/backups/。
+ * 动之前会把笔记根目录里的 Markdown 复制到 <stateDir>/../backups/迁移-<时间戳>/（默认 ~/.seen/backups），
+ * 旧的 <root>/_备份 会移到同一处；之后所有写入备份也都在 <stateDir>/../backups/。
  *
  * 用法：
  *   node scripts/migrate-vault.mjs               # 查看会移动哪些文件

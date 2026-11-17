@@ -104,8 +104,9 @@ async function pathExists(file) {
   try {
     await stat(file)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
   }
 }
 
@@ -225,13 +226,14 @@ async function readNoteIdentity(filePath) {
       return String(value || '').trim()
     }
     return { bvid: field('bvid'), videoId: field('videoId'), source: field('source'), page: extractPage(field('url')) }
-  } catch {
-    return {}
+  } catch (error) {
+    if (error?.code === 'ENOENT') return {}
+    throw error
   }
 }
 
 function noteIdentity({ bvid, videoId, source, page } = {}) {
-  if (bvid) return 'bilibili:' + bvid + ':p' + (Number(page) > 0 ? Number(page) : 1)
+  if (bvid) return 'bilibili:' + String(bvid).trim().toLowerCase() + ':p' + (Number(page) > 0 ? Number(page) : 1)
   if (videoId && source) return String(source) + ':' + String(videoId)
   return ''
 }
@@ -283,6 +285,8 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
       if (!(await pathExists(target.absPath))) break
       const existing = noteIdentity(await readNoteIdentity(target.absPath))
       const matches = Boolean(identity && existing && identity === existing)
+      // 只有目标视频身份明确时才信任旧的无身份笔记：仅凭同名/旧路径可能是另一条视频，
+      // 覆盖会丢掉用户手写内容。
       const trustedLegacy = Boolean(identity && !existing && previous && previous === target.relPath)
       if (matches || trustedLegacy) {
         if (!force) return { relPath: target.relPath, absPath: target.absPath, skipped: true }
@@ -360,8 +364,9 @@ export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {})
   return runVault(async () => {
     try {
       return await readFile(absoluteFromRel(vaultPath, relPath), 'utf8')
-    } catch {
-      return null
+    } catch (error) {
+      if (error?.code === 'ENOENT') return null
+      throw error
     }
   })
 }
@@ -374,8 +379,9 @@ export function readVaultText({ vaultPath, relPath } = {}) {
   return runVaultTask(async () => {
     try {
       return { ok: true, relPath: rel, text: await readFile(absPath, 'utf8') }
-    } catch {
-      return { ok: false, error: '文件不存在：' + rel }
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { ok: false, error: '文件不存在：' + rel }
+      return { ok: false, error: '读取失败：' + rel + '（' + (error?.message || error) + '）' }
     }
   })
 }

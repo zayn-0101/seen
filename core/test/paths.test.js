@@ -81,6 +81,14 @@ test('normalizeAuxRelPath moves legacy aux dirs under 资料 and strips vault pr
     normalizeAuxRelPath('视频笔记/资料/字幕/标题.md', { noteRoot: '视频笔记' }),
     '视频笔记/资料/字幕/标题.md',
   )
+  assert.equal(
+    normalizeAuxRelPath('课程知识地图/字幕/旧标题.md', { noteRoot: '视频笔记' }),
+    '视频笔记/资料/字幕/旧标题.md',
+  )
+  assert.equal(
+    normalizeAuxRelPath('字幕/没有根目录.md', { noteRoot: '视频笔记' }),
+    '视频笔记/资料/字幕/没有根目录.md',
+  )
 })
 
 test('normalizeStateAuxPaths updates transcript paths and counts changes', () => {

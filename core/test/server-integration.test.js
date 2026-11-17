@@ -146,5 +146,7 @@ test('空周不提前创建回顾文件，只读实例不写入笔记', async t 
   assert.equal((await post(readonly.base, '/api/reviews', { notePath: '视频笔记/笔记/示例/示例视频.md', rating: 'easy' })).status, 409)
   assert.equal((await post(readonly.base, '/api/reprocess')).status, 409)
   assert.equal((await post(readonly.base, '/api/config', { pollIntervalMs: 2000 })).status, 409)
+  // 模型列表只读外部服务，不写本地状态，只读实例也必须可用。
+  assert.equal((await post(readonly.base, '/api/llm/models', { provider: 'fixture', baseURL: readonly.modelBase + '/v1', apiKey: '' })).status, 200)
   await assert.rejects(readFile(join(readonly.vault, '视频笔记', '视频索引.md')))
 })

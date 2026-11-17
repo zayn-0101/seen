@@ -117,8 +117,21 @@ async function api(path, options = {}) {
     ...options,
   })
   const data = await res.json().catch(() => null)
-  if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+  if (!res.ok) {
+    const detail = data && (data.error || data.result?.message || data.message)
+    throw new Error(detail || ('HTTP ' + res.status))
+  }
   return data
+}
+
+function readOnlyDetail(status = {}) {
+  if (status.readOnlyReason === 'lock-write-failed') {
+    return { label: '只读（实例锁写入失败）', title: '无法写入实例锁：请检查 ~/.seen 目录权限' }
+  }
+  if (status.readOnlyReason === 'lock-stale-unlink-failed') {
+    return { label: '只读（旧实例锁无法清理）', title: '旧实例锁无法清理：请检查 ~/.seen 目录权限' }
+  }
+  return { label: '另一个实例占用中', title: '另一个 Seen 实例正在运行并持有状态锁' }
 }
 
 function renderToggle() {
@@ -126,11 +139,17 @@ function renderToggle() {
   const button = $('toggle')
   const label = $('toggleLabel')
   const readonly = Boolean(status.readOnly)
+  const readonlyInfo = readOnlyDetail(status)
   button.disabled = readonly
   button.setAttribute('aria-pressed', status.polling ? 'true' : 'false')
   label.textContent = readonly ? '只读' : status.polling ? '轮询中' : '已暂停'
-  button.title = readonly ? '另一个实例正在占用' : status.polling ? '点击暂停轮询' : '点击开始轮询'
-  $('readonlyPill').classList.toggle('hidden', !readonly)
+  button.title = readonly ? readonlyInfo.title : status.polling ? '点击暂停轮询' : '点击开始轮询'
+  const pill = $('readonlyPill')
+  pill.classList.toggle('hidden', !readonly)
+  if (readonly) {
+    pill.textContent = readonlyInfo.label
+    pill.title = readonlyInfo.title
+  }
   const pollState = $('pollState')
   pollState.textContent = readonly ? '只读' : status.polling ? '轮询中' : '已停止'
   pollState.className = 'state ' + (readonly ? 'stopped' : status.polling ? 'running' : 'stopped')
@@ -275,6 +294,17 @@ function renderSummary(data, stageText) {
     body.append(grid)
   }
 
+  const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : []
+  if (data.stateSaved === false && !warnings.length) warnings.push('状态保存失败：重启后可能重复处理这条视频')
+  if (warnings.length) {
+    const notice = el('div', 'summary-warnings')
+    notice.append(el('strong', '', '已完成，但有以下提醒'))
+    const ul = el('ul')
+    for (const warning of warnings) ul.append(el('li', '', String(warning)))
+    notice.append(ul)
+    body.append(notice)
+  }
+
   if (data.notePath) {
     const link = el('a', 'note-link', '在 Obsidian 中打开 ↗')
     link.href = obsidianUrl(data.notePath)
@@ -286,7 +316,7 @@ function renderSummary(data, stageText) {
   if (data.notePath && data.transcriptPath) {
     const action = el('button', 'button text-button', '用存档字幕重新整理')
     action.type = 'button'
-    action.title = '使用字幕存档重跑总结；缓存失效时可能重新抓取内容'
+    action.title = '使用本地字幕存档离线重跑总结，不重新抓取或转写'
     action.addEventListener('click', () => resummarizeNote(data.notePath, action))
     body.append(action)
   }
@@ -326,6 +356,16 @@ let vaultSearchToken = 0
 function renderVaultSearch(results, query, stats = {}) {
   const box = $('vaultSearch')
   if (!box) return
+  if (stats.blocked || stats.error) {
+    const notice = document.createElement('p')
+    notice.className = 'vault-search-head'
+    notice.textContent = stats.blocked
+      ? '笔记库不可访问：' + (stats.hint || '请检查 Obsidian 仓库路径')
+      : '搜索失败：' + stats.error
+    box.replaceChildren(notice)
+    box.hidden = false
+    return
+  }
   const notes = []
   if (stats.truncated) notes.push('笔记较多，只扫描了前 2000 篇')
   if (stats.skipped) notes.push('跳过 ' + stats.skipped + ' 个无法读取的文件')
@@ -385,12 +425,18 @@ function scheduleVaultSearch() {
   vaultSearchTimer = setTimeout(async () => {
     const token = ++vaultSearchToken
     try {
-      const response = await fetch('/api/search?limit=12&q=' + encodeURIComponent(query))
-      if (!response.ok) return
-      const data = await response.json()
+      const data = await api('/api/search?limit=12&q=' + encodeURIComponent(query))
       if (token !== vaultSearchToken) return
-      renderVaultSearch(data.results || [], query, { truncated: Boolean(data.truncated), skipped: Number(data.skipped) || 0 })
-    } catch { /* 服务未启动时静默 */ }
+      renderVaultSearch(data.results || [], query, {
+        truncated: Boolean(data.truncated),
+        skipped: Number(data.skipped) || 0,
+        blocked: Boolean(data.blocked),
+        hint: data.hint || '',
+      })
+    } catch (error) {
+      if (token !== vaultSearchToken) return
+      renderVaultSearch([], query, { error: error?.message || String(error) })
+    }
   }, 260)
 }
 
@@ -946,7 +992,15 @@ async function retryFailure(key, button) {
   try {
     const data = await api('/api/retry', { method: 'POST', body: JSON.stringify({ key }) })
     renderSnapshot(data)
-    showToast(data.result?.ok ? '重试完成' : '仍然失败：' + String(data.result?.message || '').slice(0, 80))
+    const result = data.result || {}
+    if (!result.ok) {
+      showToast('仍然失败：' + String(result.message || '').slice(0, 80))
+    } else if (result.stateSaved === false) {
+      const warning = (result.warnings || []).join('；') || '状态保存失败，重启后可能重复处理这条视频'
+      showToast('重试完成，但' + warning, true)
+    } else {
+      showToast('重试完成')
+    }
   } catch (error) {
     showToast('重试失败：' + (error?.message || error))
   } finally {
@@ -1047,8 +1101,17 @@ function handleEvent(event) {
   if (state.events.length > 100) state.events.shift()
   if (event.type === 'foreground') renderForeground(event.data)
   if (event.type === 'status') {
-    if (state.snapshot) state.snapshot.status = { ...state.snapshot.status, polling: Boolean(event.data?.polling), pollIntervalMs: event.data?.pollIntervalMs, readOnly: event.data?.readOnly }
+    if (state.snapshot) state.snapshot.status = {
+      ...state.snapshot.status,
+      polling: Boolean(event.data?.polling),
+      pollIntervalMs: event.data?.pollIntervalMs,
+      readOnly: event.data?.readOnly,
+      readOnlyReason: event.data?.readOnlyReason || '',
+    }
     renderToggle()
+  }
+  if (event.type === 'refresh-done' && Array.isArray(event.data?.warnings) && event.data.warnings.length) {
+    showToast('重刷完成，但部分笔记有警告：' + event.data.warnings.join('；'), true)
   }
   if (event.type === 'saved' && event.data) renderSummary(event.data, '已生成')
   if (event.type === 'summarized' && event.data && !state.summary) renderSummary({ ...event.data, chapters: [], fetchStats: null }, '总结完成')
@@ -1209,10 +1272,16 @@ async function resummarizeNote(notePath, button) {
   try {
     const data = await api('/api/resummarize', { method: 'POST', body: JSON.stringify({ notePath }) })
     if (data.status && data.config) state.snapshot = data
-    showToast(data.result?.message || '重整理完成')
-    if (data.result?.ok && data.history) renderHistory(data.history)
+    const result = data.result || {}
+    if (!result.ok) {
+      showToast('重整理失败：' + String(result.message || '未知原因').slice(0, 120), true)
+    } else {
+      const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : []
+      showToast((result.message || '重整理完成') + (warnings.length ? '；' + warnings.join('；') : ''), warnings.length > 0)
+      if (data.history) renderHistory(data.history)
+    }
   } catch (error) {
-    showToast(error.message)
+    showToast('重整理失败：' + (error?.message || error), true)
   } finally {
     button.disabled = false
     button.textContent = '用存档字幕重新整理'

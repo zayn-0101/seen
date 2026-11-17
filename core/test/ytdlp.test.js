@@ -12,15 +12,20 @@ import {
 
 test('ytDlpAssetName maps platforms to official release assets', () => {
   assert.equal(ytDlpAssetName('darwin'), 'yt-dlp_macos')
-  assert.equal(ytDlpAssetName('linux'), 'yt-dlp_linux')
-  assert.equal(ytDlpAssetName('win32'), 'yt-dlp.exe')
+  assert.equal(ytDlpAssetName('linux', 'x64'), 'yt-dlp_linux')
+  assert.equal(ytDlpAssetName('win32', 'x64'), 'yt-dlp.exe')
   assert.equal(ytDlpAssetName('freebsd'), 'yt-dlp')
+  assert.equal(ytDlpAssetName('linux', 'arm64'), 'yt-dlp_linux_aarch64')
+  assert.equal(ytDlpAssetName('win32', 'arm64'), 'yt-dlp_arm64.exe')
+  assert.equal(ytDlpAssetName('win32', 'ia32'), 'yt-dlp_x86.exe')
+  assert.equal(ytDlpAssetName('linux', 'arm'), null)
 })
 
 test('ytDlpReleaseUrl points at the latest official release', () => {
   const url = ytDlpReleaseUrl('darwin')
   assert.match(url, /^https:\/\/github\.com\/yt-dlp\/yt-dlp\/releases\/latest\/download\//)
   assert.ok(url.endsWith('yt-dlp_macos'))
+  assert.equal(ytDlpReleaseUrl('linux', 'arm'), null)
 })
 
 test('ytDlpInstallPath lives under ~/.seen/bin', () => {

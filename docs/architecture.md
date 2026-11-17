@@ -67,9 +67,9 @@
 
 - `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
-- 多个 Seen 实例共用同一状态目录与 `instance.lock`：启动时用 `open(..., 'wx')` 原子抢锁，锁里写 PID；后启动的实例为只读并在状态里说明原因（锁被占用/锁写入失败/旧锁无法清理），停掉占用者后可接管。
+- 多个 Seen 实例共用同一状态目录与 `instance.lock`：启动时先把 owner 写入唯一临时目录，再用 `renameSync` 原子替换/创建锁目录；清理陈旧锁前核对目录 inode/dev，只删除自己的 owner 文件再 `rmdir`，非空目录不删，避免误删其他进程刚创建的新锁；同 PID 重复启动按占用处理。后启动的实例为只读并在状态里说明原因（锁被占用/锁写入失败/旧锁无法清理），停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
-- API 的 POST 请求使用 `application/json`；浏览器请求须与面板同源，所有 API 都校验 `Host`（只接受本机名和实际绑定地址，防止 DNS rebinding）。本机原生客户端可直接调用。
+- API 的 POST 请求使用 `application/json`；浏览器请求须与面板同源，所有 API 请求都校验 `Host` / `Origin` / `Sec-Fetch-Site` / JSON content-type，防止 DNS rebinding 和跨站调用；服务只允许绑定本机回环地址。本机原生客户端可直接调用。
 - B 站字幕缓存写入 `~/.seen/cache/transcripts/<bvid>__<cid>.json`，默认保留 30 天；`force` 扫描会跳过缓存。
 - 开机自启用 `scripts/install-launchd.mjs`；双击 `seen.command` 可临时启动。
 

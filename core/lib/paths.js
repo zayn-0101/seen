@@ -97,7 +97,7 @@ export function weeklyReviewRelPath({ noteRoot, label } = {}) {
 export function normalizeAuxRelPath(value, { vaultPath = '', noteRoot = '' } = {}) {
   let rel = String(value ?? '').replace(/\\/g, '/').trim()
   if (!rel) return ''
-  rel = rel.replace(/^\.\//, '').replace(/^\/+/, '')
+  rel = rel.replace(/^\.\//, '')
   const base = String(vaultPath ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
   if (base && (rel === base || rel.startsWith(base + '/'))) {
     rel = rel === base ? '' : rel.slice(base.length + 1)
@@ -112,8 +112,16 @@ export function normalizeAuxRelPath(value, { vaultPath = '', noteRoot = '' } = {
       }
     }
   }
+  rel = rel.replace(/^\/+/, '')
   if (!rel) return ''
   const root = cleanRoot(noteRoot)
+  // 旧默认根「课程知识地图」没有前导斜杠时也迁移到当前根。
+  if (rel.startsWith('课程知识地图/')) rel = root + rel.slice('课程知识地图'.length)
+  if (rel.startsWith(root + '/')) {
+    // 已经是当前根目录，继续处理下面的旧子目录迁移。
+  } else if (rel.startsWith('字幕/') || rel.startsWith('手册/') || rel.startsWith('概念/') || rel.startsWith('主题/') || rel.startsWith('每周回顾/')) {
+    rel = root + '/' + rel
+  }
   const moves = [
     [TRANSCRIPT_DIR, TRANSCRIPT_DIR],
     [MANUAL_DIR, MANUAL_DIR],

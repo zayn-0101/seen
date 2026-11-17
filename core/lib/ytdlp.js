@@ -23,17 +23,27 @@ export function ytDlpInstallPath(platform = process.platform) {
   return join(INSTALL_DIR, platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 }
 
-/** 官方 release 里对应平台的资产名。 */
-export function ytDlpAssetName(platform = process.platform) {
+/** 官方 release 里对应平台/架构的资产名；没有免安装二进制的组合返回 null。 */
+export function ytDlpAssetName(platform = process.platform, arch = process.arch) {
   if (platform === 'darwin') return 'yt-dlp_macos'
-  if (platform === 'win32') return 'yt-dlp.exe'
-  if (platform === 'linux') return 'yt-dlp_linux'
+  if (platform === 'win32') {
+    if (arch === 'arm64') return 'yt-dlp_arm64.exe'
+    if (arch === 'ia32') return 'yt-dlp_x86.exe'
+    return 'yt-dlp.exe'
+  }
+  if (platform === 'linux') {
+    if (arch === 'arm64') return 'yt-dlp_linux_aarch64'
+    // Linux ARMv7 只发布 .zip，当前安装器只处理裸二进制，交给系统包管理器。
+    if (arch === 'arm') return null
+    return 'yt-dlp_linux'
+  }
   return 'yt-dlp'
 }
 
-/** 官方最新版下载地址。 */
-export function ytDlpReleaseUrl(platform = process.platform) {
-  return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + ytDlpAssetName(platform)
+/** 官方最新版下载地址；当前平台没有免安装二进制时返回 null。 */
+export function ytDlpReleaseUrl(platform = process.platform, arch = process.arch) {
+  const asset = ytDlpAssetName(platform, arch)
+  return asset ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + asset : null
 }
 
 const CANDIDATES = [
@@ -175,19 +185,22 @@ export async function installYtDlp({ force = false, onProgress } = {}) {
     return { ok: true, path: target, skipped: true }
   }
   if (installTask) return installTask
+  const releaseUrl = ytDlpReleaseUrl()
+  if (!releaseUrl) {
+    return { ok: false, error: '当前平台没有可直接安装的 yt-dlp 二进制，请用系统包管理器安装' }
+  }
   installTask = (async () => {
     const temp = target + '.part'
     try {
       if (onProgress) onProgress({ stage: 'download', message: '正在下载 yt-dlp（约 37MB）' })
       mkdirSync(dirname(target), { recursive: true })
-      const officialUrl = ytDlpReleaseUrl()
-      const usedUrl = await downloadFile(officialUrl, temp)
+      await downloadFile(releaseUrl, temp)
       chmodSync(temp, 0o755)
-      // 校验下载文件：官方地址取不到校验文件时放行；走镜像时必须有校验，否则中止。
+      // 校验下载文件：无论官方还是镜像，取不到官方校验值都中止安装。
       const checksum = await verifyChecksum(temp, ytDlpAssetName())
       if (checksum === false) throw new Error('SHA256 校验失败：下载的文件与官方校验值不符，已中止安装')
-      if (checksum === null && usedUrl !== officialUrl) {
-        throw new Error('从镜像下载但取不到官方校验文件，为安全起见已中止；可换网络重试')
+      if (checksum !== true) {
+        throw new Error('取不到官方校验文件，无法确认下载内容，已中止安装；可换网络重试')
       }
       renameSync(temp, target)
       if (!await verifyYtDlp(target)) throw new Error('下载的 yt-dlp 无法运行')

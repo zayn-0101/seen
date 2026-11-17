@@ -8,12 +8,12 @@ import {
 } from '../lib/config.js'
 
 test('resolveConfig merges defaults and validates', () => {
-  const config = resolveConfig({})
+  const config = resolveConfig({ vaultPath: join(tmpdir(), 'seen-test-vault') })
   assert.equal(config.pollIntervalMs, 15000)
   assert.equal(config.stablePolls, 2)
   assert.equal(config.noteRoot, '视频笔记')
   assert.ok(config.stateDir.endsWith(join('.seen', 'state')))
-  assert.equal(typeof config.vaultPath, 'string')
+  assert.equal(config.vaultPath, join(tmpdir(), 'seen-test-vault'))
   assert.equal(resolveConfig({ pollIntervalMs: 5000 }).pollIntervalMs, 5000)
   assert.throws(() => resolveConfig({ unknownKey: 1 }), /未知配置项/)
   assert.throws(() => resolveConfig({ pollIntervalMs: 0 }), /正数/)

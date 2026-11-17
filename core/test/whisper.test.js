@@ -78,7 +78,9 @@ test('ffmpegReleaseUrl points at the pinned ffmpeg-static release', () => {
   assert.match(url, new RegExp('^https://github\\.com/eugeneware/ffmpeg-static/releases/download/' + FFMPEG_STATIC_VERSION + '/'))
   assert.ok(url.endsWith('ffmpeg-darwin-arm64'))
   assert.equal(ffmpegReleaseUrl('freebsd', 'x64'), null)
-  assert.match(ffmpegAssetSha256('ffmpeg-darwin-arm64'), /^[a-f0-9]{64}$/)
+  assert.equal(ffmpegAssetSha256('ffmpeg-darwin-arm64'), 'a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584')
+  assert.equal(ffmpegAssetSha256('ffmpeg-darwin-x64'), 'ebdddc936f61e14049a2d4b549a412b8a40deeff6540e58a9f2a2da9e6b18894')
+  assert.equal(ffmpegAssetSha256('ffmpeg-win32-x64'), '04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00')
   assert.equal(ffmpegAssetSha256('ffmpeg-freebsd-x64'), null)
 })
 
