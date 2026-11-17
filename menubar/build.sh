@@ -34,7 +34,7 @@ bash scripts/make-icons.sh
 compile_arch() {
   local target_arch="$1"
   local out="$2"
-  swiftc -target "${target_arch}-apple-macosx13.0" -Onone Sources/*.swift -o "$out" -framework AppKit -framework SwiftUI -framework ServiceManagement 2>/dev/null
+  swiftc -target "${target_arch}-apple-macosx13.0" -Onone Sources/*.swift -o "$out" -framework AppKit -framework SwiftUI -framework ServiceManagement -framework UserNotifications 2>/dev/null
 }
 
 if [ "$BUNDLE" = "1" ] && [ "$ARCH_MODE" = "universal" ]; then
@@ -50,7 +50,7 @@ elif [ "$ARCH_MODE" = "arm64" ]; then
   compile_arch arm64 "$BUILD_DIR/Seen"
 else
   echo "编译 Swift 源码（当前架构）…"
-  swiftc -Onone Sources/*.swift -o "$BUILD_DIR/Seen" -framework AppKit -framework SwiftUI -framework ServiceManagement
+  swiftc -Onone Sources/*.swift -o "$BUILD_DIR/Seen" -framework AppKit -framework SwiftUI -framework ServiceManagement -framework UserNotifications
 fi
 
 if [ -d "$APP" ]; then

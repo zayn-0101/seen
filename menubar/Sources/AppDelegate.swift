@@ -203,6 +203,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onQuit = { NSApp.terminate(nil) }
         model.onStartService = { [weak self] in self?.ensureService() }
 
+        // 通知由应用自己的 bundle 投递；服务端只通过 SSE 发 notification 事件。
+        Notifier.shared.prepare()
+        EventStream.shared.onEvent = { event in
+            guard let type = event["type"] as? String, type == "notification",
+                  let data = event["data"] as? [String: Any],
+                  let body = data["body"] as? String else { return }
+            Notifier.shared.notify(
+                title: data["title"] as? String ?? "拾影 Seen",
+                subtitle: data["subtitle"] as? String ?? "",
+                body: body
+            )
+        }
+        EventStream.shared.start()
+
         // 收到 SIGTERM/SIGINT（例如注销、系统关机）时也停掉自己拉起的服务进程
         for sig in [SIGTERM, SIGINT] {
             signal(sig, SIG_IGN)
@@ -233,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        EventStream.shared.stop()
         service.stopIfSpawnedByUs()
     }
 

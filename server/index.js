@@ -173,6 +173,13 @@ function broadcast(event) {
 
 const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '1' })
 
+// 通知同时写入 SSE：菜单栏应用用自己的 UNUserNotificationCenter 投递，
+// 独立运行服务时仍由 osascript 兜底。
+function emitNotification(payload) {
+  notifier.notify(payload)
+  broadcast({ type: 'notification', data: payload, at: Date.now() })
+}
+
 // 面板「安装 whisper-cli」按钮触发的 Homebrew 安装，同一时间只允许一个。
 let installingWhisperCli = false
 // 面板「下载 Whisper 模型」触发的下载，同一时间只允许一个。
@@ -188,7 +195,7 @@ function platformName(source) {
 }
 
 function notifySaved(data = {}) {
-  notifier.notify({
+  emitNotification({
     title: '拾影 · 笔记已生成',
     subtitle: [data.subject, platformName(data.source)].filter(Boolean).join(' · '),
     body: data.title || '新视频',
@@ -198,7 +205,7 @@ function notifySaved(data = {}) {
 /** 识别到视频、开始处理时提醒一次，避免用户以为没反应。 */
 function notifyStarted(data = {}) {
   const title = data.title || data.videoId || data.bvid || '新视频'
-  notifier.notify({
+  emitNotification({
     title: '拾影 · 开始整理',
     subtitle: platformName(data.source),
     body: String(title).slice(0, 120),
@@ -208,7 +215,7 @@ function notifyStarted(data = {}) {
 /** 进入本地转写（最慢的一步）时提醒，并给出预计耗时。 */
 function notifyTranscribing(data = {}) {
   const minutes = Number(data.estimateMinutes) || 0
-  notifier.notify({
+  emitNotification({
     title: '拾影 · 本地转写中',
     subtitle: String(data.title || '').slice(0, 60),
     body: minutes > 0 ? '没有可用字幕，预计约 ' + minutes + ' 分钟' : '没有可用字幕，正在转写音频',
@@ -216,7 +223,7 @@ function notifyTranscribing(data = {}) {
 }
 
 function notifyFailed(data = {}) {
-  notifier.notify({
+  emitNotification({
     title: '拾影 · 处理失败',
     body: String(data.message || '未知错误').slice(0, 160),
   })

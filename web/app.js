@@ -1030,6 +1030,8 @@ function stageForEvent(event) {
 
 function handleEvent(event) {
   if (!event || !event.type) return
+  // 通知事件只给菜单栏应用消费；网页不需要显示。
+  if (event.type === 'notification') return
   state.events.push(event)
   if (state.events.length > 100) state.events.shift()
   if (event.type === 'foreground') renderForeground(event.data)

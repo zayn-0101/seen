@@ -184,6 +184,10 @@ final class ServiceProcess {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
         proc.arguments = ["-lc", "cd \"\(repo)\" && exec \"\(nodeBinary)\" server/index.js --no-open"]
+        // 菜单栏应用运行时由应用自己的通知中心投递，服务端不再走 osascript。
+        var environment = ProcessInfo.processInfo.environment
+        environment["SEEN_DISABLE_NOTIFY"] = "1"
+        proc.environment = environment
         let out = FileHandle(forWritingAtPath: logURL.path) ?? {
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
             return FileHandle(forWritingAtPath: logURL.path)
