@@ -327,3 +327,18 @@
 - [x] `detectSource` 仍识别抖音平台（用于历史重刷与手动入口），无法识别来源时不再默认当 B 站
 - [x] `POST /api/scan` 对 `douyin-not-jingxuan` / `unsupported-source` 返回 400 并带 error；前端普通抖音前台显示「抖音普通视频（不处理）」
 - [x] `cd core && node --test`：243 tests / 243 pass（含 URL 真值表）
+
+## 2026-11-17 笔记 + 资料新编排（0.5.3）
+
+背景：用户反馈 vault 顶层目录太多、找不到笔记入口。确定「笔记只放视频笔记，手册/概念/主题/字幕/回顾统一收进资料」；所有写入备份移出 vault 到 `~/.seen/backups`。
+
+- [x] `core/lib/paths.js` 增加 `AUX_DIR='资料'`、`auxRelPath`、`weeklyReviewRelPath`；structured 布局改为 `笔记/<学科>/` + `资料/{手册,概念,主题,字幕,回顾}/`，flat 布局的学科目录与手册保持不变，辅助资料仍在 `资料/`
+- [x] `core/lib/obsidian.js` 的 `writeVideoNote` 接受 `backupDir`，重写备份写到 `~/.seen/backups`；`writeWeeklyReview` 走 `weeklyReviewRelPath`
+- [x] `core/lib/legacy-refs.js` 把旧 `视频笔记/{手册,回顾,字幕,概念,主题}/…` 与裸 `[[手册/…]]` 引用统一改写到 `视频笔记/资料/…`；`vault-search.js` 识别 `资料/{字幕,手册,概念,主题,回顾}`
+- [x] `scripts/migrate-vault.mjs` 支持旧根改名、旧 `视频笔记/<学科>/`、扁平学科目录、根级辅助目录和旧 `每周回顾/`；旧 `_备份/` 整体移到 `~/.seen/backups/旧备份-<时间>/`，旧 `.md.bak-*` 移到 `~/.seen/backups/旧笔记文件-<时间>/`
+- [x] 真实 vault 迁移（2026-11-17 18:46–18:47）：25 个辅助文件迁移；27 个旧 `.bak` 与 9 个旧备份快照移出 vault；重写笔记内链接 16 个；迁移后为 `视频笔记/{总览.md,视频索引.md,概念索引.md,标签索引.md,笔记/<6 学科>/,资料/{手册 6,回顾 1,字幕 13,概念 1,主题 4}}`，根下无 `_备份`、无 `.bak`
+- [x] 迁移脚本首次执行在 `_备份/历史副本` 的某个 `.bak` 上报 `ENOENT`（该目录已被整体移走）；修复为 `.bak` 扫描跳过 `_备份/` 后重跑成功。再次 dry-run 输出「已经是当前结构，无需迁移」
+- [x] `npm run self-check`：笔记 13 篇（当前格式 13 / 旧格式 0）错误 0 警告 0；索引 235 条双链 / 手册 6 篇；状态 13 条 / 路径缺失 0。自检脚本的学科手册识别同步改为 `资料/手册/<学科>.md`（flat 布局按学科路径）
+- [x] `node scripts/maintain-vault.mjs`：视频 13 篇、学科 6 个、概念页 1 个、主题页 2 个
+- [x] `cd core && node --test`：244 tests / 244 pass；`npm run check` 通过
+- [x] `package.json` 升到 0.5.3；`cd menubar && ./build.sh --bundle --arch=universal` 产出 universal app（232M），固定证书 `Seen Local Signing` 签名验证通过；安装到 `~/Applications/Seen.app`（旧 0.5.2 保留备份），启动后 `GET /api/status` 返回 200、vault ok、历史 13 篇，搜索返回新 `笔记/…` 与 `资料/…` 路径

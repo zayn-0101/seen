@@ -43,7 +43,7 @@ test('manual and overview render with AUTO block', () => {
   assert.ok(manual.includes('## 我的补充'))
   assert.ok(manual.includes('[[视频笔记/机器学习/梯度下降详解|梯度下降详解]]'))
   const overview = renderOverview({ subjects: ['机器学习'], noteRoot: '视频笔记' })
-  assert.ok(overview.includes('[[视频笔记/手册/机器学习|机器学习]]'))
+  assert.ok(overview.includes('[[视频笔记/资料/手册/机器学习|机器学习]]'))
 })
 
 test('upsertAutoBlock preserves user content', () => {

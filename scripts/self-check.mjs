@@ -30,6 +30,7 @@ import {
   NOTE_FORMAT,
 } from '../core/lib/note-check.js'
 import { resolveVaultPath } from '../core/lib/obsidian.js'
+import { AUX_DIR, MANUAL_DIR, manualNoteRelPath } from '../core/lib/paths.js'
 import { loadState } from '../core/lib/state.js'
 import { listMarkdownFiles } from '../core/lib/vault-search.js'
 import { probeVaultAccess, VAULT_HINT } from '../core/lib/vault-access.js'
@@ -141,8 +142,12 @@ async function main() {
         indexFindings.push({ ...item, note: name })
       }
     }
-    const manualDir = join(noteRootAbs, '手册')
-    const manualFiles = files.filter((file) => relOf(file).startsWith(String(config.noteRoot) + '/手册/'))
+    const manualPrefix = String(config.noteRoot) + '/' + AUX_DIR + '/' + MANUAL_DIR + '/'
+    const manualPaths = new Set(
+      Object.keys(state?.subjects || {}).map((subject) =>
+        manualNoteRelPath({ noteRoot: config.noteRoot, subject, layout: config.noteLayout })),
+    )
+    const manualFiles = files.filter((file) => manualPaths.has(relOf(file)) || relOf(file).startsWith(manualPrefix))
     for (const file of manualFiles) {
       const markdown = readFileSync(file, 'utf8')
       if (!markdown.includes(AUTO_START) || !markdown.includes(AUTO_END)) {

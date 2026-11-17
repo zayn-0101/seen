@@ -18,7 +18,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
-import { REVIEW_DIR, conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath } from './paths.js'
+import { conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath, weeklyReviewRelPath } from './paths.js'
 import { VAULT_IO_TIMEOUT_MS, createVaultQueue, withVaultTimeout } from './vault-access.js'
 import {
   autoBlock,
@@ -221,14 +221,19 @@ function siblingNotePath(base, suffix) {
   return { absPath, relPath: relDir + name }
 }
 
-async function backupFile(file) {
+async function backupFile(file, backupDir = '') {
   const stamp = Date.now()
-  let backup = `${file}.bak-${stamp}`
+  let backup = backupDir
+    ? join(String(backupDir), `${basename(file)}.bak-${stamp}`)
+    : `${file}.bak-${stamp}`
   let index = 1
   while (await pathExists(backup)) {
-    backup = `${file}.bak-${stamp}-${index}`
+    backup = backupDir
+      ? join(String(backupDir), `${basename(file)}.bak-${stamp}-${index}`)
+      : `${file}.bak-${stamp}-${index}`
     index += 1
   }
+  if (backupDir) await mkdir(String(backupDir), { recursive: true })
   await copyFile(file, backup)
   return backup
 }
@@ -239,7 +244,7 @@ async function backupFile(file) {
  *  - 不同 bvid：文件名追加 " (BVxxxx)"
  *  - force：备份 .bak-<timestamp> 后覆盖
  */
-export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout } = {}) {
+export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout, backupDir = '' } = {}) {
   const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout })
   const targetBvid = String(bvid ?? '').trim()
 
@@ -277,7 +282,7 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, cont
         }
         target = found ?? siblingNotePath(base, ` (${tag}-${Date.now()})`)
       } else {
-        await backupFile(target.absPath)
+        await backupFile(target.absPath, backupDir)
       }
     }
 
@@ -509,7 +514,7 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   if (!vaultPath) throw new Error('writeWeeklyReview: 缺少 vaultPath')
   if (!label) throw new Error('writeWeeklyReview: 缺少 label')
   const root = normalizeNoteRoot(noteRoot)
-  const relPath = toPosix(join(root, REVIEW_DIR, label + '.md'))
+  const relPath = toPosix(weeklyReviewRelPath({ noteRoot: root, label }))
   const absPath = absoluteFromRel(vaultPath, relPath)
   return runVault(async () => {
     if (await pathExists(absPath)) return { ok: true, skipped: true, relPath, absPath }

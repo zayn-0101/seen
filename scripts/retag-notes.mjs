@@ -149,7 +149,7 @@ console.log((apply ? '【写入模式】' : '【预演模式】不会改任何�
 console.log('')
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-const backupRoot = join(vaultPath, config.noteRoot, '_备份', '重打标签-' + stamp)
+const backupRoot = join(config.stateDir, '..', 'backups', '重打标签-' + stamp)
 
 let changed = 0
 let failed = 0
@@ -257,4 +257,4 @@ if (apply && changed > 0) {
 
 console.log('')
 console.log('完成：处理 ' + picked.length + ' 篇，需改动 ' + changed + ' 篇，失败 ' + failed + ' 篇')
-if (!apply && changed > 0) console.log('确认无误后加 --apply 写入（会先备份到 _备份/重打标签-<时间>）')
+if (!apply && changed > 0) console.log('确认无误后加 --apply 写入（会先备份到 ~/.seen/state/backups/重打标签-<时间>）')

@@ -54,7 +54,7 @@ if (!apply) {
   process.exit(0)
 }
 
-const backupRoot = join(rootDir, '_备份', '去封面-' + stamp())
+const backupRoot = join(config.stateDir, '..', 'backups', '去封面-' + stamp())
 for (const target of targets) {
   const rel = relative(rootDir, target.file)
   const backupPath = join(backupRoot, rel)

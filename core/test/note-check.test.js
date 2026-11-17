@@ -78,7 +78,7 @@ function noteMarkdown(overrides = {}) {
     '<!-- MANUAL:START -->',
     '<!-- MANUAL:END -->',
     '',
-    '[[视频笔记/手册/知识管理|知识管理 学习手册]]',
+    '[[视频笔记/资料/手册/知识管理|知识管理 学习手册]]',
     '',
     '## 来源统计',
     '',
@@ -106,7 +106,7 @@ test('parseNoteMarkdown reads frontmatter, tags, duration and sections', () => {
   assert.ok(note.sectionTitles.includes('核心概念'))
   assert.equal(note.conceptEntries.length, 2)
   assert.equal(note.conceptEntries[0].hasBlockId, true)
-  assert.equal(note.manualLinkTarget, '视频笔记/手册/知识管理')
+  assert.equal(note.manualLinkTarget, '视频笔记/资料/手册/知识管理')
   assert.equal(note.manualMarkersOk, true)
   assert.equal(note.detailsOk, true)
   assert.deepEqual(note.relatedLinks, ['视频笔记/笔记/知识管理/另一篇'])
@@ -243,7 +243,7 @@ test('checkNoteLinks reports broken related links, self links and manual links',
 test('checkIndexLinks finds broken wiki links', () => {
   const good = checkIndexLinks('- [[视频笔记/笔记/知识管理/另一篇]]', { exists })
   assert.deepEqual(good, [])
-  const bad = checkIndexLinks('- [[视频笔记/笔记/知识管理/缺失]]\n- [[视频笔记/手册/知识管理|知识管理]]', { exists: (rel) => rel === '视频笔记/手册/知识管理.md' })
+  const bad = checkIndexLinks('- [[视频笔记/笔记/知识管理/缺失]]\n- [[视频笔记/资料/手册/知识管理|知识管理]]', { exists: (rel) => rel === '视频笔记/资料/手册/知识管理.md' })
   assert.deepEqual(codes(bad), ['index-broken'])
 })
 

@@ -449,6 +449,7 @@ export function apply(ctx, rawConfig = {}) {
         bvid: content?.bvid || inputBvid || '',
         content: note,
         force: refresh || Boolean(input?.force),
+        backupDir: config.stateDir ? join(config.stateDir, '..', 'backups') : '',
       })
 
       // 字幕原文单独存档，之后「用已存字幕重新整理」不依赖缓存是否过期

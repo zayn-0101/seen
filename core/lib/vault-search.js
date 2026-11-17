@@ -73,6 +73,14 @@ function kindOf(relPath) {
   const parts = toPosix(relPath).split('/')
   const first = parts[0] || ''
   if (first === '笔记') return '视频笔记'
+  if (first === '资料') {
+    const kind = parts[1] || ''
+    if (kind === '字幕') return '字幕'
+    if (kind === '手册') return '学科手册'
+    if (kind === '概念') return '概念页'
+    if (kind === '主题') return '主题综述'
+    if (kind === '回顾') return '周回顾'
+  }
   if (first === '字幕') return '字幕'
   if (first === '手册') return '学科手册'
   if (first === '概念') return '概念页'

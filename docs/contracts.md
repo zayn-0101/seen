@@ -367,7 +367,7 @@ export function manualNotePath({ vaultPath, noteRoot, subject, layout }): { absP
 export function toPosix(p: string): string
 
 export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir }): Promise<void>
-export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout, backupDir = '' }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateOverview({ vaultPath, noteRoot, subjects, layout }): Promise<{ relPath, absPath }>
 export async function writeIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
@@ -411,6 +411,7 @@ export function buildConceptIndex(videos: any[]): Array<{ name: string, videos: 
 
 ```js
 export const VIDEO_DIR = '笔记'
+export const AUX_DIR = '资料'
 export const MANUAL_DIR = '手册'
 export const REVIEW_DIR = '回顾'
 export const TRANSCRIPT_DIR = '字幕'
@@ -419,19 +420,21 @@ export const TOPIC_DIR = '主题'
 export const BACKUP_DIR = '_备份'
 export const MANUAL_SUFFIX = ' 学习手册'
 
+export function auxRelPath({ noteRoot, parts = [] }): string            // <root>/资料/<parts...>
 export function normalizeNoteLayout(value: any): 'flat' | 'structured'
 // 只有字面量 'flat'（不区分大小写）返回 flat，其余一律 structured
 export function videoNoteRelPath({ noteRoot, subject, noteName, layout }): string
 export function manualNoteRelPath({ noteRoot, subject, layout }): string
 export function manualNoteLinkTarget({ noteRoot, subject, layout }): string  // 去掉 .md 的双链目标
-export function transcriptNoteRelPath({ noteRoot, noteName }): string  // <root>/字幕/<标题>.md
-export function conceptPageRelPath({ noteRoot, name }): string       // <root>/概念/<名字>.md
-export function topicPageRelPath({ noteRoot, name }): string         // <root>/主题/<名字>.md
+export function transcriptNoteRelPath({ noteRoot, noteName }): string  // <root>/资料/字幕/<标题>.md
+export function conceptPageRelPath({ noteRoot, name }): string       // <root>/资料/概念/<名字>.md
+export function topicPageRelPath({ noteRoot, name }): string         // <root>/资料/主题/<名字>.md
+export function weeklyReviewRelPath({ noteRoot, label }): string     // <root>/资料/回顾/<周>.md
 export function remapStateNotePaths(state: State, pathMap: Map<string,string> | object): number
 // 按旧 → 新相对路径改写 state.subjects[*].videos[].notePath，返回改写条数
 ```
 
-布局：`structured`（默认）= `<root>/笔记/<学科>/<标题>.md` + `<root>/手册/<学科>.md`；`flat` = `<root>/<学科>/<标题>.md`（手册与笔记同学科目录）。
+布局：`structured`（默认）= `<root>/笔记/<学科>/<标题>.md` + `<root>/资料/手册/<学科>.md` + `<root>/资料/回顾/<周>.md`；`flat` = `<root>/<学科>/<标题>.md`（手册与笔记同学科目录），概念/主题/字幕/回顾仍在 `<root>/资料/`。
 
 ## lib/index-note.js
 
@@ -548,7 +551,7 @@ type Finding = { code: string, level: 'error' | 'warn', message: string }
 export function stripCover(markdown: string): { markdown: string, changed: boolean }
 ```
 
-用途：当前格式起视频笔记不再抓封面，`scripts/strip-cover.mjs` 用它清理历史笔记（默认预演，`--apply` 先备份到 `_备份/去封面-<时间>/`）。
+用途：当前格式起视频笔记不再抓封面，`scripts/strip-cover.mjs` 用它清理历史笔记（默认预演，`--apply` 先备份到 `~/.seen/backups/去封面-<时间>/`）。
 
 ## lib/mnemon.js
 
@@ -621,7 +624,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
   `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
-- `resummarizeNote({ notePath })` 读 `字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
+- `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
 - `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
 - `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。

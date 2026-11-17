@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  AUX_DIR,
   MANUAL_DIR,
   MANUAL_SUFFIX,
   VIDEO_DIR,
@@ -9,6 +10,7 @@ import {
   normalizeNoteLayout,
   remapStateNotePaths,
   videoNoteRelPath,
+  weeklyReviewRelPath,
 } from '../lib/paths.js'
 
 test('normalizeNoteLayout defaults to structured', () => {
@@ -39,16 +41,23 @@ test('manualNoteRelPath switches by layout', () => {
   )
   assert.equal(
     manualNoteRelPath({ noteRoot: '视频笔记', subject: '写作', layout: 'structured' }),
-    `视频笔记/${MANUAL_DIR}/写作.md`,
+    `视频笔记/${AUX_DIR}/${MANUAL_DIR}/写作.md`,
   )
 })
 
 test('manualNoteLinkTarget drops .md and handles missing values', () => {
   assert.equal(
     manualNoteLinkTarget({ noteRoot: '视频笔记', subject: '写作', layout: 'structured' }),
-    '视频笔记/手册/写作',
+    `视频笔记/${AUX_DIR}/${MANUAL_DIR}/写作`,
   )
-  assert.equal(manualNoteLinkTarget({ subject: '', layout: 'structured' }), '视频笔记/手册/未分类')
+  assert.equal(manualNoteLinkTarget({ subject: '', layout: 'structured' }), `视频笔记/${AUX_DIR}/${MANUAL_DIR}/未分类`)
+})
+
+test('weeklyReviewRelPath lives under 资料/回顾', () => {
+  assert.equal(
+    weeklyReviewRelPath({ noteRoot: '视频笔记', label: '2026-W46' }),
+    `视频笔记/${AUX_DIR}/回顾/2026-W46.md`,
+  )
 })
 
 test('remapStateNotePaths rewrites moved notes only', () => {
