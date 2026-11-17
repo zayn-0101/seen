@@ -11,6 +11,7 @@
  * 系统里已装的始终优先，不会被自动下载的副本覆盖。
  */
 import { execFile, spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { promisify } from 'node:util'
 import {
   chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync,
@@ -175,10 +176,30 @@ export function ffmpegAssetName(platform = process.platform, arch = process.arch
   return null
 }
 
+/** 固定 ffmpeg-static 版本，避免 latest 漂移后校验值失效。 */
+export const FFMPEG_STATIC_VERSION = 'b6.1.1'
+
+/** 各平台官方 ffmpeg 二进制的 SHA256（来自该 release 的 asset digest）。 */
+const FFMPEG_ASSET_SHA256 = Object.freeze({
+  'ffmpeg-darwin-arm64': 'a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584',
+  'ffmpeg-darwin-x64': 'ebdddc936f61e14049a2d4b549a412b8a40deeff6540e58a9f2a2da9e6b18894',
+  'ffmpeg-linux-arm': '0afba4a11110e6e402053e0fc14c33a7eb207d7a588688ae87dba471a0f06c71',
+  'ffmpeg-linux-arm64': '6bb182d0d75d23028db82e9e4f723ca69b853d055698486e6984ddb2c06fb8ce',
+  'ffmpeg-linux-ia32': 'c6472eb993612db72ca50893a34137ba11173e60a1a4c028d4660a3f755d2490',
+  'ffmpeg-linux-x64': 'e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99',
+  'ffmpeg-win32-x64': '04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00',
+})
+
+export function ffmpegAssetSha256(assetName) {
+  return FFMPEG_ASSET_SHA256[assetName] || null
+}
+
 /** ffmpeg 静态二进制下载地址；不支持的平台返回 null。 */
 export function ffmpegReleaseUrl(platform = process.platform, arch = process.arch) {
   const asset = ffmpegAssetName(platform, arch)
-  return asset ? 'https://github.com/eugeneware/ffmpeg-static/releases/latest/download/' + asset : null
+  return asset
+    ? 'https://github.com/eugeneware/ffmpeg-static/releases/download/' + FFMPEG_STATIC_VERSION + '/' + asset
+    : null
 }
 
 /** Whisper 模型下载地址列表：HF_ENDPOINT 优先，其次官方，最后国内镜像。 */
@@ -253,6 +274,9 @@ export async function installFfmpeg({ force = false, onProgress } = {}) {
   ffmpegTask = (async () => {
     const url = ffmpegReleaseUrl()
     if (!url) return { ok: false, error: '当前平台没有可用的 ffmpeg 静态构建' }
+    const asset = ffmpegAssetName()
+    const expectedSha = ffmpegAssetSha256(asset)
+    if (!expectedSha) return { ok: false, error: '当前平台没有登记 ffmpeg 校验值，已中止安装' }
     try {
       if (onProgress) onProgress({ stage: 'download', message: '正在下载 ffmpeg（约 45MB）' })
       // 官方 GitHub 失败时按镜像重试（国内直连常常超时）
@@ -264,6 +288,8 @@ export async function installFfmpeg({ force = false, onProgress } = {}) {
             minBytes: 1024 * 1024,
             onProgress: (p) => onProgress && onProgress({ ...p, stage: 'download', message: '正在下载 ffmpeg' }),
           })
+          const actualSha = createHash('sha256').update(readFileSync(target)).digest('hex')
+          if (actualSha !== expectedSha) throw new Error('SHA256 校验失败：下载的 ffmpeg 与官方校验值不符，已中止安装')
           chmodSync(target, 0o755)
           if (!await verifyRuns(target)) throw new Error('下载的 ffmpeg 无法运行')
           return { ok: true, path: target }

@@ -39,11 +39,12 @@ test('alignSubject rejects single-character subject', () => {
   assert.equal(r.reason, 'invalid')
 })
 
-test('alignSubject caps subject count and falls back to closest', () => {
+test('alignSubject caps subject count without forcing an unrelated subject', () => {
   const existing = Array.from({ length: 12 }, (_, i) => `领域${'甲乙丙丁戊己庚辛壬癸子丑'[i]}`)
   const r = alignSubject('写作技巧', existing, { maxSubjects: 12 })
-  assert.equal(r.merged, true)
-  assert.ok(existing.includes(r.subject))
+  assert.equal(r.subject, '未分类')
+  assert.equal(r.merged, false)
+  assert.equal(r.reason, 'cap')
 })
 
 test('alignSubject ignores whitespace differences', () => {

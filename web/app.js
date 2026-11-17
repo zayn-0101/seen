@@ -323,17 +323,28 @@ let vaultSearchTimer = null
 let vaultSearchToken = 0
 
 /** 渲染笔记库全文搜索结果（服务端扫 vault 里的 Markdown）。 */
-function renderVaultSearch(results, query) {
+function renderVaultSearch(results, query, stats = {}) {
   const box = $('vaultSearch')
   if (!box) return
+  const notes = []
+  if (stats.truncated) notes.push('笔记较多，只扫描了前 2000 篇')
+  if (stats.skipped) notes.push('跳过 ' + stats.skipped + ' 个无法读取的文件')
   if (!results.length) {
-    box.hidden = true
-    box.replaceChildren()
+    if (!notes.length) {
+      box.hidden = true
+      box.replaceChildren()
+      return
+    }
+    const empty = document.createElement('p')
+    empty.className = 'vault-search-head'
+    empty.textContent = '笔记库中没有匹配「' + query + '」的笔记（' + notes.join('；') + '）'
+    box.replaceChildren(empty)
+    box.hidden = false
     return
   }
   const head = document.createElement('p')
   head.className = 'vault-search-head'
-  head.textContent = '笔记库中还有 ' + results.length + ' 篇匹配「' + query + '」'
+  head.textContent = '笔记库中还有 ' + results.length + ' 篇匹配「' + query + '」' + (notes.length ? '（' + notes.join('；') + '）' : '')
   const list = document.createElement('ul')
   list.className = 'vault-search-list'
   for (const item of results) {
@@ -378,7 +389,7 @@ function scheduleVaultSearch() {
       if (!response.ok) return
       const data = await response.json()
       if (token !== vaultSearchToken) return
-      renderVaultSearch(data.results || [], query)
+      renderVaultSearch(data.results || [], query, { truncated: Boolean(data.truncated), skipped: Number(data.skipped) || 0 })
     } catch { /* 服务未启动时静默 */ }
   }, 260)
 }

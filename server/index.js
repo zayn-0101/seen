@@ -20,7 +20,7 @@ import { writeWeeklyReview } from '../core/lib/obsidian.js'
 import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
 import { buildTagIndex } from '../core/lib/tags.js'
-import { searchVault } from '../core/lib/vault-search.js'
+import { searchVaultDetailed } from '../core/lib/vault-search.js'
 import { findMnemon } from '../core/lib/mnemon.js'
 import { WHISPER_MODELS, findWhisperModel, installWhisperCli, installWhisperModel } from '../core/lib/whisper.js'
 import { compareVersions } from '../core/lib/version.js'
@@ -341,8 +341,10 @@ function validateApiRequest(req) {
   } catch {
     return { status: 403, error: '无效的请求地址' }
   }
-  const loopbackNames = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
-  if (loopbackNames.has(HOST.toLowerCase()) && !loopbackNames.has(requestOrigin.hostname.toLowerCase())) {
+  const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+  const boundHost = String(HOST || '').toLowerCase()
+  if (boundHost && boundHost !== '0.0.0.0' && boundHost !== '::' && boundHost !== '[::]') allowedHosts.add(boundHost)
+  if (!allowedHosts.has(requestOrigin.hostname.toLowerCase())) {
     return { status: 403, error: '请求地址不受信任' }
   }
   const origin = req.headers.origin
@@ -413,8 +415,8 @@ const server = createServer(async (req, res) => {
       }
       const query = url.searchParams.get('q') || ''
       const limit = Number(url.searchParams.get('limit')) || 20
-      const results = await searchVault({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, query, limit })
-      return json(res, 200, { query, results })
+      const found = await searchVaultDetailed({ vaultPath: status.vaultPath, noteRoot: status.noteRoot, query, limit })
+      return json(res, 200, { query, ...found })
     }
 
     if (pathname === '/api/concepts' && req.method === 'GET') {
@@ -689,8 +691,8 @@ const server = createServer(async (req, res) => {
       })
     }
 
-    if (pathname === '/api/llm/models' && (req.method === 'GET' || req.method === 'POST')) {
-      const body = req.method === 'POST' ? await readBody(req) : Object.fromEntries(url.searchParams)
+    if (pathname === '/api/llm/models' && req.method === 'POST') {
+      const body = await readBody(req)
       const providerId = body.provider || ''
       const preset = PROVIDERS.find((item) => item.id === providerId)
       const baseURL = body.baseURL || (preset ? preset.baseURL : '')

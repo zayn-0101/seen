@@ -35,19 +35,6 @@ export function sharedHanziRun(a, b) {
   return best
 }
 
-function closestSubject(name, list) {
-  let best = list[0]
-  let bestScore = -1
-  for (const item of list) {
-    const score = sharedHanziRun(item, name)
-    if (score > bestScore) {
-      bestScore = score
-      best = item
-    }
-  }
-  return best
-}
-
 /**
  * 把候选学科名对齐到已有学科列表。
  * @returns {{subject: string, merged: boolean, reason: string}}
@@ -88,9 +75,10 @@ export function alignSubject(name, existingSubjects = [], options = {}) {
     }
   }
 
-  // 4. 学科数量封顶：不再新增，落到最接近的已有学科
+  // 4. 学科数量封顶：不再新增。不能把无关主题硬塞进已有学科，
+  // 否则会污染该学科的学习手册；宁可暂时归入「未分类」。
   if (list.length >= maxSubjects) {
-    return { subject: closestSubject(incoming, list), merged: true, reason: 'cap' }
+    return { subject: '未分类', merged: false, reason: 'cap' }
   }
 
   return { subject: incoming, merged: false, reason: 'new' }

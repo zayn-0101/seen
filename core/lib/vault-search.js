@@ -18,21 +18,28 @@ function toPosix(value) {
   return String(value ?? '').replace(/\\/g, '/')
 }
 
-async function walkMarkdown(dir, bucket, depth = 0) {
-  if (depth > MAX_DEPTH || bucket.length >= MAX_FILES) return
+async function walkMarkdown(dir, bucket, depth = 0, stats = null) {
+  if (depth > MAX_DEPTH || bucket.length >= MAX_FILES) {
+    if (stats) stats.truncated = true
+    return
+  }
   let entries = []
   try {
     entries = await readdir(dir, { withFileTypes: true })
   } catch {
+    if (stats) stats.skipped += 1
     return
   }
   for (const entry of entries) {
-    if (bucket.length >= MAX_FILES) return
+    if (bucket.length >= MAX_FILES) {
+      if (stats) stats.truncated = true
+      return
+    }
     if (entry.name.startsWith('.')) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
       if (entry.name === '_备份') continue
-      await walkMarkdown(full, bucket, depth + 1)
+      await walkMarkdown(full, bucket, depth + 1, stats)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       bucket.push(full)
     }
@@ -53,11 +60,19 @@ export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }
 }
 
 function splitTerms(query) {
-  return String(query ?? '')
-    .toLowerCase()
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter(Boolean)
+  const text = String(query ?? '').trim().toLowerCase()
+  if (!text) return []
+  const spaced = text.split(/\s+/).map((term) => term.trim()).filter(Boolean)
+  if (spaced.length > 1) return [...new Set(spaced)]
+  try {
+    const segmenter = new Intl.Segmenter('zh', { granularity: 'word' })
+    const words = [...segmenter.segment(text)]
+      .filter((part) => part.isWordLike)
+      .map((part) => part.segment.trim())
+      .filter((term) => term && [...term].length >= 2)
+    if (words.length > 1) return [...new Set(words)]
+  } catch { /* 旧运行时没有 Intl.Segmenter 时退回整串匹配 */ }
+  return spaced
 }
 
 function makeSnippet(text, term) {
@@ -94,16 +109,21 @@ function kindOf(relPath) {
 async function search(vaultPath, noteRoot, terms, limit) {
   const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
   const files = []
-  await walkMarkdown(rootAbs, files)
+  const stats = { truncated: false, skipped: 0 }
+  await walkMarkdown(rootAbs, files, 0, stats)
 
   const results = []
   for (const file of files) {
     let content = ''
     try {
       const info = await stat(file)
-      if (!info.isFile() || info.size > MAX_FILE_BYTES) continue
+      if (!info.isFile() || info.size > MAX_FILE_BYTES) {
+        stats.skipped += 1
+        continue
+      }
       content = await readFile(file, 'utf8')
     } catch {
+      stats.skipped += 1
       continue
     }
     const name = basename(file, '.md')
@@ -112,14 +132,12 @@ async function search(vaultPath, noteRoot, terms, limit) {
     let score = 0
     let firstSnippet = ''
     let nameHit = false
-    let contentHit = false
     for (const term of terms) {
       if (lowerName.includes(term)) {
         score += 3
         nameHit = true
       } else if (lowerContent.includes(term)) {
         score += 1
-        contentHit = true
         if (!firstSnippet) firstSnippet = makeSnippet(content, term)
       }
     }
@@ -130,7 +148,22 @@ async function search(vaultPath, noteRoot, terms, limit) {
 
   results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
   const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 20
-  return results.slice(0, max)
+  return {
+    results: results.slice(0, max),
+    scanned: files.length,
+    skipped: stats.skipped,
+    truncated: stats.truncated,
+  }
+}
+
+/**
+ * 搜索笔记库，并返回扫描统计（是否因上限截断、跳过多少文件）。
+ * @returns {Promise<{ results: object[], scanned: number, skipped: number, truncated: boolean }>}
+ */
+export async function searchVaultDetailed({ vaultPath, noteRoot, query, limit = 20 } = {}) {
+  const terms = splitTerms(query)
+  if (!vaultPath || terms.length === 0) return { results: [], scanned: 0, skipped: 0, truncated: false }
+  return runVaultTask(() => search(vaultPath, noteRoot, terms, limit))
 }
 
 /**
@@ -138,7 +171,6 @@ async function search(vaultPath, noteRoot, terms, limit) {
  * @returns {Promise<{ title: string, relPath: string, snippet: string, score: number }[]>}
  */
 export async function searchVault({ vaultPath, noteRoot, query, limit = 20 } = {}) {
-  const terms = splitTerms(query)
-  if (!vaultPath || terms.length === 0) return []
-  return runVaultTask(() => search(vaultPath, noteRoot, terms, limit))
+  const detailed = await searchVaultDetailed({ vaultPath, noteRoot, query, limit })
+  return detailed.results
 }

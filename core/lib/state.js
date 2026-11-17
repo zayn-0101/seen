@@ -150,8 +150,8 @@ export function pruneSeen(state, max = 1000) {
  * 2) 归一化后一致 / 互相包含 → 复用已有学科；
  * 3) 否则返回归一化后的新学科名。
  */
-export function resolveSubjectName(subject, existing = []) {
-  return alignSubject(subject, existing).subject
+export function resolveSubjectName(subject, existing = [], options = {}) {
+  return alignSubject(subject, existing, options).subject
 }
 
 /**

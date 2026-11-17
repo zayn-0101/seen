@@ -89,6 +89,63 @@ export function weeklyReviewRelPath({ noteRoot, label } = {}) {
 }
 
 /**
+ * 把历史状态里的辅助资料路径归一化成当前结构：
+ * - 去掉 vaultPath 前缀，统一成相对 vault 根的 POSIX 路径；
+ * - 旧版 <root>/字幕|手册|概念|主题|每周回顾/… 移到 <root>/资料/…。
+ * 纯字符串处理，不访问文件系统。
+ */
+export function normalizeAuxRelPath(value, { vaultPath = '', noteRoot = '' } = {}) {
+  let rel = String(value ?? '').replace(/\\/g, '/').trim()
+  if (!rel) return ''
+  rel = rel.replace(/^\.\//, '').replace(/^\/+/, '')
+  const base = String(vaultPath ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (base && (rel === base || rel.startsWith(base + '/'))) {
+    rel = rel === base ? '' : rel.slice(base.length + 1)
+  } else {
+    // 状态里可能存了带绝对路径的历史值；用根目录名把前缀截掉。
+    const root = cleanRoot(noteRoot)
+    for (const marker of ['/' + root + '/', '/课程知识地图/']) {
+      const at = rel.indexOf(marker)
+      if (at > 0) {
+        rel = rel.slice(at + 1)
+        break
+      }
+    }
+  }
+  if (!rel) return ''
+  const root = cleanRoot(noteRoot)
+  const moves = [
+    [TRANSCRIPT_DIR, TRANSCRIPT_DIR],
+    [MANUAL_DIR, MANUAL_DIR],
+    [CONCEPT_DIR, CONCEPT_DIR],
+    [TOPIC_DIR, TOPIC_DIR],
+    ['每周回顾', REVIEW_DIR],
+  ]
+  for (const [from, to] of moves) {
+    const legacy = root + '/' + from + '/'
+    const current = root + '/' + AUX_DIR + '/' + to + '/'
+    if (rel.startsWith(legacy) && !rel.startsWith(current)) rel = current + rel.slice(legacy.length)
+  }
+  return rel
+}
+
+/** 归一化状态里所有视频的 transcriptPath，返回改动条数。 */
+export function normalizeStateAuxPaths(state, { vaultPath = '', noteRoot = '' } = {}) {
+  let changed = 0
+  for (const entry of Object.values(state?.subjects || {})) {
+    for (const video of entry?.videos || []) {
+      if (!video || typeof video.transcriptPath !== 'string' || !video.transcriptPath) continue
+      const next = normalizeAuxRelPath(video.transcriptPath, { vaultPath, noteRoot })
+      if (next && next !== video.transcriptPath) {
+        video.transcriptPath = next
+        changed += 1
+      }
+    }
+  }
+  return changed
+}
+
+/**
  * 按「旧路径 → 新路径」映射改写状态里记的 notePath，返回改写条数。
  * state 结构：{ subjects: { <学科>: { videos: [{ notePath }] } } }；只认 Map/普通对象。
  */

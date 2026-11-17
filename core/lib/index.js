@@ -8,7 +8,7 @@
  * 新增 macOS 前台窗口检测、Obsidian 输出与 mnemon 集成。
  */
 
-import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import {
@@ -36,7 +36,8 @@ import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { answerQuestion } from './ask.js'
 import { searchVault } from './vault-search.js'
 import { scoreNoteQuality } from './note-content.js'
-import { normalizeNoteLayout } from './paths.js'
+import { parseNoteMarkdown } from './note-check.js'
+import { normalizeNoteLayout, normalizeStateAuxPaths } from './paths.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, readVaultText, updateNoteReview, updateNoteTags, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
 import { parseTranscriptNote, renderTranscriptNote, transcriptNoteOwner } from './transcript-note.js'
 import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
@@ -66,6 +67,49 @@ export function cleanTitle(raw) {
 }
 
 function ensureDir(p) { if (!existsSync(p)) mkdirSync(p, { recursive: true }) }
+
+function acquireInstanceLock(lockPath) {
+  const create = () => {
+    let fd = null
+    try {
+      fd = openSync(lockPath, 'wx', 0o600)
+      writeFileSync(fd, String(process.pid), 'utf8')
+      closeSync(fd)
+      return { ok: true }
+    } catch (error) {
+      if (fd !== null) {
+        try { closeSync(fd) } catch { /* 忽略 */ }
+        try { unlinkSync(lockPath) } catch { /* 忽略 */ }
+      }
+      return { ok: false, error }
+    }
+  }
+
+  const first = create()
+  if (first.ok) return first
+  if (first.error?.code !== 'EEXIST') return { ok: false, reason: 'lock-write-failed' }
+
+  let owner = ''
+  try { owner = readFileSync(lockPath, 'utf8').trim() } catch { /* 锁可能在此时被释放 */ }
+  const pid = Number(owner)
+  if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+    try {
+      process.kill(pid, 0)
+      return { ok: false, reason: 'locked-by-other' }
+    } catch (error) {
+      if (error?.code !== 'ESRCH') return { ok: false, reason: 'locked-by-other' }
+    }
+  }
+
+  try {
+    unlinkSync(lockPath)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') return { ok: false, reason: 'lock-stale-unlink-failed' }
+  }
+  const second = create()
+  if (second.ok) return second
+  return { ok: false, reason: 'lock-write-failed' }
+}
 
 function makeLogger(stateDir) {
   const logPath = join(stateDir, 'poll.log')
@@ -118,25 +162,24 @@ export function apply(ctx, rawConfig = {}) {
   ensureDir(config.stateDir)
   const logger = makeLogger(config.stateDir)
   const statePath = join(config.stateDir, 'state.json')
+  const lockPath = join(config.stateDir, 'instance.lock')
+  let readOnly = false
+  let readOnlyReason = ''
+  const lock = acquireInstanceLock(lockPath)
+  if (!lock.ok) {
+    readOnly = true
+    readOnlyReason = lock.reason || 'locked-by-other'
+  }
   const state = loadState(statePath)
+  const normalizedAuxPaths = normalizeStateAuxPaths(state, { vaultPath, noteRoot: config.noteRoot })
+  if (normalizedAuxPaths > 0) logger.log('state.aux-path.normalized count=' + normalizedAuxPaths)
 
   let running = false
   let pending = null
   let started = false
   let pollTimer = null
-  let readOnly = false
   const eventListeners = new Set()
   const recentEvents = []
-  const lockPath = join(config.stateDir, 'instance.lock')
-  try {
-    if (existsSync(lockPath)) {
-      const lockPid = Number(readFileSync(lockPath, 'utf8').trim())
-      if (Number.isInteger(lockPid) && lockPid > 0 && lockPid !== process.pid) {
-        try { process.kill(lockPid, 0); readOnly = true } catch (error) { if (error?.code !== 'ESRCH') readOnly = true }
-      }
-    }
-    if (!readOnly) writeFileSync(lockPath, String(process.pid), 'utf8')
-  } catch { /* 锁失败不阻塞启动 */ }
 
   // 只在取得实例锁之后准备笔记目录，并让调用方能够等待初始化结束。
   const ready = !readOnly && !vaultGuard.isBlocked()
@@ -166,7 +209,13 @@ export function apply(ctx, rawConfig = {}) {
   vaultGuard.onChange((status) => emit('vault', status))
 
   function save() {
-    try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
+    try {
+      saveState(statePath, state)
+      return true
+    } catch (error) {
+      logger.log('state.save.error msg=' + (error?.message || error))
+      return false
+    }
   }
 
   async function processTitle(input) {
@@ -178,11 +227,16 @@ export function apply(ctx, rawConfig = {}) {
     let source = ''
     let inputBvid = null
     let inputVideoId = null
+    const warnings = []
     try {
       rawTitle = cleanTitle(input?.title || '')
-      // 重刷只重做整理与笔记，不重新抓内容/转写（缓存都还在）
+      // 重整理使用本地字幕存档时，不重新抓取平台内容，也不重新转写。
       const refresh = Boolean(input?.refresh)
-      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : '')
+      const archiveOnly = Boolean(input?.archiveOnly)
+      const subjectLocked = Boolean(input?.subjectLocked)
+      const prefetchedContent = input?.prefetchedContent && typeof input.prefetchedContent === 'object' ? input.prefetchedContent : null
+      const declaredSource = ['bilibili', 'douyin', 'youtube'].includes(input?.source) ? input.source : ''
+      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || declaredSource || (input?.bvid ? 'bilibili' : '')
       if (!source) {
         return { ok: false, code: 'unsupported-source', message: '无法识别视频来源：只支持 B站、抖音精选和 YouTube 视频链接' }
       }
@@ -210,11 +264,11 @@ export function apply(ctx, rawConfig = {}) {
       emit('detected', { title: rawTitle, url: input?.url || '', bvid: inputBvid || null, videoId: inputVideoId || null, source, force: Boolean(input?.force) })
 
       let cookieHeader = null
-      if (source === 'bilibili') {
+      if (!archiveOnly && source === 'bilibili') {
         try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
       }
-      let content = null
-      if (config.fetchContent) {
+      let content = prefetchedContent
+      if (!archiveOnly && config.fetchContent) {
         if (source === 'douyin') {
           emit('fetching', { source, title: rawTitle, message: '解析抖音精选页面，下载音频并转写' })
           content = await fetchDouyinContent({
@@ -288,8 +342,15 @@ export function apply(ctx, rawConfig = {}) {
       const desc = content?.desc || ''
       const tags = content?.tags || []
       const existing = Object.keys(state.subjects)
-      const cls = await classify(ctx, config, { title, desc, tags, existingSubjects: existing })
-      logger.log('classify title=' + JSON.stringify(title) + ' result=' + JSON.stringify(cls))
+      const cls = subjectLocked
+        ? {
+          isCourse: true,
+          subject: input?.subject || '未分类',
+          title: input?.title || rawTitle,
+          keywords: Array.isArray(input?.keywords) ? input.keywords : [],
+        }
+        : await classify(ctx, config, { title, desc, tags, existingSubjects: existing })
+      logger.log('classify title=' + JSON.stringify(title) + ' locked=' + subjectLocked + ' result=' + JSON.stringify(cls))
       if (cls) emit('classified', { isCourse: cls.isCourse, subject: cls.subject, title: cls.title, keywords: cls.keywords || [] })
 
       if (!cls) {
@@ -305,13 +366,13 @@ export function apply(ctx, rawConfig = {}) {
         return { ok: true, skipped: true, message: '非知识内容，已静默忽略' }
       }
 
-      const subject = resolveSubjectName(cls.subject, existing)
+      const subject = subjectLocked && input?.subject ? input.subject : resolveSubjectName(cls.subject, existing, { maxSubjects: config.maxSubjects })
       const keywords = Array.isArray(cls.keywords) ? cls.keywords.map(String).filter(Boolean).slice(0, 10) : []
       // 重整理时优先使用传入的存档字幕。
       let transcript = input?.transcript || content?.transcript || ''
       let timedTranscript = input?.timedTranscript || content?.timedTranscript || ''
       let transcriptSource = input?.transcriptSource || content?.transcriptSource || (transcript ? 'up-subtitle' : '')
-      if (!transcript && config.fetchTranscript && content?.bvid) {
+      if (!archiveOnly && !transcript && config.fetchTranscript && content?.bvid) {
         try {
           const tr = await fetchTranscript({
             bvid: content.bvid,
@@ -462,22 +523,28 @@ export function apply(ctx, rawConfig = {}) {
       // 字幕原文单独存档，记录实际路径以区分不同学科的同名笔记。
       let transcriptPath = ''
       if (transcript) {
-        const noteName = basename(writeResult.relPath, '.md')
-        const archive = renderTranscriptNote({
-          title: finalTitle,
-          subject,
-          source,
-          url: content?.url || input?.url || '',
-          bvid: content?.bvid || inputBvid || '',
-          videoId: content?.videoId || inputVideoId || '',
-          author: content?.owner || content?.author || '',
-          createdAt,
-          transcript,
-          timedTranscript,
-          notePath: writeResult.relPath,
-        })
-        const saved = await writeTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName, content: archive })
-        transcriptPath = saved.relPath
+        try {
+          const noteName = basename(writeResult.relPath, '.md')
+          const archive = renderTranscriptNote({
+            title: finalTitle,
+            subject,
+            source,
+            url: content?.url || input?.url || '',
+            bvid: content?.bvid || inputBvid || '',
+            videoId: content?.videoId || inputVideoId || '',
+            author: content?.owner || content?.author || '',
+            createdAt,
+            transcript,
+            timedTranscript,
+            notePath: writeResult.relPath,
+          })
+          const saved = await writeTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName, content: archive })
+          transcriptPath = saved.relPath
+        } catch (error) {
+          const msg = '字幕存档失败：' + String(error?.message || error)
+          warnings.push(msg)
+          logger.log('transcript.archive.error msg=' + msg)
+        }
       }
 
       const isNewSubject = !state.subjects[subject]
@@ -520,8 +587,20 @@ export function apply(ctx, rawConfig = {}) {
       else videos.push(videoRecord)
       state.subjects[subject].updatedAt = processedAt
 
-      await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
-      await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), videos: getHistory(), layout: config.noteLayout })
+      try {
+        await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
+      } catch (error) {
+        const msg = '学习手册更新失败：' + String(error?.message || error)
+        warnings.push(msg)
+        logger.log('manual.update.error subject=' + JSON.stringify(subject) + ' msg=' + msg)
+      }
+      try {
+        await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), videos: getHistory(), layout: config.noteLayout })
+      } catch (error) {
+        const msg = '课程总览更新失败：' + String(error?.message || error)
+        warnings.push(msg)
+        logger.log('overview.update.error msg=' + msg)
+      }
       if (config.openInObsidian) {
         const opened = await openInObsidian({ vaultPath, notePath: writeResult.relPath })
         if (!opened.ok) logger.log('obsidian.open.error msg=' + (opened.error || 'unknown'))
@@ -565,7 +644,8 @@ export function apply(ctx, rawConfig = {}) {
       rememberTags(state, noteTags)
       clearFailure(state, activeKey)
       pruneSeen(state)
-      save()
+      const stateSaved = save()
+      if (!stateSaved) warnings.push('状态保存失败：重启后可能重复处理这条视频')
 
       logger.log('note.saved subject=' + JSON.stringify(subject) + ' title=' + JSON.stringify(finalTitle) + ' path=' + writeResult.relPath + ' skipped=' + writeResult.skipped)
       emit('saved', {
@@ -585,9 +665,18 @@ export function apply(ctx, rawConfig = {}) {
         contentQuality,
         fetchStats: content?.fetchStats || null,
         chapters: content?.chapters || [],
+        warnings: warnings.slice(),
+        stateSaved,
       })
       console.log('[seen-core] ' + (isNewSubject ? '新学科' : '更新学科') + '「' + subject + '」 ← ' + finalTitle)
-      return { ok: true, message: '已生成「' + subject + '」笔记：' + writeResult.relPath, subject, notePath: writeResult.relPath }
+      return {
+        ok: true,
+        message: '已生成「' + subject + '」笔记：' + writeResult.relPath + (warnings.length ? '（' + warnings.length + ' 项警告）' : ''),
+        subject,
+        notePath: writeResult.relPath,
+        warnings: warnings.slice(),
+        stateSaved,
+      }
     } catch (error) {
       const msg = String(error?.message || error)
       if (error && error.vaultBlocked) {
@@ -678,7 +767,7 @@ export function apply(ctx, rawConfig = {}) {
     const lastError = state.lastForeground?.error || ''
     const message = [
       '拾影 状态：',
-      '- 轮询：' + (readOnly ? '只读（另一个实例持有锁）' : started ? '运行中' : '已停止'),
+      '- 轮询：' + (readOnly ? '只读（' + (readOnlyReason === 'lock-write-failed' ? '实例锁写入失败' : readOnlyReason === 'lock-stale-unlink-failed' ? '旧实例锁无法清理' : '另一个实例持有锁') + '）' : started ? '运行中' : '已停止'),
       '- 轮询间隔：' + config.pollIntervalMs + 'ms',
       '- 启用：' + config.enabled,
       '- 笔记库权限：' + (vaultGuard.status().ok ? '正常' : vaultGuard.status().code + '（' + VAULT_HINT + '）'),
@@ -695,6 +784,7 @@ export function apply(ctx, rawConfig = {}) {
       polling: started,
       pollIntervalMs: config.pollIntervalMs,
       readOnly,
+      readOnlyReason,
       outputDir,
       vaultPath,
       vault: vaultGuard.status(),
@@ -715,6 +805,7 @@ export function apply(ctx, rawConfig = {}) {
       enabled: config.enabled,
       polling: started,
       readOnly,
+      readOnlyReason,
       vaultPath,
       noteRoot: config.noteRoot,
       noteLayout: config.noteLayout,
@@ -935,17 +1026,38 @@ export function apply(ctx, rawConfig = {}) {
     }
     const parsed = parseTranscriptNote(markdown)
     if (!parsed.text && !parsed.timed) return { ok: false, message: '字幕存档是空的' }
-    logger.log('resummarize.note=' + JSON.stringify(found.video.title || '') + ' chars=' + (parsed.text || parsed.timed).length)
+    let noteMeta = null
+    try {
+      const noteText = await readVaultText({ vaultPath, relPath: targetPath })
+      if (noteText.ok) noteMeta = parseNoteMarkdown(noteText.text)
+    } catch { /* 缺元数据时退回 state 记录 */ }
+    const archiveTitle = noteMeta?.title || found.video.title || ''
+    const prefetchedContent = {
+      title: archiveTitle,
+      url: found.video.url || noteMeta?.url || '',
+      source: found.video.source || noteMeta?.source || '',
+      bvid: found.video.bvid || '',
+      videoId: found.video.videoId || '',
+      owner: noteMeta?.meta?.author || found.video.author || '',
+      duration: Number(noteMeta?.duration) || 0,
+      chapters: [],
+      fetchStats: null,
+    }
+    logger.log('resummarize.note=' + JSON.stringify(archiveTitle) + ' chars=' + (parsed.text || parsed.timed).length + ' archiveOnly=true')
     return await processTitle({
-      title: found.video.title || '',
+      title: archiveTitle,
       url: found.video.url || '',
       source: found.video.source || '',
       bvid: found.video.bvid || '',
       videoId: found.video.videoId || '',
+      subject: found.subject,
+      subjectLocked: true,
       transcript: parsed.text || parsed.timed,
       timedTranscript: parsed.timed,
       transcriptSource: 'archive',
       refresh: true,
+      archiveOnly: true,
+      prefetchedContent,
     })
   }
 

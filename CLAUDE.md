@@ -51,7 +51,7 @@ seen/
 ## 开发规则
 
 - 源码只在工作区修改；**绝不直接改**已安装的依赖副本（node_modules）。
-- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`。外部工具按需探测，缺失时 yt-dlp / ffmpeg 自动下载，Whisper 模型与 whisper-cli 由面板引导安装。
+- 零 npm 依赖：只用 Node 内置模块 + 注入的 `ctx`。外部工具按需探测，缺失时 yt-dlp / ffmpeg 自动下载并校验官方摘要，Whisper 模型与 whisper-cli 由面板引导安装。
 - 纯 ESM JavaScript，不引入 TypeScript 构建。
 - 所有新增/修改模块必须可被 `node:test` 直接 import。
 - 改完必须运行：`cd core && node --test`。
@@ -87,14 +87,14 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 内容类型与结构化字段由 note-content.js 负责：CONTENT_TYPES 8 类（tutorial/opinion/science/review/interview/documentary/course/other），normalizeTemplate 按类型只保留对应字段并卡 TEMPLATE_LIMITS（steps 8、quotes 3、terms 8、resources 6 等），normalizeQuotes 只接受数组且每条 ≤80 字，normalizeTerms 名称 2~12 字（超长直接丢，不截断），scoreNoteQuality 算 1~5 分（仅元数据固定 1）。
 - 发布前润色（editorPass）默认关闭，开启后 summarize 末尾调 editSummary 多跑一次模型只顺摘要/问答的表达、不新增事实，失败保留原文；面板「重刷历史」走 POST /api/reprocess → engine.refreshHistory，processTitle 的 refresh:true 会覆盖笔记但内容与字幕抓取仍 force=false，复用缓存不重转写。
 - 间隔复习由 review-schedule.js 负责：每篇笔记带「## 复习卡片」（`问题::答案`，最多 5 条）与 frontmatter `review` 进度；nextReview 的 easy 走 1/3/7/16/35 天阶梯、hard 间隔 ×1.5、again 明天重来并清零 reps；`GET /api/reviews` 列到期，`POST /api/reviews` 传 notePath/rating 写回 state 与笔记 frontmatter；重刷笔记时 processTitle 会按 bvid/videoId/title 找回旧进度，不重置。周回顾含「复习情况」与「学习统计」两段。
-- 学科归类由 subject.js 的 alignSubject 归并：精确 → 包含且长度差≤2 → 共享≥2 连续汉字 → 已有 12 个学科时封顶取最接近。LLM 提示词要求输出 2~4 字宽泛领域名。
+- 学科归类由 subject.js 的 alignSubject 归并：精确 → 包含且长度差≤2 → 共享≥2 连续汉字 → 已有 12 个学科时不再强行归类，归入「未分类」。LLM 提示词要求输出 2~4 字宽泛领域名。
 - 推理型模型（如 magpie 的 deepseek）会把 maxTokens 全花在思考上、正文返回空串。callLlm 在拿到空正文时自动翻倍预算重试一次；分段这类短输出场景也别把预算压到 800 以下。
 - 无章节视频（B 站没设分 P 章节、抖音、YouTube 无原生章节）由 analyze.segmentTranscript 按时间轴采样让模型切 3~5 段；模型若回解释文字而不是 JSON，会再要一次；模型抄错几秒的起始时间会就近吸附到候选点（±8 秒），偏太远视为编造丢弃。B 站内容必须带 duration 才会触发（≥4 分钟）。
 - 跨笔记关联由 concept.js 负责：conceptKey 去标点空白归一概念名，findRelatedVideos 按「共享概念×2 + 共享关键词」打分取前 5，buildConceptIndex 供概念索引页与 `GET /api/concepts`（面板概念浏览）使用。学科手册的「本学科核心概念」只收出现在 ≥2 篇笔记里的概念。
 - 标签由 tags.js 负责：mergeTags 固定顺序 学科 → 主题（裸标签）→ `类型/<枚举>` → `概念/xxx`；主题由 LLM 在总结那次调用里一并给出（2~6 字，去泛化词，同篇包含合并保留更长者，上限 4），类型从 8 个固定枚举（教程/科普/访谈/评测/观点/纪录/播客/课程）里选 0~2 个；概念名限 2~8 字、带括号直接丢弃、上限 6。不再拼「视频课程」/平台名/学科进 tags（平台看 source 字段）。主题词表存在 state.tagVocabulary，buildTagVocabulary 取前 40 个注入提示词（只要求「能准确概括才复用，不相关不要硬套」），rememberTags 只累加裸主题词、超 500 按次数淘汰。历史笔记回填用 `node scripts/retag-notes.mjs`（默认预演，`--apply` 才写并先备份）；状态里没有概念的早期笔记，脚本会先看旧标签的 `概念/`，再让模型从正文抽一批并写回 `video.concepts`，否则概念索引会缺这些篇。
 - 问笔记库由 ask.js 负责：`searchVault` 取前 8 条（只读视频笔记/概念页/主题综述），最多读 5 篇正文交给 `answerQuestion`；回答要求 `[[路径|标题]]` 引用，`extractCitations` 映射回笔记。面板「问笔记库」走 `POST /api/ask`。主题标签合并走 `POST /api/tags/merge` → `engine.renameTag`（`mergeTagInVideos` 替换、逐篇 `updateNoteTags`、同步 `tagVocabulary` 后重建索引），类型/概念标签不允许合并。
 - 笔记结构（paths.js）：根目录默认「视频笔记」，`structured`（默认）= `视频笔记/笔记/<学科>/<标题>.md` + `视频笔记/资料/手册/<学科>.md` + `视频笔记/资料/回顾/<周>.md`，根下放 `总览.md`、`视频索引.md`、`概念索引.md`、`标签索引.md`；`flat` = `视频笔记/<学科>/<标题>.md`（手册与笔记同学科目录）。布局可在面板工作台「目录」里切换（写 `~/.seen/ui.json` 的 `noteLayout`，`SEEN_NOTE_LAYOUT` 可覆盖），引擎的 `setNoteLayout` 只改运行中的配置、不搬文件；迁移用 `node scripts/migrate-vault.mjs`（默认预演，`--apply` 才动并先备份到 `~/.seen/backups/`）；迁移会同时改写笔记里的手册双链和 state.json 里的 notePath（索引、概念索引、相关笔记都从 state 的路径生成，不同步会全指到旧位置）。旧路径引用（含没有前导斜杠的 `[[视频笔记/学科/…]]`、行首写法）统一由 `core/lib/legacy-refs.js` 的 `rewriteLegacyRefs` 重写，迁移脚本和事后修补共用同一套规则。
-- 字幕存档与重整理：有字幕或转写的视频，生成笔记时会把原文另存到 `<noteRoot>/资料/字幕/<笔记名>.md`，同名冲突时使用带标识的副本并记录实际路径（frontmatter `type: transcript`、`format: 1`，不参与索引/概念/标签）；`transcript-note.js` 的 `renderTranscriptNote` / `parseTranscriptNote` 负责读写。面板「用存档字幕重新整理」走 `POST /api/resummarize` → `engine.resummarizeNote({notePath})`，读存档后按 `refresh: true` 重跑 `processTitle`；当前缓存失效时仍可能重新抓取或转写。字幕缓存 `transcriptCacheDays` 默认 30 天。
+- 字幕存档与重整理：有字幕或转写的视频，生成笔记时会把原文另存到 `<noteRoot>/资料/字幕/<笔记名>.md`，同名冲突时使用带标识的副本并记录实际路径（frontmatter `type: transcript`、`format: 1`，不参与索引/概念/标签）；`transcript-note.js` 的 `renderTranscriptNote` / `parseTranscriptNote` 负责读写。面板「用存档字幕重新整理」走 `POST /api/resummarize` → `engine.resummarizeNote({notePath})`，读存档后按 `refresh: true` 重跑 `processTitle`；存档模式不重新抓平台、不下载音频、不转写，缺元数据时从原笔记和状态补齐。字幕缓存 `transcriptCacheDays` 默认 30 天。
 - 概念页与主题页：`topic-pages.js` 的 `collectConceptPages` 只给出现 ≥2 篇笔记的概念建页，`collectTopicPages` 只给出现 ≥3 篇的主题标签建页，路径分别是 `<noteRoot>/资料/概念/<名字>.md`、`<noteRoot>/资料/主题/<名字>.md`；主题页的「相关概念」只链接真实存在的概念页。全量重建由 `rebuild.js` 的 `rebuildKnowledgePages` 完成（索引 → 概念页 → 主题页 → 手册 → 总览），`engine.rebuildKnowledgePages` 暴露给服务，`scripts/maintain-vault.mjs` 可直接按 state 重建（`--dry-run` 只统计）。`GET /api/quality` 汇总 history 的 quality：`{total, scored, low}`，面板知识库对 quality ≤2 的笔记出提示。
 - 笔记自检（离线）：core/lib/note-check.js 是纯函数、不碰文件系统，解析 markdown 后断版式区块与顺序、四层标签、章节时间轴、概念块引用；scripts/self-check.mjs 负责读库与汇总。frontmatter 的 `format: 4` 标记当前版式（低于 4 的旧笔记只按旧规则告警），没有该字段的旧笔记结构缺失降级为警告（否则历史笔记永远红）；当前格式还会反查封面、思维导图、「所属章节」是否回潮。旧笔记清理（去封面）用 core/lib/note-clean.js 的 `stripCover` 与 `scripts/strip-cover.mjs`（默认预演，`--apply` 才写并先备份）。`npm run self-check` 只读体检（笔记 + 四篇索引 + 手册 AUTO 区块 + state 的 notePath/标签/学科一致性）；`npm run self-check:llm` 用 `~/.seen/cache/` 的缓存回放分段与总结，不联网、不写笔记，每个用例跑 3 次（`--runs`），通过率低于 2/3 或出现空结果判失败。
 - 启动时查 GitHub Releases 最新 tag 比对版本（每天最多一次，只带 User-Agent；`SEEN_DISABLE_UPDATE_CHECK=1` 可关），落后时面板顶部显示提示条。
@@ -114,6 +114,6 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - YouTube 自动字幕接口限制严格（实测多为 429），实际常落到本地转写；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 30 天，缓存带 version 2，缺 `timedTranscript` 的旧缓存会重建并沿用旧转写）。抖音缓存同样 30 天（`douyinCacheDays`）。
 - 外部工具统一策略：「配置 → PATH → `~/.seen/bin` → 常见路径」，系统已装的优先、不会被覆盖：
   - yt-dlp：GitHub releases 官方二进制（37MB），fetch 失败回退 curl；官方失败按 `SEEN_GH_MIRROR`（默认 ghproxy.net / gh-proxy.com）镜像重试；下载后用官方 `SHA2-256SUMS` 校验，镜像来源校验不通即中止；
-  - ffmpeg：ffmpeg-static 静态二进制（45MB），同样官方 → 镜像；
+  - ffmpeg：ffmpeg-static 静态二进制（45MB，固定 `b6.1.1`），同样官方 → 镜像；下载后必须匹配内置 SHA256，不匹配中止；
   - Whisper 模型：不静默下载，面板按推荐列出 turbo / small / medium / base，源按 HF_ENDPOINT → huggingface → hf-mirror；
   - whisper-cli：无免安装包，面板按钮代跑 `brew install whisper.cpp`。

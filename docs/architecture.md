@@ -44,7 +44,7 @@
   3. 音频兜底：`-f bestaudio` 下载后 ffmpeg 转 16kHz 单声道，本地 `whisper-cli` 转写（中文 `-l zh`、外文 `-l auto`，音频下载需 `--extractor-args "youtube:player_client=tv,web_embedded"`，默认 client 常 403）；
   4. 全都失败：仅元数据，笔记标注「内容依据有限」。
 
-  依赖的外部工具由 `ytdlp.js` / `whisper.js` 统一解析：配置 → PATH → `~/.seen/bin`（或 `~/.seen/models`）→ 常见路径，系统里已装的始终优先。缺失时 yt-dlp、ffmpeg 自动下载（GitHub 失败走镜像，yt-dlp 校验 SHA256），Whisper 模型由面板列选项让用户选，whisper-cli 由面板按钮代跑 brew；只有 Chrome 需要用户自行安装。
+  依赖的外部工具由 `ytdlp.js` / `whisper.js` 统一解析：配置 → PATH → `~/.seen/bin`（或 `~/.seen/models`）→ 常见路径，系统里已装的始终优先。缺失时 yt-dlp、ffmpeg 自动下载（GitHub 失败走镜像；yt-dlp 用官方 `SHA2-256SUMS` 校验，ffmpeg 固定 `b6.1.1` 并用内置 SHA256 校验），Whisper 模型由面板列选项让用户选，whisper-cli 由面板按钮代跑 brew；只有 Chrome 需要用户自行安装。
 
   结果缓存到 `~/.seen/cache/youtube`（`youtubeCacheDays`，默认 30 天，带 version 2，缺 `timedTranscript` 的旧缓存会重建）。
 
@@ -67,9 +67,9 @@
 
 - `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
-- 多个 Seen 实例共用同一状态目录与 `instance.lock`：后启动的为只读，停掉占用者后可接管。
+- 多个 Seen 实例共用同一状态目录与 `instance.lock`：启动时用 `open(..., 'wx')` 原子抢锁，锁里写 PID；后启动的实例为只读并在状态里说明原因（锁被占用/锁写入失败/旧锁无法清理），停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
-- API 的 POST 请求使用 `application/json`；浏览器请求须与面板同源，默认环回监听也会校验请求地址。本机原生客户端可直接调用。
+- API 的 POST 请求使用 `application/json`；浏览器请求须与面板同源，所有 API 都校验 `Host`（只接受本机名和实际绑定地址，防止 DNS rebinding）。本机原生客户端可直接调用。
 - B 站字幕缓存写入 `~/.seen/cache/transcripts/<bvid>__<cid>.json`，默认保留 30 天；`force` 扫描会跳过缓存。
 - 开机自启用 `scripts/install-launchd.mjs`；双击 `seen.command` 可临时启动。
 

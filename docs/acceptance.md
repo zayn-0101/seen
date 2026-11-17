@@ -342,3 +342,18 @@
 - [x] `node scripts/maintain-vault.mjs`：视频 13 篇、学科 6 个、概念页 1 个、主题页 2 个
 - [x] `cd core && node --test`：244 tests / 244 pass；`npm run check` 通过
 - [x] `package.json` 升到 0.5.3；`cd menubar && ./build.sh --bundle --arch=universal` 产出 universal app（232M），固定证书 `Seen Local Signing` 签名验证通过；安装到 `~/Applications/Seen.app`（旧 0.5.2 保留备份），启动后 `GET /api/status` 返回 200、vault ok、历史 13 篇，搜索返回新 `笔记/…` 与 `资料/…` 路径
+
+## 2026-11-17 审计修复（codex/project-audit-20261117）
+
+背景：基于 `main` 的 `916b977` 做只读审计，修复有把握的问题，其余列入 `docs/audit-2026-11-17.md` 待审查。
+
+- [x] 实例锁原子化：`core/lib/index.js` 的 `acquireInstanceLock` 用 `open(lockPath,'wx',0o600)` + PID 抢占，处理失效/损坏锁；拿不到锁进入只读，`getStatus()`/`getConfig()` 带 `readOnlyReason`，状态消息说明原因；controller 测试覆盖「另一个实例持有锁时进入只读状态并说明原因」
+- [x] 存档重整理离线化：`resummarizeNote` 读 `资料/字幕` 存档后传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台、不下载音频、不转写
+- [x] 状态辅助路径归一化：`paths.js` 的 `normalizeAuxRelPath` / `normalizeStateAuxPaths` 在启动时修正旧字幕路径；`scripts/migrate-vault.mjs --state-only` 可单独修状态；`self-check.mjs` 报告字幕路径缺失/遗留
+- [x] 保存失败可见：`save()` 返回布尔值，状态保存失败时笔记仍返回但带 `warnings` / `stateSaved:false`；手册、总览、字幕存档失败也收集警告
+- [x] 供应链校验：ffmpeg-static 固定 `b6.1.1` 并内置各平台 SHA256；yt-dlp `SHA2-256SUMS` 只从官方取得，镜像下载必须有官方校验；`menubar/build.sh` 用 `SHASUMS256.txt` 校验 Node 运行时
+- [x] 搜索可见性：`searchVaultDetailed` 返回 `{results,scanned,skipped,truncated}`；中文用 `Intl.Segmenter('zh')` 分词；`/api/search` 和面板显示截断/跳过提示
+- [x] 学科上限：达到 12 个学科且无相似学科归入「未分类」；`resolveSubjectName` 支持 `maxSubjects`
+- [x] 本机 API 防护：所有请求始终校验 Host（本机名 + 实际绑定地址）；删除 `GET /api/llm/models`，只保留 POST
+- [x] `cd core && node --test`：272 tests / 272 pass / 0 fail；`npm run check` 通过
+- [x] 未迁移或改写真实笔记与历史字幕，未执行安装、发布和推送

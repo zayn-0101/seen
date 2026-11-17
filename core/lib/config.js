@@ -23,6 +23,7 @@ export const DEFAULTS = Object.freeze({
   model: null,
   maxTokens: 4096,
   titleMinLen: 4,
+  maxSubjects: 12,
   fetchContent: true,
   fetchTranscript: true,
   ytDlpBin: null,
@@ -49,7 +50,7 @@ export const DEFAULTS = Object.freeze({
 })
 
 const NOTE_LAYOUTS = ['flat', 'structured']
-const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays', 'youtubeCacheDays']
+const POSITIVE_NUMBER_KEYS = ['pollIntervalMs', 'stablePolls', 'maxTokens', 'titleMinLen', 'maxSubjects', 'commentLimit', 'transcriptCacheDays', 'douyinCacheDays', 'youtubeCacheDays']
 const BOOLEAN_KEYS = ['enabled', 'autoStart', 'exposeController', 'fetchContent', 'fetchTranscript', 'useBrowserCookies', 'useTranscriptCache', 'enableMnemon', 'openInObsidian', 'editorPass']
 const NULLABLE_NON_EMPTY_STRING_KEYS = ['provider', 'model', 'mnemonBin', 'ytDlpBin', 'chromePath', 'ffmpegBin', 'whisperBin', 'whisperModel']
 

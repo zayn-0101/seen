@@ -74,8 +74,19 @@ fetch_node() {
   mkdir -p "$BUILD_DIR/node-runtime"
   local tarball="node-v${NODE_VERSION}-darwin-${node_arch}.tar.gz"
   local dirname="node-v${NODE_VERSION}-darwin-${node_arch}"
+  local sums="$BUILD_DIR/SHASUMS256-${node_arch}.txt"
   echo "  下载 https://nodejs.org/dist/v${NODE_VERSION}/${tarball}"
   curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${tarball}" -o "$BUILD_DIR/$tarball"
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o "$sums"
+  local expected
+  expected="$(awk -v file="$tarball" '$2 == file { print $1 }' "$sums" | head -n 1)"
+  if [ -z "$expected" ]; then
+    echo "  × SHASUMS256.txt 里没有 $tarball，已中止" >&2
+    rm -f "$BUILD_DIR/$tarball" "$sums"
+    return 1
+  fi
+  echo "$expected  $tarball" | (cd "$BUILD_DIR" && shasum -a 256 -c -)
+  rm -f "$sums"
   tar -xzf "$BUILD_DIR/$tarball" -C "$BUILD_DIR"
   cp "$BUILD_DIR/$dirname/bin/node" "$dest"
   chmod 755 "$dest"

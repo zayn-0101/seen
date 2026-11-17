@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
@@ -44,6 +44,58 @@ test('standalone controller exposes start/stop/interval/scan', async () => {
     assert.equal(api.getConfig().pollIntervalMs, 9000)
     assert.equal(api.stop().ok, true)
     assert.equal((await api.getStatus()).polling, false)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('另一个实例持有锁时进入只读状态并说明原因', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    writeFileSync(join(state, 'instance.lock'), String(process.ppid))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const status = await api.getStatus()
+    assert.equal(status.readOnly, true)
+    assert.equal(status.readOnlyReason, 'locked-by-other')
+    assert.match(status.message, /只读（另一个实例持有锁）/)
+    assert.equal(api.getConfig().readOnlyReason, 'locked-by-other')
+    const result = await api.scan({ title: '测试视频' })
+    assert.equal(result.ok, false)
+    assert.match(result.message, /只读模式/)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('状态保存失败时仍返回笔记并带警告', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    mkdirSync(join(state, 'state.json'))
+    const ctx = fakeCtx(new Map())
+    ctx.llm.stream = async function* ({ system }) {
+      const response = system.includes('分类助手')
+        ? { isCourse: true, subject: '示例', title: '测试视频', keywords: [] }
+        : { summary: '示例摘要', keyPoints: [] }
+      yield { type: 'text-delta', text: JSON.stringify(response) }
+    }
+    const api = apply(ctx, {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false, fetchContent: false, fetchTranscript: false,
+    })
+    await api.ready
+    const result = await api.scan({ title: '测试视频', url: 'https://www.youtube.com/watch?v=ExampleId01' })
+    assert.equal(result.ok, true, result.message)
+    assert.equal(result.stateSaved, false)
+    assert.ok(result.warnings.some((item) => item.includes('状态保存失败')))
+    assert.match(result.message, /1 项警告/)
   } finally {
     rmSync(vault, { recursive: true, force: true })
     rmSync(state, { recursive: true, force: true })

@@ -114,15 +114,15 @@ async function fetchText(url) {
 
 /** 比对文件 SHA256；拿不到校验文件时返回 null。 */
 async function verifyChecksum(file, assetName) {
-  for (const candidate of downloadCandidates(ytDlpChecksumUrl())) {
-    try {
-      const expected = parseChecksums(await fetchText(candidate)).get(assetName)
-      if (!expected) continue
-      const actual = createHash('sha256').update(readFileSync(file)).digest('hex')
-      return actual === expected
-    } catch { /* 换下一个候选 */ }
+  // 校验文件只能来自官方地址：镜像若同时提供二进制和校验值，就失去了校验意义。
+  try {
+    const expected = parseChecksums(await fetchText(ytDlpChecksumUrl())).get(assetName)
+    if (!expected) return null
+    const actual = createHash('sha256').update(readFileSync(file)).digest('hex')
+    return actual === expected
+  } catch {
+    return null
   }
-  return null
 }
 
 async function downloadOnce(url, tempPath) {

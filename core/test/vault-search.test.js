@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { searchVault } from '../lib/vault-search.js'
+import { searchVault, searchVaultDetailed } from '../lib/vault-search.js'
 
 function makeVault() {
   const vault = mkdtempSync(join(tmpdir(), 'seen-search-'))
@@ -48,4 +48,15 @@ test('searchVault supports multi-term queries', async () => {
   const hits = await searchVault({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度 损失' })
   assert.equal(hits.length, 1)
   assert.ok(hits[0].score >= 4)
+})
+
+test('searchVaultDetailed segments Chinese queries and reports scan stats', async () => {
+  const vault = makeVault()
+  const found = await searchVaultDetailed({ vaultPath: vault, noteRoot: '视频笔记', query: '梯度损失' })
+  assert.equal(found.results.length, 1)
+  assert.ok(found.results[0].score >= 4, '中文连写也要拆成「梯度」「损失」两个词')
+  assert.equal(found.scanned, 2)
+  assert.equal(found.skipped, 0)
+  assert.equal(found.truncated, false)
+  assert.deepEqual(await searchVaultDetailed({ vaultPath: vault, noteRoot: '视频笔记', query: '  ' }), { results: [], scanned: 0, skipped: 0, truncated: false })
 })

@@ -25,8 +25,10 @@
  * 旧的 <root>/_备份 会移到同一处；之后所有写入备份也都在 <stateDir>/backups/。
  *
  * 用法：
- *   node scripts/migrate-vault.mjs            # 查看会移动哪些文件
- *   node scripts/migrate-vault.mjs --apply    # 执行迁移（自动备份）
+ *   node scripts/migrate-vault.mjs               # 查看会移动哪些文件
+ *   node scripts/migrate-vault.mjs --apply       # 执行迁移（自动备份）
+ *   node scripts/migrate-vault.mjs --state-only  # 只修正 state.json 里的路径
+ *   node scripts/migrate-vault.mjs --state-only --apply
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -43,6 +45,7 @@ import {
   TOPIC_DIR,
   TRANSCRIPT_DIR,
   VIDEO_DIR,
+  normalizeStateAuxPaths,
   remapStateNotePaths,
 } from '../core/lib/paths.js'
 import {
@@ -57,6 +60,7 @@ import {
 } from '../core/lib/legacy-refs.js'
 
 const apply = process.argv.includes('--apply')
+const stateOnly = process.argv.includes('--state-only')
 const STAMP = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
 function readConfig() {
@@ -102,6 +106,55 @@ function backupRoot(rootAbs, backupDirAbs) {
   return target
 }
 
+/** 只修 state.json：把历史绝对路径/旧目录名归一化到当前结构。 */
+function syncStateOnly(config, vaultPath, noteRoot) {
+  const statePath = join(config.stateDir, 'state.json')
+  if (!existsSync(statePath)) {
+    console.log('没有状态文件：' + statePath)
+    return
+  }
+  const state = loadState(statePath)
+  let changed = normalizeStateAuxPaths(state, { vaultPath, noteRoot })
+  for (const [subject, entry] of Object.entries(state.subjects || {})) {
+    for (const video of entry?.videos || []) {
+      const oldPath = String(video?.notePath || '').trim()
+      if (!oldPath) continue
+      const absOld = toPosix(oldPath)
+      const absVault = toPosix(vaultPath)
+      const relOld = absOld.startsWith(absVault + '/') ? absOld.slice(absVault.length + 1) : absOld
+      if (existsSync(join(vaultPath, relOld))) continue
+      const candidates = new Set([
+        rewriteLegacyRefs(relOld, { noteRoot }),
+        noteRoot + '/' + VIDEO_DIR + '/' + subject + '/' + basename(relOld),
+      ])
+      for (const candidate of candidates) {
+        if (!candidate || candidate === relOld) continue
+        if (existsSync(join(vaultPath, candidate))) {
+          video.notePath = candidate
+          changed += 1
+          break
+        }
+      }
+    }
+  }
+  console.log('状态路径待修正：' + changed + ' 条')
+  if (!changed) return
+  if (!apply) {
+    console.log('以上是预演。确认无误后加 --state-only --apply 执行。')
+    return
+  }
+  const backupPath = statePath + '.bak-' + STAMP
+  try {
+    copyFileSync(statePath, backupPath)
+    console.log('已备份状态：' + backupPath)
+  } catch (error) {
+    console.log('状态备份失败，未写回：' + String(error?.message || error))
+    return
+  }
+  saveState(statePath, state)
+  console.log('已写回：' + statePath)
+}
+
 /** 同步 state.json 里记录的 notePath（索引、概念索引、相关笔记双链都靠它）。 */
 function rewriteState(config, pathMap) {
   const statePath = join(config.stateDir, 'state.json')
@@ -122,6 +175,10 @@ function main() {
   }
   const noteRoot = String(config.noteRoot || '视频笔记').trim()
   const newRootAbs = resolve(vaultPath, noteRoot)
+  if (stateOnly) {
+    syncStateOnly(config, vaultPath, noteRoot)
+    return
+  }
   let rootAbs = newRootAbs
   let rootRename = null
   if (!existsSync(newRootAbs)) {

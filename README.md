@@ -397,7 +397,7 @@ cd menubar
 
 - **GitHub**（yt-dlp、ffmpeg）：官方地址失败后自动换公共镜像重试，可用 `SEEN_GH_MIRROR` 指定自己的加速地址。
 - **HuggingFace**（Whisper 模型）：按 `HF_ENDPOINT` → huggingface.co → hf-mirror.com 依次尝试。
-- **安全**：yt-dlp 下载完会用官方 `SHA2-256SUMS` 校验 SHA256；走镜像下载时校验不通过会直接中止。ffmpeg-static 官方不提供校验文件，只能靠官方优先降低风险。
+- **安全**：yt-dlp 下载完会用官方 `SHA2-256SUMS` 校验 SHA256；走镜像下载时校验不通过会直接中止。ffmpeg 固定使用 ffmpeg-static `b6.1.1`，下载后按内置的官方 SHA256 校验，不匹配就中止；打包内嵌的 Node 运行时也会校验 `SHASUMS256.txt`。
 
 想提前装好：
 

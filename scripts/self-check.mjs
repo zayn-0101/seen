@@ -30,7 +30,7 @@ import {
   NOTE_FORMAT,
 } from '../core/lib/note-check.js'
 import { resolveVaultPath } from '../core/lib/obsidian.js'
-import { AUX_DIR, MANUAL_DIR, manualNoteRelPath } from '../core/lib/paths.js'
+import { AUX_DIR, MANUAL_DIR, manualNoteRelPath, normalizeAuxRelPath } from '../core/lib/paths.js'
 import { loadState } from '../core/lib/state.js'
 import { listMarkdownFiles } from '../core/lib/vault-search.js'
 import { probeVaultAccess, VAULT_HINT } from '../core/lib/vault-access.js'
@@ -158,11 +158,21 @@ async function main() {
     // 状态一致性
     const stateFindings = []
     let missingPaths = 0
+    let missingTranscripts = 0
     for (const video of stateVideos) {
-      if (!video.notePath) continue
-      if (!existsSync(join(String(vaultPath), video.notePath))) {
+      if (video.notePath && !existsSync(join(String(vaultPath), video.notePath))) {
         missingPaths += 1
         stateFindings.push({ code: 'state-note-missing', level: 'error', message: '状态里的笔记路径不存在：' + video.notePath })
+      }
+      if (video.transcriptPath) {
+        const normalized = normalizeAuxRelPath(video.transcriptPath, { vaultPath, noteRoot: config.noteRoot })
+        if (normalized !== video.transcriptPath) {
+          stateFindings.push({ code: 'state-transcript-path-legacy', level: 'warn', message: '字幕路径还是旧格式：' + video.transcriptPath })
+        }
+        if (!normalized || !existsSync(join(String(vaultPath), normalized))) {
+          missingTranscripts += 1
+          stateFindings.push({ code: 'state-transcript-missing', level: 'warn', message: '状态里的字幕存档不存在：' + video.transcriptPath })
+        }
       }
     }
     for (const note of notes) {
@@ -187,13 +197,13 @@ async function main() {
     errors += summary.errors.length
     report.notes = { total: notes.length, current, legacy: notes.length - current, findings: all }
     report.indexes = { stats: indexStats, findings: indexFindings }
-    report.state = { videos: stateVideos.length, missingPaths, findings: stateFindings }
+    report.state = { videos: stateVideos.length, missingPaths, missingTranscripts, findings: stateFindings }
 
     console.log('笔记体检  ' + notes.length + ' 篇（当前格式 ' + current + ' / 旧格式 ' + (notes.length - current) + '）  错误 ' + summary.errors.length + '  警告 ' + summary.warnings.length)
     printGroups('  错误：', summary.errorGroups)
     printGroups('  警告：', summary.warningGroups)
     const totalLinks = indexStats.reduce((sum, item) => sum + item.links, 0)
-    console.log('索引与状态  索引 ' + totalLinks + ' 条双链 / 手册 ' + manualFiles.length + ' 篇  索引问题 ' + indexFindings.length + '  状态 ' + stateVideos.length + ' 条 / 路径缺失 ' + missingPaths + '  状态问题 ' + stateFindings.length)
+    console.log('索引与状态  索引 ' + totalLinks + ' 条双链 / 手册 ' + manualFiles.length + ' 篇  索引问题 ' + indexFindings.length + '  状态 ' + stateVideos.length + ' 条 / 笔记缺失 ' + missingPaths + ' / 字幕缺失 ' + missingTranscripts + '  状态问题 ' + stateFindings.length)
     printGroups('  索引错误：', summarizeFindings(indexFindings).errorGroups)
     printGroups('  状态错误：', summarizeFindings(stateFindings).errorGroups)
   }

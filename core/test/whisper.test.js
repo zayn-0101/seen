@@ -9,7 +9,9 @@ import {
   installWhisperCli,
   parseSrtTimed,
   parseWhisperProgress,
+  FFMPEG_STATIC_VERSION,
   ffmpegAssetName,
+  ffmpegAssetSha256,
   ffmpegInstallPath,
   ffmpegReleaseUrl,
   findFfmpeg,
@@ -71,11 +73,13 @@ test('ffmpegAssetName maps platform and arch', () => {
   assert.equal(ffmpegAssetName('freebsd', 'x64'), null)
 })
 
-test('ffmpegReleaseUrl points at the ffmpeg-static release', () => {
+test('ffmpegReleaseUrl points at the pinned ffmpeg-static release', () => {
   const url = ffmpegReleaseUrl('darwin', 'arm64')
-  assert.match(url, /^https:\/\/github\.com\/eugeneware\/ffmpeg-static\/releases\/latest\/download\//)
+  assert.match(url, new RegExp('^https://github\\.com/eugeneware/ffmpeg-static/releases/download/' + FFMPEG_STATIC_VERSION + '/'))
   assert.ok(url.endsWith('ffmpeg-darwin-arm64'))
   assert.equal(ffmpegReleaseUrl('freebsd', 'x64'), null)
+  assert.match(ffmpegAssetSha256('ffmpeg-darwin-arm64'), /^[a-f0-9]{64}$/)
+  assert.equal(ffmpegAssetSha256('ffmpeg-freebsd-x64'), null)
 })
 
 test('ffmpegInstallPath lives under ~/.seen/bin', () => {

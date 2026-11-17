@@ -7,7 +7,9 @@ import {
   VIDEO_DIR,
   manualNoteLinkTarget,
   manualNoteRelPath,
+  normalizeAuxRelPath,
   normalizeNoteLayout,
+  normalizeStateAuxPaths,
   remapStateNotePaths,
   videoNoteRelPath,
   weeklyReviewRelPath,
@@ -58,6 +60,38 @@ test('weeklyReviewRelPath lives under 资料/回顾', () => {
     weeklyReviewRelPath({ noteRoot: '视频笔记', label: '2026-W46' }),
     `视频笔记/${AUX_DIR}/回顾/2026-W46.md`,
   )
+})
+
+test('normalizeAuxRelPath moves legacy aux dirs under 资料 and strips vault prefix', () => {
+  assert.equal(
+    normalizeAuxRelPath('视频笔记/字幕/标题.md', { noteRoot: '视频笔记' }),
+    '视频笔记/资料/字幕/标题.md',
+  )
+  assert.equal(
+    normalizeAuxRelPath('视频笔记/每周回顾/2026-W46.md', { noteRoot: '视频笔记' }),
+    '视频笔记/资料/回顾/2026-W46.md',
+  )
+  assert.equal(
+    normalizeAuxRelPath('/Users/me/Obsidian/视频笔记/手册/写作.md', {
+      vaultPath: '/Users/me/Obsidian', noteRoot: '视频笔记',
+    }),
+    '视频笔记/资料/手册/写作.md',
+  )
+  assert.equal(
+    normalizeAuxRelPath('视频笔记/资料/字幕/标题.md', { noteRoot: '视频笔记' }),
+    '视频笔记/资料/字幕/标题.md',
+  )
+})
+
+test('normalizeStateAuxPaths updates transcript paths and counts changes', () => {
+  const state = { subjects: { 写作: { videos: [
+    { transcriptPath: '视频笔记/字幕/a.md' },
+    { transcriptPath: '视频笔记/资料/字幕/b.md' },
+    { title: '没有字幕路径' },
+  ] } } }
+  assert.equal(normalizeStateAuxPaths(state, { noteRoot: '视频笔记' }), 1)
+  assert.equal(state.subjects.写作.videos[0].transcriptPath, '视频笔记/资料/字幕/a.md')
+  assert.equal(state.subjects.写作.videos[1].transcriptPath, '视频笔记/资料/字幕/b.md')
 })
 
 test('remapStateNotePaths rewrites moved notes only', () => {

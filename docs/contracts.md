@@ -65,8 +65,9 @@ export function isSeen(state: State, key: string): boolean
 export function markSeen(state: State, key: string, info: object): void
 export function pruneSeen(state: State, max = 1000): void
 
-export function resolveSubjectName(subject: string, existing: string[]): string
-// 先完全一致；再 normalize 后包含/被包含匹配已有学科；否则返回 normalize 后的新学科名
+export function resolveSubjectName(subject: string, existing: string[], options?: { maxSubjects?: number }): string
+// 先完全一致；再 normalize 后包含/被包含匹配已有学科；没有相似学科时返回 normalize 后的新学科名
+// 已有学科数达到 maxSubjects（默认 12）且没有相似学科时归入「未分类」，不再强行塞进某个已有学科
 
 export function recordFailure(state: State, key: string, error: string): void
 // failures[key] = { count, at, lastError }
@@ -515,7 +516,10 @@ export function createVaultQueue(): { run(task): Promise }             // 串行
 ```js
 export async function searchVault({ vaultPath, noteRoot, query, limit = 20 }): Promise<Array<{ title, relPath, snippet, score, kind, match }>>
 // 扫 <root> 下 .md（跳过 . 开头与 _备份，深度 ≤6，单文件 ≤200KB，≤2000 文件）；文件名命中 ×3、正文命中 ×1
+// 查询按空白拆词；没有空白时用 Intl.Segmenter('zh') 分词（如「梯度损失」→「梯度」「损失」）
 // kind：视频笔记 / 字幕 / 学科手册 / 概念页 / 主题综述 / 周回顾 / 索引；match：title（命中文件名）| content（命中正文）
+export async function searchVaultDetailed({ vaultPath, noteRoot, query, limit = 20 }): Promise<{ results: Array<...>, scanned, skipped, truncated }>
+// 同上，但带扫描统计：scanned 实际枚举的 .md 数、skipped 读取失败或超限跳过的文件数、truncated 是否因 2000 文件/深度上限提前停止
 export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }): Promise<string[]>
 // 返回 .md 绝对路径；规则同 searchVault（自检脚本用它遍历笔记库）
 ```
@@ -595,7 +599,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `installYtDlp({ force, onProgress })`：单独执行下载安装；并发调用共享同一次下载。
 - `ytDlpInstallPath(platform)` / `ytDlpAssetName(platform)` / `ytDlpReleaseUrl(platform)`：安装位置、官方资产名（darwin→`yt-dlp_macos`、linux→`yt-dlp_linux`、win32→`yt-dlp.exe`）与下载地址。
 - `ytDlpChecksumUrl()` / `parseChecksums(text)`：官方 `SHA2-256SUMS` 地址与解析（每行「hash  文件名」，纯函数）。
-- 下载校验：官方地址下载后比对 SHA256，取不到校验文件时放行；**走镜像下载时必须有校验且通过**，否则中止安装。先落 `.part` 再 `rename`，保证原子性。
+- 下载校验：校验文件只从官方 `SHA2-256SUMS` 取得（镜像不提供摘要，避免自己证明自己）；官方地址下载且取不到校验文件时放行，**走镜像下载时必须有官方校验且通过**，否则中止安装。先落 `.part` 再 `rename`，保证原子性。
 
 ## lib/download.js
 
@@ -606,11 +610,11 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 ## lib/whisper.js
 
 - `findWhisperCli(config)` / `findWhisperModel(config)` / `findFfmpeg(config)`：按「配置 → 环境变量 → PATH → 常见位置 → `~/.seen/bin`」探测，返回绝对路径或 null；只探测不安装。
-- `ensureFfmpeg(config, { onProgress })`：有就返回 `{ ok, path, skipped }`，没有则自动下载 ffmpeg-static 静态二进制（`ffmpegReleaseUrl()`）。失败返回 `{ ok:false, error }`，不抛错。
+- `ensureFfmpeg(config, { onProgress })`：有就返回 `{ ok, path, skipped }`，没有则自动下载 ffmpeg-static 静态二进制（固定 `b6.1.1`，`ffmpegReleaseUrl()`）。下载后必须匹配 `ffmpegAssetSha256()` 内置 SHA256，不匹配中止；失败返回 `{ ok:false, error }`，不抛错。
 - `ensureWhisperModel(config)`：有就返回 `{ ok, path, skipped }`；**缺失时不静默下载**，返回 `{ ok:false, needsChoice:true, models: WHISPER_MODELS, error }`，由面板让用户按推荐选一个（135MB–1.6GB 差异太大）。
 - `WHISPER_MODELS`：按推荐力度排序的模型清单（`large-v3-turbo` 推荐 → `small` → `medium` → `base`），每项含 `id / label / sizeMb / recommended / note`；模型下载源按 `whisperModelUrls()` 依次尝试 HF_ENDPOINT → huggingface → hf-mirror。
 - `installFfmpeg({ force, onProgress })` / `installWhisperModel({ model, force, onProgress })`：单独执行下载，并发调用共享同一次任务；`onProgress` 收到 `{ stage, message, received, total, percent }`。
-- `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试。
+- `ffmpegAssetName(platform, arch)` / `ffmpegReleaseUrl(platform, arch)` / `ffmpegAssetSha256(assetName)` / `ffmpegInstallPath(platform)` / `whisperModelPath(model)` / `whisperModelUrls(model)`：纯函数，便于离线测试；`FFMPEG_STATIC_VERSION` 与 `FFMPEG_ASSET_SHA256` 是固定版本和官方摘要表。
 - `buildWhisperArgs({bin,model,wav,prompt,language})`：生成 whisper-cli 的 argv，`language` 默认 `zh`，外文传 `auto`；**不传 `-np`**（需要分段输出才能算进度）；固定带 `-otxt` 与 `-osrt`（srt 用于还原时间戳）。
 - `parseSrtTimed(srtPath)`：把 whisper 的 srt 转成 `[mm:ss] 一句` 的逐行文本，多行 cue 合并成一行；文件缺失或解析不出内容返回空串，纯函数。
 - `transcribeAudio(wav,{title,author,tags,config,language,totalSeconds,onProgress})`：用 `spawn` 流式跑 whisper-cli，转写 16kHz 单声道 wav 返回 `{ text, timed }`（`timed` 是 `[mm:ss] 一句` 的带时间戳文本，来自 `-osrt` 产出的 srt，无章节视频靠它切逻辑段）；`onProgress({percent})` 实时回调进度；调用方需先 `ensureWhisperModel`，whisper-cli 缺失时抛错（官方无预编译包，需 `brew install whisper.cpp`）。
@@ -627,10 +631,10 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
   `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
-- 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。
+- 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。`getStatus()` 与 `getConfig()` 都返回 `readOnly` / `readOnlyReason`（`locked-by-other` / `lock-write-failed` / `lock-stale-unlink-failed`），状态消息里同步说明只读原因。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
-- `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。
+- `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。
 - `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
 - `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。
