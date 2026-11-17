@@ -3,7 +3,7 @@
  *
  * 当前支持：
  *  - bilibili：BV 号 / bilibili.com / b23.tv
- *  - douyin：抖音精选 modal_id / /video/<id>，以及标题后缀「 - 抖音」
+ *  - douyin：抖音精选 /jingxuan[/...]；detectSource 只识别平台，是否允许处理由 isDouyinJingxuanUrl 判断
  *  - youtube：watch?v= / youtu.be / shorts / embed / live，以及标题后缀「 - YouTube」
  */
 
@@ -40,6 +40,29 @@ export function extractDouyinId(value) {
 
 export function isDouyinUrl(value) {
   return hasHost(value, 'douyin.com') || hasHost(value, 'iesdouyin.com')
+}
+
+/**
+ * 判断抖音链接是否属于「抖音精选」入口。
+ * 只认 /jingxuan 或 /jingxuan/... 路径；普通 /video/<id>、用户页、搜索页都不算。
+ * 用 URL 解析 hostname，避免 query 里出现 douyin.com 的链接被误判。
+ */
+export function isDouyinJingxuanUrl(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return false
+  let url
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : 'https://' + text)
+  } catch {
+    return false
+  }
+  const host = url.hostname.toLowerCase()
+  const isDouyinHost = host === 'douyin.com'
+    || host.endsWith('.douyin.com')
+    || host === 'iesdouyin.com'
+    || host.endsWith('.iesdouyin.com')
+  if (!isDouyinHost) return false
+  return /^\/jingxuan(?:\/|$)/i.test(url.pathname)
 }
 
 export function isBilibiliUrl(value) {

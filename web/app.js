@@ -63,6 +63,22 @@ function extractDouyinId(url) {
   return match ? match[1] : ''
 }
 
+// 只用于展示：判断当前前台页面是不是抖音精选（/jingxuan）。真正是否处理由引擎决定。
+function isDouyinJingxuanUrl(value) {
+  try {
+    const raw = String(value || '').trim()
+    if (!raw) return false
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : 'https://' + raw)
+    const host = url.hostname.toLowerCase()
+    const isDouyin = host === 'douyin.com' || host.endsWith('.douyin.com') ||
+      host === 'iesdouyin.com' || host.endsWith('.iesdouyin.com')
+    if (!isDouyin) return false
+    return /^\/jingxuan(?:\/|$)/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
 function extractYoutubeId(url) {
   const match = String(url || '').match(/(?:[?&]v=|\/shorts\/|\/embed\/|\/live\/|youtu\.be\/)([A-Za-z0-9_-]{11})/)
   return match ? match[1] : ''
@@ -152,7 +168,8 @@ function renderForeground(fg) {
   const douyinId = extractDouyinId(fg.url)
   const youtubeId = extractYoutubeId(fg.url)
   if (bvid) meta.append(el('span', 'chip accent', bvid))
-  else if (douyinId) meta.append(el('span', 'chip accent', '抖音 ' + douyinId))
+  else if (douyinId && isDouyinJingxuanUrl(fg.url)) meta.append(el('span', 'chip accent', '抖音 ' + douyinId))
+  else if (douyinId) meta.append(el('span', 'chip warn', '抖音普通视频（不处理）'))
   else if (youtubeId) meta.append(el('span', 'chip accent', 'YouTube ' + youtubeId))
   if (fg.url) {
     try {

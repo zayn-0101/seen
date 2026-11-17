@@ -454,7 +454,10 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const result = await engine.scan({ title: body.title, url: body.url, force: Boolean(body.force) })
       const data = await snapshot()
-      return json(res, result.ok ? 200 : 500, { ...data, result })
+      const status = result.ok ? 200
+        : (result.code === 'douyin-not-jingxuan' || result.code === 'unsupported-source') ? 400
+        : 500
+      return json(res, status, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
     }
 
     // 重试一条失败记录：用保存的链接重新走一遍处理流程。
@@ -465,7 +468,7 @@ const server = createServer(async (req, res) => {
       log('重试失败任务：' + key)
       const result = await engine.retryFailure(key)
       const data = await snapshot()
-      return json(res, result.ok ? 200 : 500, { ...data, result })
+      return json(res, result.ok ? 200 : 500, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
     }
 
     // 重刷历史笔记：只重做整理与版式，内容/字幕走已有缓存。

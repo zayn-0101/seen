@@ -25,7 +25,7 @@
 
 ## 抖音精选
 
-- [x] 识别 `https://www.douyin.com/jingxuan?modal_id=...` 与 `/video/<id>` 链接
+- [x] 识别 `https://www.douyin.com/jingxuan?modal_id=...` 链接（2026-11-17 起普通 `/video/<id>` 不再处理）
 - [x] 无头 Chrome 读取 SSR `RENDER_DATA`：标题、作者、标签、播放地址、评论/弹幕总数
 - [x] ffmpeg 抽取音频，本地 whisper.cpp `ggml-small` 转写（48 分钟视频约 14,099 字）
 - [x] 真实抖音长视频生成笔记：`source: douyin`、`videoId`、`contentSource: whisper`
@@ -317,3 +317,13 @@
 - [x] `package.json` 升到 0.5.2；README/CLAUDE 说明固定签名、首次授权与证书缺失回退
 - [x] 安装验证：`dist/Seen-v0.5.2.dmg`（86M）内 app 版本 0.5.2、Authority=Seen Local Signing、DR 为 `identifier "com.zayn0101.seen" and certificate leaf = H"61dd4d0d29a732f49419f2f79df3f0e67713fd7a"`；`codesign --verify --deep --strict` 通过
 - [x] 安装到 `~/Applications/Seen.app` 并重启：`GET /api/status` 返回 200，`vault.ok=true`（「文稿文件夹」权限保留），历史笔记 12 篇正常载入
+
+## 2026-11-17 抖音只识别精选
+
+背景：普通抖音视频此前也会进入候选，可能先解析/转写后才判定非课程；产品口径改为只处理抖音精选。
+
+- [x] `isDouyinJingxuanUrl` 只接受 douyin.com / iesdouyin.com 及其子域的 `/jingxuan[/...]`；`/video/<id>`（即使带 `modal_id`）、用户页、搜索页、首页均为 false
+- [x] `observeOnce` 对普通抖音视频记录 skip 日志并跳过，不进入 pending；`processTitle` 对非精选链接返回 `code: douyin-not-jingxuan`
+- [x] `detectSource` 仍识别抖音平台（用于历史重刷与手动入口），无法识别来源时不再默认当 B 站
+- [x] `POST /api/scan` 对 `douyin-not-jingxuan` / `unsupported-source` 返回 400 并带 error；前端普通抖音前台显示「抖音普通视频（不处理）」
+- [x] `cd core && node --test`：243 tests / 243 pass（含 URL 真值表）

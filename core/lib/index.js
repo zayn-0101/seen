@@ -25,7 +25,7 @@ import { classify, segmentTranscript, summarize, resolveModel } from './analyze.
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
 import { findYtDlp } from './ytdlp.js'
-import { detectSource, extractDouyinId, extractYoutubeId, sourceLabel } from './source.js'
+import { detectSource, extractDouyinId, extractYoutubeId, isDouyinJingxuanUrl, sourceLabel } from './source.js'
 import { fetchDouyinContent, findChrome, findFfmpeg } from './douyin.js'
 import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
@@ -179,7 +179,15 @@ export function apply(ctx, rawConfig = {}) {
     let inputVideoId = null
     try {
       rawTitle = cleanTitle(input?.title || '')
-      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : 'bilibili')
+      // 重刷只重做整理与笔记，不重新抓内容/转写（缓存都还在）
+      const refresh = Boolean(input?.refresh)
+      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || (input?.bvid ? 'bilibili' : '')
+      if (!source) {
+        return { ok: false, code: 'unsupported-source', message: '无法识别视频来源：只支持 B站、抖音精选和 YouTube 视频链接' }
+      }
+      if (source === 'douyin' && !refresh && !isDouyinJingxuanUrl(input?.url || '')) {
+        return { ok: false, code: 'douyin-not-jingxuan', message: '只处理抖音精选视频：请从精选页复制带 modal_id 的链接；普通 /video/ 视频不处理' }
+      }
       const bvidFromUrl = source === 'bilibili' ? (extractBvid(input?.url || '') || null) : null
       inputBvid = input?.bvid || bvidFromUrl
       inputVideoId = input?.videoId
@@ -188,8 +196,6 @@ export function apply(ctx, rawConfig = {}) {
       const inputPage = source === 'bilibili' ? extractPage(input?.url || '') : 1
       key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle, page: inputPage })
       activeKey = key
-      // 重刷只重做整理与笔记，不重新抓内容/转写（缓存都还在）
-      const refresh = Boolean(input?.refresh)
 
       if (!refresh && !input?.force && isSeen(state, key)) {
         return { ok: true, skipped: true, message: '已处理过该视频，保持静默' }
@@ -621,6 +627,11 @@ export function apply(ctx, rawConfig = {}) {
     if (!title || title.length < config.titleMinLen) return
     const source = detectSource({ url: rawUrl, title: rawTitle })
     if (!source) return
+    if (source === 'douyin' && !isDouyinJingxuanUrl(rawUrl)) {
+      logger.logOnce('douyin-skip|' + rawUrl, 'foreground.skip source=douyin reason=not-jingxuan app=' + JSON.stringify(fg.app) + ' url=' + JSON.stringify(rawUrl))
+      pending = null
+      return
+    }
     const bvid = source === 'bilibili' ? (extractBvid(rawUrl) || null) : null
     const videoId = source === 'douyin'
       ? (extractDouyinId(rawUrl) || null)

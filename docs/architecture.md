@@ -36,7 +36,7 @@
 当前支持三类来源：
 
 - **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie；没有字幕时用 yt-dlp 下载音频 + ffmpeg 转 wav + 本地 Whisper 转写。多 P 视频按 page/cid 区分，去重键带 `:p<n>`，字幕缓存按 `<bvid>__<cid>.json`。
-- **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；带 UA/中文 locale/反自动化参数，失败重试一次并区分验证页与作品不存在；ffmpeg 抽音频，本地 `whisper-cli` 转写。结果缓存到 `~/.seen/cache/douyin`（默认 30 天）。
+- **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；带 UA/中文 locale/反自动化参数，失败重试一次并区分验证页与作品不存在；ffmpeg 抽音频，本地 `whisper-cli` 转写。只识别 `/jingxuan` 精选入口；普通 `/video/<id>`、用户页不进入处理，`isDouyinJingxuanUrl` 统一判定。结果缓存到 `~/.seen/cache/douyin`（默认 30 天）。
 - **YouTube**：`youtube.js` 用本机 yt-dlp `-J` 取元数据（标题/频道/时长/简介/章节/字幕轨道），逐级降级取文本：
 
   1. 人工字幕：`--write-subs --sub-langs <精确键>`（只请求一条轨道，避免触发 YouTube 429）；

@@ -423,6 +423,8 @@ node scripts/strip-cover.mjs                          # 清掉旧笔记里的封
 | YouTube | 人工/自动字幕（优先原声语言），无则本地转写 | 不抓取 | 支持 | yt-dlp、ffmpeg、Whisper |
 | 抖音精选 | 无字幕，全部本地转写 | 只取总数 | 不支持 | Chrome、ffmpeg、Whisper |
 
+抖音只处理**精选页**（`/jingxuan`，含从精选页打开的 `modal_id` 弹层）；普通抖音视频的 `/video/<id>` 链接不会自动检测，手动粘贴也会被拒绝。
+
 转写耗时参考：large-v3-turbo 模型约 3 倍速，45 分钟视频约 15 分钟。有字幕的视频通常几秒到几十秒完成。
 
 ---
@@ -432,7 +434,7 @@ node scripts/strip-cover.mjs                          # 清掉旧笔记里的封
 ### 看了视频但没有生成笔记
 
 1. 面板点「诊断」，看哪一项失败
-2. 确认浏览器地址栏是具体视频页，不是首页、搜索页、直播或番剧
+2. 确认浏览器地址栏是具体视频页，不是首页、搜索页、直播或番剧；抖音只处理精选页（`/jingxuan`），普通视频页不处理
 3. 看 `~/.seen/state/poll.log` 最后几行
 4. 确认模型服务可用（诊断里的「模型服务」）
 
@@ -527,7 +529,7 @@ Obsidian     vault 中的 Markdown
 ## 开发
 
 ```bash
-cd core && node --test          # 引擎测试（242 项）
+cd core && node --test          # 引擎测试（243 项）
 cd menubar && ./build.sh        # 编译菜单栏应用
 npm run check                   # 服务端入口语法检查
 npm run self-check              # 体检库里的笔记：结构、标签、双链、状态一致性
@@ -550,7 +552,7 @@ node scripts/maintain-vault.mjs # 按 state 重建索引、概念页、主题页
 
 ## 已知限制
 
-- 只支持 B 站、抖音精选和 YouTube
+- 只支持 B 站、抖音精选和 YouTube；抖音只处理精选页（`/jingxuan`），普通视频页不处理
 - 抖音不抓取评论/弹幕正文，YouTube 不抓取评论
 - 无字幕视频需要本地转写，耗时明显更长
 - AI 字幕与本地转写都可能存在同音错字，笔记不保证 100% 准确

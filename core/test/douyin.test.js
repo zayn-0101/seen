@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectSource, extractDouyinId } from '../lib/source.js'
+import { detectSource, extractDouyinId, isDouyinJingxuanUrl } from '../lib/source.js'
 import { parseRenderData, buildDouyinChromeArgs, classifyDouyinPage } from '../lib/douyin.js'
 import { seenKey } from '../lib/state.js'
 import { renderVideoNote } from '../lib/render.js'
@@ -11,6 +11,29 @@ test('detectSource and Douyin ID parsing', () => {
   assert.equal(detectSource({ title: '某个长视频 - 抖音' }), 'douyin')
   assert.equal(extractDouyinId('https://www.douyin.com/jingxuan?modal_id=7699902138868059392'), '7699902138868059392')
   assert.equal(extractDouyinId('https://www.douyin.com/video/7699902138868059392'), '7699902138868059392')
+})
+
+test('isDouyinJingxuanUrl only accepts Douyin jingxuan pages', () => {
+  const accepted = [
+    'https://www.douyin.com/jingxuan?modal_id=7699902138868059392',
+    'https://www.douyin.com/jingxuan/',
+    'https://www.douyin.com/jingxuan/knowledge?modal_id=7699902138868059392',
+    'https://m.douyin.com/jingxuan?modal_id=7699902138868059392',
+    'https://iesdouyin.com/jingxuan?modal_id=7699902138868059392',
+    'www.douyin.com/jingxuan?modal_id=7699902138868059392',
+  ]
+  for (const url of accepted) assert.equal(isDouyinJingxuanUrl(url), true, url)
+
+  const rejected = [
+    'https://www.douyin.com/video/7699902138868059392',
+    'https://www.douyin.com/video/7699902138868059392?modal_id=7699902138868059392',
+    'https://www.douyin.com/user/7f2d8f8e',
+    'https://www.douyin.com/',
+    'https://www.douyin.com/jingxuanx?modal_id=7699902138868059392',
+    'https://example.com/jingxuan?modal_id=7699902138868059392',
+    '',
+  ]
+  for (const url of rejected) assert.equal(isDouyinJingxuanUrl(url), false, url)
 })
 
 test('seenKey prefers platform video id', () => {
@@ -33,7 +56,7 @@ test('renderVideoNote marks Douyin source and stats', () => {
     subject: '历史',
     source: 'douyin',
     videoId: '7699902138868059392',
-    url: 'https://www.douyin.com/video/7699902138868059392',
+    url: 'https://www.douyin.com/jingxuan?modal_id=7699902138868059392',
     author: '易中天',
     summary: '总结',
     keyPoints: [],

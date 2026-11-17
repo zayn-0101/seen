@@ -566,9 +566,11 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 ## lib/source.js / lib/douyin.js / lib/youtube.js
 
-- `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`。
-- `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
+- `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`；只做平台识别，不判断是否抖音精选。
+- `isDouyinJingxuanUrl(value)` → boolean：仅 `douyin.com` / `iesdouyin.com` 及其子域的 `/jingxuan[/...]` 路径为 true；普通 `/video/<id>`（即使带 `modal_id`）、用户页、搜索页、首页均为 false。
+- `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`（用于历史重刷与通用解析，不代表允许自动处理）；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
 - `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
+- 准入：`observeOnce` 对非精选抖音直接 skip；`processTitle` 对非精选且非 refresh 的抖音链接返回 `{ ok:false, code:'douyin-not-jingxuan' }`，`POST /api/scan` 返回 400。
 - 页面解析最多两次（第一次失败等 800ms 重试，第二次 `--virtual-time-budget` 放宽到 35 秒）；验证页、作品不存在、无可解析数据分别给 `captcha` / `missing` / `empty` 的明确提示；结果缓存 30 天（`douyinCacheDays`，version 2）。
 - 纯函数（可离线单测）：`buildDouyinChromeArgs({profile,url,attempt})`、`classifyDouyinPage(html)`。
 - 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-<model>.bin`（默认 large-v3-turbo，可在面板「诊断」里换）。
