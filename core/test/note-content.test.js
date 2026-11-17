@@ -64,6 +64,13 @@ test('normalizeTemplate caps steps and prerequisites', () => {
   assert.equal(template.prerequisites.length, TEMPLATE_LIMITS.prerequisites)
 })
 
+test('normalizeTemplate 保留模型用字符串返回的观点、机制、对比和人物', () => {
+  assert.deepEqual(normalizeTemplate({ arguments: ['一个观点'] }, 'opinion').arguments, [{ claim: '一个观点' }])
+  assert.deepEqual(normalizeTemplate({ mechanisms: ['一个机制'] }, 'science').mechanisms, [{ point: '一个机制' }])
+  assert.deepEqual(normalizeTemplate({ comparisons: ['一个对象'] }, 'review').comparisons, [{ item: '一个对象' }])
+  assert.deepEqual(normalizeTemplate({ people: ['受访者'] }, 'interview').people, [{ name: '受访者' }])
+})
+
 test('normalizeQuotes keeps at most three short quotes', () => {
   const quotes = normalizeQuotes([
     { text: '第一句', time: 1 },

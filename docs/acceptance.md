@@ -219,7 +219,7 @@
 背景：重做笔记时不该重新下载/转写；字幕缓存 7 天也太短。字幕原文本身值得留一份，但不应混进索引。
 
 - [x] 字幕存档：有字幕或转写的视频生成笔记时，同时写 `<noteRoot>/字幕/<笔记名>.md`（frontmatter `type: transcript`、`format: 1`、`notePath`；正文「## 带时间戳字幕」「## 纯文本」），不参与视频/概念/标签索引
-- [x] 重整理：面板「用存档字幕重新整理」→ `POST /api/resummarize` → `engine.resummarizeNote({ notePath })` 读存档后按 `refresh: true` 重跑，不再下载或转写；无存档时提示先重刷一次
+- [x] 重整理：面板「用存档字幕重新整理」→ `POST /api/resummarize` → `engine.resummarizeNote({ notePath })` 读存档后按 `refresh: true` 重跑；无存档时提示先重刷一次。当前缓存失效时仍可能重新抓取或转写，待优化。
 - [x] 缓存 30 天：`transcriptCacheDays` 默认从 7 改 30
 - [x] 搜索标注来源：`searchVault` 返回 `kind`（视频笔记/字幕/学科手册/概念页/主题综述/周回顾/索引）与 `match`（title/content），面板列出「[kind · 命中文件名/命中正文] 路径」
 - [x] 临时实例 E2E（B 站 BV1qqEj6oEEk）：字幕存档生成、frontmatter 与两段正文齐全；历史接口返回 transcriptPath

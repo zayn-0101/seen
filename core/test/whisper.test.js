@@ -169,9 +169,15 @@ test('findHomebrew returns an absolute brew path or null', () => {
   }
 })
 
-test('installWhisperCli never throws and reports path or error', async () => {
-  const result = await installWhisperCli({ timeout: 2000 })
-  assert.equal(typeof result.ok, 'boolean')
-  if (result.ok) assert.ok(result.path)
-  else assert.ok(result.error)
+test('installWhisperCli 发现已有可执行文件时跳过安装', async () => {
+  const original = process.env.SEEN_WHISPER_BIN
+  try {
+    // 使用当前 Node 路径作为隔离替身，不能让测试在缺少 Whisper 的机器上执行 brew install。
+    process.env.SEEN_WHISPER_BIN = process.execPath
+    const result = await installWhisperCli({ timeout: 2000 })
+    assert.deepEqual(result, { ok: true, path: process.execPath, skipped: true })
+  } finally {
+    if (original === undefined) delete process.env.SEEN_WHISPER_BIN
+    else process.env.SEEN_WHISPER_BIN = original
+  }
 })

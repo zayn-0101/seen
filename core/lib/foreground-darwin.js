@@ -20,7 +20,6 @@ const LSAPPINFO_BINS = [
   'lsappinfo',
   '/usr/bin/lsappinfo',
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsappinfo',
-  'lsappinfo',
 ]
 
 // Chromium 系：AppleScript 字典与 Chrome 一致

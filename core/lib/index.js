@@ -38,7 +38,7 @@ import { searchVault } from './vault-search.js'
 import { scoreNoteQuality } from './note-content.js'
 import { normalizeNoteLayout } from './paths.js'
 import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, readVaultText, updateNoteReview, updateNoteTags, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
-import { parseTranscriptNote, renderTranscriptNote } from './transcript-note.js'
+import { parseTranscriptNote, renderTranscriptNote, transcriptNoteOwner } from './transcript-note.js'
 import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
@@ -116,13 +116,6 @@ export function apply(ctx, rawConfig = {}) {
   setVaultGuard(vaultGuard)
 
   ensureDir(config.stateDir)
-  if (!vaultGuard.isBlocked()) {
-    ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir }).catch((error) => {
-      if (error && error.vaultBlocked) return
-      console.error('[seen-core] 准备笔记目录失败：', error)
-    })
-  }
-
   const logger = makeLogger(config.stateDir)
   const statePath = join(config.stateDir, 'state.json')
   const state = loadState(statePath)
@@ -144,6 +137,14 @@ export function apply(ctx, rawConfig = {}) {
     }
     if (!readOnly) writeFileSync(lockPath, String(process.pid), 'utf8')
   } catch { /* 锁失败不阻塞启动 */ }
+
+  // 只在取得实例锁之后准备笔记目录，并让调用方能够等待初始化结束。
+  const ready = !readOnly && !vaultGuard.isBlocked()
+    ? ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir }).catch((error) => {
+      if (error && error.vaultBlocked) return
+      console.error('[seen-core] 准备笔记目录失败：', error)
+    })
+    : Promise.resolve()
 
   const outputDir = join(vaultPath, config.noteRoot)
 
@@ -306,7 +307,7 @@ export function apply(ctx, rawConfig = {}) {
 
       const subject = resolveSubjectName(cls.subject, existing)
       const keywords = Array.isArray(cls.keywords) ? cls.keywords.map(String).filter(Boolean).slice(0, 10) : []
-      // 重整理时可以直接用已存档的字幕，不必重新转写
+      // 重整理时优先使用传入的存档字幕。
       let transcript = input?.transcript || content?.transcript || ''
       let timedTranscript = input?.timedTranscript || content?.timedTranscript || ''
       let transcriptSource = input?.transcriptSource || content?.transcriptSource || (transcript ? 'up-subtitle' : '')
@@ -370,7 +371,7 @@ export function apply(ctx, rawConfig = {}) {
         conceptCount: noteConcepts.length,
       })
       emit('summarized', { title: finalTitle, subject, source, summary: summary.summary, keyPoints: summary.keyPoints, discussion: summary.discussion, contentQuality })
-      const createdAt = Date.now()
+      const processedAt = Date.now()
       let noteChapters = Array.isArray(content?.chapters) ? content.chapters : []
       if (noteChapters.length === 0 && content?.timedTranscript) {
         const segments = await segmentTranscript(ctx, config, {
@@ -383,7 +384,7 @@ export function apply(ctx, rawConfig = {}) {
       const historyVideos = Object.entries(state.subjects || {}).flatMap(([subjectName, entry]) =>
         (Array.isArray(entry?.videos) ? entry.videos : []).map((item) => ({ ...item, subject: subjectName })))
       const relatedNotes = findRelatedVideos(
-        { title: finalTitle, bvid: content?.bvid || inputBvid || '', videoId: content?.videoId || inputVideoId || '', url: content?.url || input?.url || '', concepts: noteConcepts, keywords },
+        { title: finalTitle, source, bvid: content?.bvid || inputBvid || '', page: content?.page || inputPage, videoId: content?.videoId || inputVideoId || '', url: content?.url || input?.url || '', concepts: noteConcepts, keywords },
         historyVideos,
         { limit: 5 },
       )
@@ -393,8 +394,10 @@ export function apply(ctx, rawConfig = {}) {
       const notePage = content?.page || inputPage || 1
       const previousRecord = historyVideos.find((item) =>
         (noteBvid && item.bvid === noteBvid && (Number(item.page) || 1) === notePage) ||
-        (noteVideoId && item.videoId === noteVideoId) ||
+        (noteVideoId && item.videoId === noteVideoId && (!item.source || item.source === source)) ||
         (!noteBvid && !noteVideoId && item.title === finalTitle))
+      const previousCreatedAt = Number(previousRecord?.createdAt)
+      const createdAt = Number.isFinite(previousCreatedAt) && previousCreatedAt > 0 ? previousCreatedAt : processedAt
       const noteReview = previousRecord?.review && previousRecord.review.due ? previousRecord.review : initialReview(createdAt)
       // 四层标签：学科 → 主题 → 类型 → 概念，统一由 tags.js 组装
       const noteTags = mergeTags({
@@ -446,13 +449,17 @@ export function apply(ctx, rawConfig = {}) {
         layout: config.noteLayout,
         subject,
         title: finalTitle,
-        bvid: content?.bvid || inputBvid || '',
+        bvid: noteBvid,
+        page: notePage,
+        videoId: noteVideoId,
+        source,
+        previousNotePath: (noteBvid || noteVideoId) && previousRecord?.subject === subject ? previousRecord.notePath : '',
         content: note,
         force: refresh || Boolean(input?.force),
         backupDir: config.stateDir ? join(config.stateDir, '..', 'backups') : '',
       })
 
-      // 字幕原文单独存档，之后「用已存字幕重新整理」不依赖缓存是否过期
+      // 字幕原文单独存档，记录实际路径以区分不同学科的同名笔记。
       let transcriptPath = ''
       if (transcript) {
         const noteName = basename(writeResult.relPath, '.md')
@@ -511,7 +518,7 @@ export function apply(ctx, rawConfig = {}) {
       )
       if (existed >= 0) videos[existed] = { ...videos[existed], ...videoRecord }
       else videos.push(videoRecord)
-      state.subjects[subject].updatedAt = createdAt
+      state.subjects[subject].updatedAt = processedAt
 
       await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
       await updateOverview({ vaultPath, noteRoot: config.noteRoot, subjects: Object.keys(state.subjects), videos: getHistory(), layout: config.noteLayout })
@@ -796,6 +803,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setPollInterval(ms) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const value = Math.floor(Number(ms))
     if (!Number.isFinite(value) || value < 2000 || value > 600000) {
       return { ok: false, message: '轮询间隔需在 2 秒到 10 分钟之间' }
@@ -808,6 +816,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setNoteLayout(layout) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const next = normalizeNoteLayout(layout)
     if (next === config.noteLayout) {
       return { ok: true, message: '目录布局没有变化', noteLayout: next }
@@ -823,6 +832,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setEditorPass(value) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const next = Boolean(value)
     if (next === Boolean(config.editorPass)) {
       return { ok: true, message: '润色没有变化', editorPass: next }
@@ -858,7 +868,7 @@ export function apply(ctx, rawConfig = {}) {
     return await processTitle(input)
   }
 
-  /** 用已缓存的内容重刷历史笔记（不重新抓取/转写）。 */
+  /** 重刷历史笔记，内容缓存失效时可能重新抓取或转写。 */
   async function refreshHistory({ limit = 0, onProgress = null } = {}) {
     if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const rows = []
@@ -890,7 +900,7 @@ export function apply(ctx, rawConfig = {}) {
     return { ok: true, total: targets.length, done, failed }
   }
 
-  /** 用笔记旁的字幕存档重新整理一篇历史笔记（不重新转写）。 */
+  /** 用字幕存档重新整理一篇历史笔记；内容缓存失效时仍可能重新抓取或转写。 */
   async function resummarizeNote({ notePath } = {}) {
     if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const targetPath = toPosix(String(notePath || '').trim())
@@ -906,11 +916,23 @@ export function apply(ctx, rawConfig = {}) {
     const noteName = basename(found.video.notePath || found.video.title || '未命名视频', '.md')
     let markdown = null
     try {
-      markdown = await readTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName })
+      if (found.video.transcriptPath) {
+        const archived = await readVaultText({ vaultPath, relPath: found.video.transcriptPath })
+        if (archived.ok) markdown = archived.text
+      }
+      if (!markdown) markdown = await readTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName })
     } catch (error) {
       return { ok: false, message: '读取字幕存档失败：' + String(error?.message || error) }
     }
     if (!markdown) return { ok: false, message: '这篇笔记还没有字幕存档，先重刷一次生成存档后再试' }
+    const archiveOwner = toPosix(transcriptNoteOwner(markdown))
+    if (archiveOwner && archiveOwner !== targetPath) {
+      return { ok: false, message: '字幕存档属于另一篇笔记，已停止重整理，请先检查同名字幕存档' }
+    }
+    if (!archiveOwner) {
+      const sameName = getHistory().filter((video) => basename(video.notePath || video.title || '', '.md') === noteName)
+      if (sameName.length > 1) return { ok: false, message: '同名字幕存档没有所属笔记信息，已停止重整理，请先检查存档' }
+    }
     const parsed = parseTranscriptNote(markdown)
     if (!parsed.text && !parsed.timed) return { ok: false, message: '字幕存档是空的' }
     logger.log('resummarize.note=' + JSON.stringify(found.video.title || '') + ' chars=' + (parsed.text || parsed.timed).length)
@@ -934,6 +956,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 记录一次复习反馈：更新 state、frontmatter，并按 SM-2 排下一次。 */
   async function recordReview({ notePath, rating } = {}) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const relPath = String(notePath || '').trim()
     if (!relPath) return { ok: false, message: '缺少 notePath' }
     const normalized = normalizeRating(rating)
@@ -997,6 +1020,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 把一个主题标签合并到另一个主题（同时改 state 与笔记 frontmatter）。 */
   async function renameTag({ from, to } = {}) {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const source = String(from || '').trim()
     const target = String(to || '').trim()
     if (!source || !target) return { ok: false, message: '缺少源标签或目标标签' }
@@ -1012,13 +1036,29 @@ export function apply(ctx, rawConfig = {}) {
     if (result.changed === 0) return { ok: false, message: '没有找到这个主题标签' }
     let changed = 0
     for (const item of result.changedVideos) {
-      const noteResult = await updateNoteTags({ vaultPath, notePath: item.notePath, tags: item.tags })
-      if (!noteResult.ok) return { ok: false, message: noteResult.error || '更新笔记标签失败', changed }
+      let noteResult
+      try {
+        noteResult = await updateNoteTags({ vaultPath, notePath: item.notePath, tags: item.tags })
+      } catch (error) {
+        noteResult = { ok: false, error: String(error?.message || error) }
+      }
+      if (!noteResult.ok) {
+        if (changed > 0) {
+          try { await rebuildKnowledgePages() } catch (error) { logger.log('tags.merge.rebuild.error msg=' + (error?.message || error)) }
+        }
+        return { ok: false, message: noteResult.error || '更新笔记标签失败', changed }
+      }
       for (const data of Object.values(state.subjects || {})) {
         const video = (Array.isArray(data?.videos) ? data.videos : []).find((entry) => entry.notePath === item.notePath)
         if (video) { video.tags = item.tags; break }
       }
       changed += 1
+      try {
+        saveState(statePath, state)
+      } catch (error) {
+        logger.log('state.save.error msg=' + (error?.message || error))
+        return { ok: false, message: '笔记已更新，但保存状态失败：' + (error?.message || error), changed }
+      }
     }
     if (state.tagVocabulary && typeof state.tagVocabulary === 'object') {
       const count = Number(state.tagVocabulary[source] || 0)
@@ -1033,6 +1073,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
   async function rebuildKnowledgePages() {
+    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
     const vault = vaultGuard.status()
     if (vault.ok === false) return { ok: false, message: VAULT_HINT }
     await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
@@ -1236,7 +1277,7 @@ export function apply(ctx, rawConfig = {}) {
   async function reprobeVault() {
     const result = await probeVaultAccess(vaultPath)
     vaultGuard.apply(result)
-    if (result.ok) {
+    if (result.ok && !readOnly) {
       try {
         await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
       } catch (error) {
@@ -1247,6 +1288,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   const controller = {
+    ready,
     start,
     stop,
     setPollInterval,

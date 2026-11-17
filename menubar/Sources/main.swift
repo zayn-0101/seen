@@ -9,6 +9,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--autostart") {
         print((state.enabled ? "enabled" : "disabled") + " · " + state.detail)
         exit(0)
     }
+    guard value == "on" || value == "off" else {
+        fputs("用法：--autostart status|on|off\n", stderr)
+        exit(2)
+    }
     do {
         let detail = try AutoLaunch.setEnabled(value == "on")
         print(detail)

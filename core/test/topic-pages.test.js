@@ -52,6 +52,16 @@ test('collectConceptPages accepts a custom threshold and drops low-frequency con
   assert.equal(collectConceptPages(history, { minVideos: 4 }).length, 0)
 })
 
+test('collectConceptPages counts all notes where related concepts appear together', () => {
+  const pages = collectConceptPages([
+    { title: '一', concepts: ['双向链接', '卡片笔记'] },
+    { title: '二', concepts: ['双向链接', '卡片笔记'] },
+    { title: '三', concepts: ['双向链接', '卡片笔记'] },
+  ])
+  const links = pages.find(page => page.name === '双向链接').related
+  assert.deepEqual(links, [{ name: '卡片笔记', count: 3 }])
+})
+
 test('collectTopicPages uses theme tags and ignores subject and type tags', () => {
   const pages = collectTopicPages(history)
   assert.equal(pages.length, 1)
@@ -71,7 +81,7 @@ test('buildConceptPageMarkdown renders definition, notes and related concepts', 
   assert.match(markdown, /## 概念释义/)
   assert.match(markdown, /两条笔记互相指向/)
   assert.match(markdown, /\[\[视频笔记\/笔记\/知识管理\/第一篇\|第一篇\]\]/)
-  assert.match(markdown, /\[\[视频笔记\/概念\/卡片笔记\|卡片笔记\]\] · 共同出现 1 次/)
+  assert.match(markdown, /\[\[视频笔记\/资料\/概念\/卡片笔记\|卡片笔记\]\] · 共同出现 1 次/)
 })
 
 test('buildTopicPageMarkdown renders overview, notes and concepts', () => {
@@ -83,5 +93,10 @@ test('buildTopicPageMarkdown renders overview, notes and concepts', () => {
   })
   assert.match(markdown, /共 3 篇视频笔记/)
   assert.match(markdown, /## 视频笔记/)
-  assert.match(markdown, /\[\[视频笔记\/概念\/双向链接\|双向链接\]\] · 出现 3 次/)
+  assert.match(markdown, /\[\[视频笔记\/资料\/概念\/双向链接\|双向链接\]\] · 出现 3 次/)
+})
+
+test('概念链接使用与实际概念文件一致的清洗规则', () => {
+  const markdown = buildTopicPageMarkdown({ concepts: [{ name: '知识/图谱', count: 3 }], noteRoot: '视频笔记' })
+  assert.match(markdown, /\[\[视频笔记\/资料\/概念\/知识图谱\|知识\/图谱\]\]/)
 })

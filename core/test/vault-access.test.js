@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runVaultTask, setVaultGuard, setVaultTimeout } from '../lib/obsidian.js'
 import {
   VAULT_HINT,
   VaultBlockedError,
@@ -80,4 +81,24 @@ test('createVaultQueue runs tasks one at a time', async () => {
   assert.equal(await first, 1)
   assert.equal(await second, 2)
   assert.deepEqual(order, ['first-start', 'first-end', 'second-start'])
+})
+
+test('vault 熔断后已经排队的操作不会继续执行', async () => {
+  const guard = createVaultGuard()
+  setVaultGuard(guard)
+  setVaultTimeout(20)
+  let secondStarted = false
+  try {
+    const first = runVaultTask(() => new Promise(resolve => setTimeout(resolve, 60)))
+    const second = runVaultTask(() => { secondStarted = true })
+    const results = await Promise.allSettled([first, second])
+    assert.equal(results[0].status, 'rejected')
+    assert.equal(results[1].status, 'rejected')
+    assert.equal(secondStarted, false)
+    assert.equal(guard.status().code, 'timeout')
+  } finally {
+    await new Promise(resolve => setTimeout(resolve, 65))
+    setVaultGuard(null)
+    setVaultTimeout(10000)
+  }
 })

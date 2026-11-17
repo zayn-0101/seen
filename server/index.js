@@ -16,7 +16,7 @@ import { apply } from '../core/lib/index.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
-import { ensureVaultDirs, writeWeeklyReview } from '../core/lib/obsidian.js'
+import { writeWeeklyReview } from '../core/lib/obsidian.js'
 import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
 import { buildConceptIndex } from '../core/lib/concept.js'
 import { buildTagIndex } from '../core/lib/tags.js'
@@ -132,13 +132,7 @@ const ctx = {
 // 启动先探一次 vault 权限：没有「文稿文件夹」授权时快速降级，绝不让同步 I/O 挂起整个服务。
 const vaultProbe = await probeVaultAccess(baseConfig.vaultPath)
 baseConfig.vaultAccess = vaultProbe
-if (vaultProbe.ok) {
-  try {
-    await ensureVaultDirs({ vaultPath: baseConfig.vaultPath, noteRoot: baseConfig.noteRoot, stateDir: baseConfig.stateDir })
-  } catch (error) {
-    log('准备笔记目录失败：' + String(error?.message || error))
-  }
-} else {
+if (!vaultProbe.ok) {
   log('笔记库不可访问（' + vaultProbe.code + '）：' + VAULT_HINT)
   // 首次访问 tccd 可能还在等用户点授权弹窗，超时不等于真没权限：几秒后自己再探一次
   if (vaultProbe.code === 'timeout') {
@@ -158,6 +152,7 @@ if (!engine || typeof engine.getStatus !== 'function') {
   console.error('核心入口没有返回控制器，请检查 core 版本。')
   process.exit(1)
 }
+await engine.ready
 
 const sseClients = new Set()
 const recentEvents = []
@@ -323,13 +318,51 @@ async function readBody(req) {
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > 1024 * 1024) throw new Error('请求体过大')
+    if (size > 1024 * 1024) throw Object.assign(new Error('请求体过大'), { statusCode: 413 })
     chunks.push(chunk)
   }
   const text = Buffer.concat(chunks).toString('utf8')
   if (!text) return {}
-  return JSON.parse(text)
+  let value
+  try { value = JSON.parse(text) } catch {
+    throw Object.assign(new Error('请求内容不是有效的 JSON'), { statusCode: 400 })
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('请求内容必须是 JSON 对象'), { statusCode: 400 })
+  }
+  return value
 }
+
+/** 浏览器只能从当前面板的同源页面访问 API；本机原生客户端不携带 Origin。 */
+function validateApiRequest(req) {
+  let requestOrigin
+  try {
+    requestOrigin = new URL('http://' + String(req.headers.host || ''))
+  } catch {
+    return { status: 403, error: '无效的请求地址' }
+  }
+  const loopbackNames = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+  if (loopbackNames.has(HOST.toLowerCase()) && !loopbackNames.has(requestOrigin.hostname.toLowerCase())) {
+    return { status: 403, error: '请求地址不受信任' }
+  }
+  const origin = req.headers.origin
+  if (origin && origin !== requestOrigin.origin) return { status: 403, error: '不允许跨站访问' }
+  const fetchSite = req.headers['sec-fetch-site']
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') return { status: 403, error: '不允许跨站访问' }
+  if (req.method === 'POST' && !/^application\/json(?:\s*;|\s*$)/i.test(String(req.headers['content-type'] || ''))) {
+    return { status: 415, error: '请求必须使用 application/json' }
+  }
+  return null
+}
+
+function keyForEndpoint(baseURL, supplied, current) {
+  if (supplied) return String(supplied)
+  const normalize = (value) => String(value || '').trim().replace(/\/+$/, '')
+  const target = normalize(baseURL)
+  return target && target === normalize(current?.baseURL) ? String(current?.apiKey || '') : ''
+}
+
+const READ_ONLY_POSTS = new Set(['/api/ask', '/api/check', '/api/llm/models', '/api/llm/test', '/api/vault/probe'])
 
 async function serveStatic(req, res, pathname) {
   const safe = pathname === '/' ? '/index.html' : pathname
@@ -360,6 +393,13 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://' + HOST + ':' + PORT)
     const pathname = url.pathname
+    if (pathname.startsWith('/api/')) {
+      const problem = validateApiRequest(req)
+      if (problem) return json(res, problem.status, { ok: false, error: problem.error })
+      if (req.method === 'POST' && engine.isReadOnly() && !READ_ONLY_POSTS.has(pathname)) {
+        return json(res, 409, { ok: false, error: '另一个实例持有锁，当前为只读模式' })
+      }
+    }
 
     if (pathname === '/api/status' && req.method === 'GET') {
       return json(res, 200, await snapshot())
@@ -503,7 +543,7 @@ const server = createServer(async (req, res) => {
       return json(res, result.ok ? 200 : 400, { ...data, result })
     }
 
-    // 用字幕存档重整理一篇历史笔记：不重新抓取/转写，只重跑总结与版式。
+    // 用字幕存档重整理一篇历史笔记；缓存失效时内容抓取仍可能重新执行。
     if (pathname === '/api/resummarize' && req.method === 'POST') {
       if (resummarizing) return json(res, 409, { ok: false, error: '正在重整理笔记，请稍候' })
       const body = await readBody(req)
@@ -649,23 +689,24 @@ const server = createServer(async (req, res) => {
       })
     }
 
-    if (pathname === '/api/llm/models' && req.method === 'GET') {
-      const providerId = url.searchParams.get('provider') || ''
+    if (pathname === '/api/llm/models' && (req.method === 'GET' || req.method === 'POST')) {
+      const body = req.method === 'POST' ? await readBody(req) : Object.fromEntries(url.searchParams)
+      const providerId = body.provider || ''
       const preset = PROVIDERS.find((item) => item.id === providerId)
-      const baseURL = url.searchParams.get('baseURL') || (preset ? preset.baseURL : '')
-      const apiKey = url.searchParams.get('apiKey') || llmConfig.apiKey || ''
+      const baseURL = body.baseURL || (preset ? preset.baseURL : '')
+      const apiKey = keyForEndpoint(baseURL, body.apiKey, llmConfig)
       return json(res, 200, await fetchModels({ baseURL, apiKey }))
     }
 
     if (pathname === '/api/llm/test' && req.method === 'POST') {
       const body = await readBody(req)
-      return json(res, 200, await testLlmConfig(body))
+      return json(res, 200, await testLlmConfig({ ...body, apiKey: keyForEndpoint(body.baseURL, body.apiKey, llmConfig) }))
     }
 
     if (pathname === '/api/llm' && req.method === 'POST') {
       const body = await readBody(req)
       const previous = readSavedConfig() || {}
-      const apiKey = body.apiKey ? String(body.apiKey) : String(previous.apiKey || '')
+      const apiKey = keyForEndpoint(body.baseURL, body.apiKey, previous)
       const saved = saveLlmConfig({ provider: body.provider, baseURL: body.baseURL, apiKey, model: body.model })
       const tested = await testLlmConfig(saved)
       llmConfig = saved
@@ -693,8 +734,10 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/review' && req.method === 'POST') {
       const status = await engine.getStatus()
+      if (status.vault && status.vault.ok === false) return json(res, 503, { error: VAULT_HINT })
       const review = buildWeeklyReview({ videos: engine.getHistory(), now: new Date() })
-      const written = writeWeeklyReview({
+      if (review.count === 0) return json(res, 200, { ok: true, week: review.label, count: 0, skipped: true })
+      const written = await writeWeeklyReview({
         vaultPath: status.vaultPath,
         noteRoot: status.noteRoot,
         label: review.label,
@@ -706,14 +749,16 @@ const server = createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' })
     return await serveStatic(req, res, pathname)
   } catch (error) {
-    console.error('request error:', error)
-    if (!res.headersSent) json(res, 500, { error: String(error?.message || error) })
+    const status = Number(error?.statusCode) || 500
+    if (status >= 500) console.error('request error:', error)
+    if (!res.headersSent) json(res, status, { error: String(error?.message || error) })
     else res.end()
   }
 })
 
 async function rebuildIndexNote() {
   try {
+    if (engine.isReadOnly()) return
     const status = await engine.getStatus()
     if (!status.vaultPath) return
     if (status.vault && status.vault.ok === false) return
@@ -727,6 +772,7 @@ async function rebuildIndexNote() {
 // 启动时补生成上周回顾（本周文件已存在时自动跳过）
 async function ensureLastWeekReview() {
   try {
+    if (engine.isReadOnly()) return
     const status = await engine.getStatus()
     if (!status.vaultPath) return
     if (status.vault && status.vault.ok === false) return

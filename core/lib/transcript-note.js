@@ -1,7 +1,7 @@
 /**
  * seen-core · 字幕存档
  *
- * 把处理时用到的字幕/转写原文留一份在 <noteRoot>/字幕/，方便以后不重新转写就能重整理。
+ * 把处理时用到的字幕/转写原文留一份在 <noteRoot>/资料/字幕/，供以后重整理使用。
  * 存档是 Markdown（type: transcript），不参与视频索引、概念索引与标签索引。
  */
 
@@ -51,6 +51,20 @@ export function renderTranscriptNote(input = {}) {
   if (transcript) lines.push('## 纯文本', '', transcript, '')
   if (!timed && !transcript) lines.push('（暂无字幕）', '')
   return lines.join('\n')
+}
+
+/** 读取存档对应的笔记路径，旧存档可能没有此字段。 */
+export function transcriptNoteOwner(markdown) {
+  const frontmatter = String(markdown ?? '').replace(/^\uFEFF/, '').match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+  const line = frontmatter?.[1].match(/^notePath\s*:\s*(.+?)\s*$/m)
+  if (!line) return ''
+  let value = line[1].trim()
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try { value = JSON.parse(value) } catch { return '' }
+  } else if (value.startsWith("'") && value.endsWith("'")) {
+    value = value.slice(1, -1)
+  }
+  return String(value || '').trim()
 }
 
 function section(markdown, heading) {

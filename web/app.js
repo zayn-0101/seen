@@ -286,7 +286,7 @@ function renderSummary(data, stageText) {
   if (data.notePath && data.transcriptPath) {
     const action = el('button', 'button text-button', '用存档字幕重新整理')
     action.type = 'button'
-    action.title = '不重新转写，用这篇笔记旁的字幕存档重跑总结与版式'
+    action.title = '使用字幕存档重跑总结；缓存失效时可能重新抓取内容'
     action.addEventListener('click', () => resummarizeNote(data.notePath, action))
     body.append(action)
   }
@@ -1473,9 +1473,7 @@ async function fetchModelList() {
   const form = currentForm()
   $('settingsResult').textContent = '正在获取模型列表…'
   try {
-    const query = new URLSearchParams({ provider: form.provider, baseURL: form.baseURL })
-    if (form.apiKey) query.set('apiKey', form.apiKey)
-    const data = await api('/api/llm/models?' + query.toString())
+    const data = await api('/api/llm/models', { method: 'POST', body: JSON.stringify(form) })
     if (!data.ok) {
       $('settingsResult').textContent = '获取失败：' + (data.detail || '未知错误')
       return

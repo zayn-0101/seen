@@ -254,6 +254,19 @@ function toOpenAiMessages(system, messages) {
   return out
 }
 
+function* streamDeltas(event) {
+  for (const line of event.split(/\r\n|\r|\n/)) {
+    if (!line.startsWith('data:')) continue
+    const payload = line.slice(5).trim()
+    if (!payload || payload === '[DONE]') continue
+    let data
+    try { data = JSON.parse(payload) } catch { continue }
+    const delta = data && data.choices && data.choices[0] && data.choices[0].delta
+    const text = delta && typeof delta.content === 'string' ? delta.content : ''
+    if (text) yield { type: 'text-delta', text }
+  }
+}
+
 /**
  * 创建 OpenAI-compatible LLM 客户端。
  * stream() 返回异步迭代器：{ type: 'text-delta', text }。
@@ -328,23 +341,16 @@ export function createLlmClient(config = loadLlmConfig()) {
       let buffer = ''
       while (true) {
         const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let index = buffer.indexOf('\n\n')
-        while (index !== -1) {
-          const event = buffer.slice(0, index)
-          buffer = buffer.slice(index + 2)
-          for (const line of event.split(/\r?\n/)) {
-            if (!line.startsWith('data:')) continue
-            const payload = line.slice(5).trim()
-            if (!payload || payload === '[DONE]') continue
-            let data
-            try { data = JSON.parse(payload) } catch { continue }
-            const delta = data && data.choices && data.choices[0] && data.choices[0].delta
-            const text = delta && typeof delta.content === 'string' ? delta.content : ''
-            if (text) yield { type: 'text-delta', text }
-          }
-          index = buffer.indexOf('\n\n')
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
+        let boundary
+        while ((boundary = /\r?\n\r?\n|\r\r/.exec(buffer))) {
+          const event = buffer.slice(0, boundary.index)
+          buffer = buffer.slice(boundary.index + boundary[0].length)
+          yield* streamDeltas(event)
+        }
+        if (done) {
+          if (buffer.trim()) yield* streamDeltas(buffer)
+          break
         }
       }
     } finally {

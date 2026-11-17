@@ -19,6 +19,8 @@ test('resolveConfig merges defaults and validates', () => {
   assert.throws(() => resolveConfig({ pollIntervalMs: 0 }), /正数/)
   assert.throws(() => resolveConfig({ enabled: 'yes' }), /布尔值/)
   assert.throws(() => resolveConfig({ provider: '' }), /非空字符串/)
+  assert.throws(() => resolveConfig({ noteRoot: '../外部' }), /noteRoot/)
+  assert.throws(() => resolveConfig({ noteRoot: '笔记/../../外部' }), /noteRoot/)
 })
 
 test('detectObsidianVault reads obsidian.json', () => {

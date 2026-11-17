@@ -20,13 +20,13 @@ export function parseNetscapeCookies(text) {
   const pairs = []
   const seen = new Set()
   for (const line of String(text ?? '').split(/\r?\n/)) {
-    if (!line || line.startsWith('#')) continue
-    const parts = line.split('\t')
+    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) continue
+    const parts = line.replace(/^#HttpOnly_/, '').split('\t')
     if (parts.length < 7) continue
     const domain = parts[0]
     const name = parts[5]
     const value = parts[6]
-    if (!/bilibili\.com$/i.test(domain.replace(/^\./, ''))) continue
+    if (!/(?:^|\.)bilibili\.com$/i.test(domain.replace(/^\./, ''))) continue
     if (!name || value === undefined) continue
     const key = name
     if (seen.has(key)) continue
@@ -41,6 +41,20 @@ export function clearCookieCache() {
   cookieCache.clear()
 }
 
+/** 避免把浏览器 Cookie 导出流程用于非 B 站地址或明文连接。 */
+export function isTrustedBilibiliCookieTarget(value) {
+  try {
+    const url = new URL(String(value || '').trim())
+    const host = url.hostname.toLowerCase()
+    return url.protocol === 'https:' && (
+      host === 'bilibili.com' || host.endsWith('.bilibili.com') ||
+      host === 'b23.tv' || host.endsWith('.b23.tv')
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
  * 通过 yt-dlp 从浏览器导出 B 站 Cookie 头。
  * 返回 string 或 null；不抛错。
@@ -48,7 +62,7 @@ export function clearCookieCache() {
 export async function getBilibiliCookieHeader({ config = {}, url } = {}) {
   if (config.useBrowserCookies === false) return null
   const targetUrl = typeof url === 'string' ? url.trim() : ''
-  if (!targetUrl) return null
+  if (!isTrustedBilibiliCookieTarget(targetUrl)) return null
   const browser = typeof config.cookieBrowser === 'string' && config.cookieBrowser.trim()
     ? config.cookieBrowser.trim()
     : 'chrome'

@@ -133,9 +133,9 @@ function objectList(value, limit, fields) {
   const out = [];
   for (const item of asArray(value)) {
     if (typeof item === 'string') {
-      const first = fields[0];
+      const [first, max] = fields[0];
       const entry = {};
-      entry[first] = cleanText(item, 120);
+      entry[first] = cleanText(item, max);
       if (Object.values(entry).some(Boolean)) out.push(entry);
       if (out.length >= limit) break;
       continue;

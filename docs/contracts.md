@@ -30,6 +30,7 @@ export function resolveConfig(raw?: object): object
 // - vaultPath 为 null 时自动检测
 // - stateDir 为 null 时使用 ~/.seen/state
 // - 不允许空字符串 provider/model/mnemonBin（null 除外）
+// - noteRoot 是 vault 内相对目录，不允许包含 .. 路径段
 
 export function detectObsidianVault(home?: string): string | null
 // 读 <home>/Library/Application Support/obsidian/obsidian.json
@@ -367,7 +368,7 @@ export function manualNotePath({ vaultPath, noteRoot, subject, layout }): { absP
 export function toPosix(p: string): string
 
 export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir }): Promise<void>
-export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, content, force = false, layout, backupDir = '' }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page = 1, videoId, source, previousNotePath, content, force = false, layout, backupDir = '' }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateOverview({ vaultPath, noteRoot, subjects, layout }): Promise<{ relPath, absPath }>
 export async function writeIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
@@ -393,7 +394,9 @@ export async function runVaultTask(task: () => Promise<T>): Promise<T>  // 供 v
 
 写入规则：
 - 原子写（tmp + rename）。
-- 视频笔记同名时：若已有文件 frontmatter 的 bvid 相同且 `force=false` → 返回 `{ skipped: true }` 不覆盖；bvid 不同 → 文件名追加 ` (BVxxxx)`；`force=true` → 先备份 `.bak-<timestamp>` 再覆盖。
+- vault 内相对路径不得通过 `..` 越过 vault 根目录；符号链接的边界另行审查。
+- 视频笔记同名时按 B 站 BV + 分 P，或其他平台来源 + 视频 ID 判断是否为同一条视频。已确认同一条且 `force=false` 返回 `{ skipped: true }`；`force=true` 时备份并更新对应文件。身份不同或无法确认时使用带标识的同名副本，不能覆盖原笔记；已由状态记录确认的旧笔记路径可作为身份缺失时的依据。
+- 字幕存档按所属笔记路径确认身份；同名且属于不同笔记或身份不明的旧文件不得覆盖，使用新副本并在状态中记录实际 `transcriptPath`。重整理优先读取状态中的路径，再校验所属笔记；缺少所属路径且有同名历史笔记时，拒绝推测归属。
 - 学习手册/总览只替换 AUTO 区；文件不存在则创建（含 frontmatter、H1、AUTO 区、用户区）。
 - 返回的 `relPath` 是相对 vault 的 POSIX 路径，不含 `.md` 以外的变化。
 
@@ -451,6 +454,8 @@ export function renderTranscriptNote({ title, subject, source, url, bvid, videoI
 // frontmatter: type "transcript"、format 1、notePath；正文 ## 带时间戳字幕 / ## 纯文本；createdAt 为毫秒时间戳时转 YYYY-MM-DD
 export function parseTranscriptNote(markdown): { text: string, timed: string }
 // 纯文本缺失时从带时间戳文本去掉 [mm:ss] 前缀还原
+export function transcriptNoteOwner(markdown): string
+// 读取存档 frontmatter 的 notePath；缺失时返回空字符串
 ```
 
 存档只作原始素材，不参与视频/概念/标签索引。
@@ -622,9 +627,10 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
   `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+- 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
-- `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；没有存档时返回说明文字，不重新下载或转写。
+- `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。
 - `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, message, review }`。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
 - `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。

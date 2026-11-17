@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { buildWeeklyReview, isoWeek, weekLabel, weekRange } from '../lib/review.js'
 
 test('isoWeek maps dates to ISO weeks', () => {
@@ -13,6 +14,20 @@ test('weekRange starts on Monday and ends on Sunday', () => {
   assert.equal(start.getDay(), 1)
   assert.equal(end.getDay(), 0)
   assert.equal(end.getTime() - start.getTime(), 7 * 86400000 - 1)
+})
+
+test('weekRange follows local calendar days across daylight saving changes', () => {
+  const moduleUrl = new URL('../lib/review.js', import.meta.url).href
+  const script = `import { weekRange } from ${JSON.stringify(moduleUrl)};
+    console.log(JSON.stringify([10, 44].map(week => {
+      const { start, end } = weekRange(2026, week);
+      const next = new Date(end.getTime() + 1);
+      return [start.getDay(), start.getHours(), end.getDay(), end.getHours(), end.getMinutes(), next.getDay(), next.getHours()];
+    })))`
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8',
+  })
+  assert.deepEqual(JSON.parse(output), [[1, 0, 0, 23, 59, 1, 0], [1, 0, 0, 23, 59, 1, 0]])
 })
 
 test('weekLabel pads the week number', () => {

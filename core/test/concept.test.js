@@ -36,6 +36,15 @@ test('findRelatedVideos respects limit and empty input', () => {
   assert.deepEqual(findRelatedVideos({ title: 'A', concepts: [] }, videos), [])
 })
 
+test('同一 B 站视频的不同分 P 可以互相关联，但不会关联自身', () => {
+  const current = { title: '第二集', bvid: 'BV1aaaaaaaaa', page: 2, concepts: ['共同概念'] }
+  const result = findRelatedVideos(current, [
+    { title: '第一集', bvid: 'BV1aaaaaaaaa', page: 1, notePath: '示例/第一集.md', concepts: ['共同概念'] },
+    { title: '第二集', bvid: 'BV1aaaaaaaaa', page: 2, notePath: '示例/第二集.md', concepts: ['共同概念'] },
+  ])
+  assert.deepEqual(result.map(row => row.title), ['第一集'])
+})
+
 test('buildConceptIndex groups videos by concept', () => {
   const index = buildConceptIndex([
     { title: 'v1', notePath: 'a/v1.md', subject: '写作', concepts: ['责任前置', '信任重建'] },

@@ -185,6 +185,9 @@ export function resolveConfig(raw = {}) {
 
   requireNonEmptyString(config.noteRoot, 'noteRoot')
   config.noteRoot = config.noteRoot.trim()
+  if (config.noteRoot.replace(/\\/g, '/').split('/').includes('..')) {
+    throw new Error('seen-core: noteRoot 不能包含 .. 路径段')
+  }
   if (!NOTE_LAYOUTS.includes(config.noteLayout)) config.noteLayout = DEFAULTS.noteLayout
 
   if (typeof config.mnemonStore !== 'string' || config.mnemonStore.trim() === '') {

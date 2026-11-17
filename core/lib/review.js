@@ -1,5 +1,5 @@
 /**
- * seen-core · 每周回顾（写入 noteRoot/回顾/）
+ * seen-core · 每周回顾（写入 noteRoot/资料/回顾/）
  *
  * 按自然周（周一 ~ 周日）汇总本周处理过的视频，生成一篇 Markdown 回顾。
  * 只读取传入的 history 数据，不访问文件系统。
@@ -30,10 +30,9 @@ export function isoWeek(input = new Date()) {
 export function weekRange(year, week) {
   const jan4 = new Date(year, 0, 4)
   const day = jan4.getDay() || 7
-  const week1Monday = new Date(year, 0, 4 - day + 1)
-  const start = new Date(week1Monday.getTime() + (week - 1) * 7 * 86400000)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start.getTime() + 7 * 86400000 - 1)
+  const start = new Date(year, 0, 4 - day + 1 + (week - 1) * 7)
+  const nextMonday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7)
+  const end = new Date(nextMonday.getTime() - 1)
   return { start, end }
 }
 

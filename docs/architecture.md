@@ -13,7 +13,7 @@
   → 去重（state.seen：bvid 优先，其次 <source>:<videoId>）
   → 稳定计数（stablePolls=2）
   → processTitle()
-      → session.getBilibiliCookieHeader()（yt-dlp 临时读取浏览器 Cookie，不落盘）
+      → session.getBilibiliCookieHeader()（yt-dlp 将浏览器 Cookie 写入临时文件，读取后清理）
       → fetchContent()：
           → URL/BV 直取 view（title/desc/tags/pages/cid/subtitle）
           → 无 URL 时 searchVideo(title) + 相似度 ≥0.5
@@ -69,7 +69,8 @@
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
 - 多个 Seen 实例共用同一状态目录与 `instance.lock`：后启动的为只读，停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
-- AI 字幕缓存写入 `~/.seen/cache/transcripts/<bvid>.json`，默认保留 7 天；`force` 扫描会跳过缓存。
+- API 的 POST 请求使用 `application/json`；浏览器请求须与面板同源，默认环回监听也会校验请求地址。本机原生客户端可直接调用。
+- B 站字幕缓存写入 `~/.seen/cache/transcripts/<bvid>__<cid>.json`，默认保留 30 天；`force` 扫描会跳过缓存。
 - 开机自启用 `scripts/install-launchd.mjs`；双击 `seen.command` 可临时启动。
 
 ## 状态文件
@@ -106,13 +107,13 @@
 - 总览：AUTO 区（学科 mindmap + 学科列表 + 最近更新 + 知识库概况）；`flat` 布局下学科手册与笔记同级，`structured` 布局下分到 `笔记/` 与 `资料/手册/`。
 - 概念页/主题页：按出现篇数阈值自动建页，只维护 AUTO 区；主题页的相关概念只链接真实存在的概念页。
 - 写入采用 tmp + rename 原子替换；学习手册/总览只替换 `<!-- AUTO:START -->` 与 `<!-- AUTO:END -->` 之间。
-- 所有 vault 读写都是异步的，并经过 `runVaultTask`：权限守卫 → 串行队列 → 10 秒超时熔断。macOS 的 TCC 没授权「文稿文件夹」时，同步 `open` 会让内核一直挂着，整个事件循环（含 HTTP）跟着卡死——所以权限探测放在子进程里做（`probeVaultAccess`），主进程只读结果。
+- 服务里的 vault 读写使用 `runVaultTask`：权限守卫 → 串行队列 → 10 秒超时熔断。macOS 的 TCC 没授权「文稿文件夹」时，同步 `open` 会让内核一直挂着，整个事件循环（含 HTTP）跟着卡死——所以权限探测放在子进程里做（`probeVaultAccess`），主进程只读结果。部分独立维护脚本仍使用同步文件操作，尚待迁移。
 
 ## 模型服务
 
 优先级：用户保存的设置（`~/.seen/llm.json`）→ 环境变量 → 自动探测本机 Magpie → 未配置。
 
-- 设置由网页「模型」弹窗写入，支持 24 个 OpenAI 兼容供应商预设与自定义 baseURL；
+- 设置由网页「模型」弹窗写入，支持 23 个 OpenAI 兼容供应商预设与自定义 baseURL；
 - 启动时 resolveLlmConfig() 决定来源，运行时保存设置通过 updateConfig() 热更新，无需重启；
 - apiKey 只存在本机文件（权限 600），接口回显脱敏，日志不记录。
 

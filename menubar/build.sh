@@ -34,7 +34,7 @@ bash scripts/make-icons.sh
 compile_arch() {
   local target_arch="$1"
   local out="$2"
-  swiftc -target "${target_arch}-apple-macosx13.0" -Onone Sources/*.swift -o "$out" -framework AppKit -framework SwiftUI -framework ServiceManagement -framework UserNotifications 2>/dev/null
+  swiftc -target "${target_arch}-apple-macosx13.0" -Onone Sources/*.swift -o "$out" -framework AppKit -framework SwiftUI -framework ServiceManagement -framework UserNotifications
 }
 
 if [ "$BUNDLE" = "1" ] && [ "$ARCH_MODE" = "universal" ]; then

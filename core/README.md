@@ -12,6 +12,7 @@
 import { apply } from '../core/lib/index.js'
 
 const controller = apply(ctx, { autoStart: false, exposeController: true })
+await controller.ready // 等待笔记目录准备完成
 ```
 
 `apply` 返回控制器：

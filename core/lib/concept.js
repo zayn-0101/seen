@@ -5,6 +5,8 @@
  * 用归一键把它们对齐，再据此生成笔记间的双链。
  */
 
+import { extractPage } from './bilibili.js'
+
 const PUNCT = /[\s\u3000·・,，.。;；:：!！?？'"“”‘’()（）\[\]【】《》<>/\\|#^*~`_\-]+/g
 
 /** 概念的归一键：去标点空白、统一小写。 */
@@ -49,8 +51,10 @@ function conceptKeysOf(item) {
 }
 
 function sameVideo(a = {}, b = {}) {
-  if (a.bvid && b.bvid) return a.bvid === b.bvid
-  if (a.videoId && b.videoId) return a.videoId === b.videoId
+  if (a.bvid && b.bvid) {
+    return a.bvid === b.bvid && (Number(a.page) || extractPage(a.url)) === (Number(b.page) || extractPage(b.url))
+  }
+  if (a.videoId && b.videoId) return a.videoId === b.videoId && (!a.source || !b.source || a.source === b.source)
   if (a.url && b.url) return a.url === b.url
   return Boolean(a.title && b.title && a.title === b.title)
 }

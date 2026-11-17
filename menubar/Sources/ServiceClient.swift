@@ -124,6 +124,11 @@ enum API {
 final class ServiceProcess {
     private var process: Process?
     private(set) var spawnedByUs = false
+    private let logDirectory: URL
+
+    init(logDirectory: URL? = nil) {
+        self.logDirectory = logDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".seen")
+    }
 
     /// 打包版的内置资源目录（Contents/Resources/app）；开发版返回 nil。
     var bundledResourcePath: String? {
@@ -173,17 +178,20 @@ final class ServiceProcess {
     var isRunning: Bool { process?.isRunning ?? false }
 
     func startIfNeeded() -> Bool {
-        guard process == nil else { return false }
+        guard process?.isRunning != true else { return false }
+        process = nil
+        spawnedByUs = false
         let repo = repoPath
         guard FileManager.default.fileExists(atPath: repo + "/server/index.js") else { return false }
 
-        let logDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".seen")
+        let logDir = logDirectory
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logURL = logDir.appendingPathComponent("server.log")
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        proc.arguments = ["-lc", "cd \"\(repo)\" && exec \"\(nodeBinary)\" server/index.js --no-open"]
+        proc.currentDirectoryURL = URL(fileURLWithPath: repo, isDirectory: true)
+        proc.arguments = ["-lc", "exec \"$@\"", "seen-service", nodeBinary, "server/index.js", "--no-open"]
         // 菜单栏应用运行时由应用自己的通知中心投递，服务端不再走 osascript。
         var environment = ProcessInfo.processInfo.environment
         environment["SEEN_DISABLE_NOTIFY"] = "1"
