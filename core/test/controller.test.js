@@ -269,6 +269,65 @@ type: "video"
   }
 })
 
+test('重整理保留原始字幕来源，不因 archive 掉分', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({
+      vaultPath: vault, noteRoot: '视频笔记', subject: '学科甲', title: '人工字幕视频', source: 'bilibili', bvid: 'BV1Archive01',
+      content: `---
+title: "人工字幕视频"
+subject: "学科甲"
+source: "bilibili"
+bvid: "BV1Archive01"
+url: "https://www.bilibili.com/video/BV1Archive01"
+contentSource: "up-subtitle"
+type: "video"
+---
+
+## 视频信息
+
+## 核心知识点
+
+## 来源统计
+`,
+    })
+    await writeTranscriptNote({
+      vaultPath: vault, noteRoot: '视频笔记', noteName: '人工字幕视频',
+      content: renderTranscriptNote({ title: '人工字幕视频', notePath: note.relPath, transcript: '这是 UP 主提供的字幕存档，用于验证重整理不会因为来源变成 archive 而丢掉人工字幕的评分。' }),
+    })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({ subjects: { 学科甲: { videos: [{
+      title: '人工字幕视频', source: 'bilibili', bvid: 'BV1Archive01', url: 'https://www.bilibili.com/video/BV1Archive01', notePath: note.relPath,
+    }] } } }))
+    const ctx = fakeCtx(new Map())
+    ctx.llm.stream = async function* ({ system }) {
+      const response = system.includes('分类助手')
+        ? { isCourse: true, subject: '学科甲', title: '人工字幕视频', keywords: [] }
+        : {
+            summary: '示例摘要',
+            keyPoints: Array.from({ length: 6 }, (_, index) => ({ title: '主题' + index, points: ['要点'] })),
+            concepts: Array.from({ length: 4 }, (_, index) => ({ name: '概念' + index, brief: '说明' })),
+          }
+      yield { type: 'text-delta', text: JSON.stringify(response) }
+    }
+    const api = apply(ctx, {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false, fetchContent: false, fetchTranscript: false,
+    })
+    await api.ready
+    const result = await api.resummarizeNote({ notePath: note.relPath })
+    assert.equal(result.ok, true, result.message)
+    const saved = readFileSync(join(vault, note.relPath), 'utf8')
+    assert.ok(saved.includes('contentSource: "archive"'))
+    assert.ok(saved.includes('transcriptOrigin: "up-subtitle"'))
+    assert.ok(saved.includes('quality: 5'))
+    assert.ok(saved.includes('内容来源：本地字幕存档'))
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
 test('重整理 B 站多 P 旧笔记时按原 URL 的 p 参数匹配，不生成重复副本', async () => {
   const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
   const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))

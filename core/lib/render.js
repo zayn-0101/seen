@@ -215,6 +215,19 @@ function toCount(value) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
 }
 
+/** 重整理笔记时，用可读名称标注原始字幕来源。 */
+function transcriptOriginLabel(value) {
+  const source = cleanInline(value)
+  if (source === 'up-subtitle') return 'UP 主字幕'
+  if (source === 'ai-subtitle') return 'B站 AI 字幕'
+  if (source === 'youtube-subtitle') return 'YouTube 字幕'
+  if (source === 'auto-subtitle') return 'YouTube 自动字幕'
+  if (source === 'whisper') return '本地 Whisper 转写'
+  if (source === 'archive') return '更早的字幕存档'
+  if (source === 'metadata') return '简介与讨论'
+  return ''
+}
+
 function normalizeFetchStats(raw) {
   const src = isPlainObject(raw) ? raw : {}
   return {
@@ -452,6 +465,8 @@ export function renderVideoNote(input = {}) {
   const duration = toCount(source.duration)
   const publishedAt = cleanInline(source.publishedAt)
   const contentSource = cleanInline(source.contentSource) || 'metadata'
+  const transcriptOrigin = cleanInline(source.transcriptOrigin) || contentSource
+  const transcriptOriginName = transcriptOriginLabel(transcriptOrigin)
   const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
   // 元数据版没有字幕支撑，概念和数字容易被模型编出来，整节省略
   const concepts = contentQuality === 'full' ? normalizeConcepts(source.concepts) : []
@@ -466,7 +481,7 @@ export function renderVideoNote(input = {}) {
     source.quality,
     scoreNoteQuality({
       contentQuality,
-      transcriptSource: contentSource,
+      transcriptSource: transcriptOrigin,
       transcriptLength,
       keyPointCount: keyPoints.length,
       conceptCount: concepts.length,
@@ -503,6 +518,10 @@ export function renderVideoNote(input = {}) {
   if (review) frontmatterData.review = review
   if (bvid) frontmatterData.bvid = bvid
   if (videoId) frontmatterData.videoId = videoId
+  // 重整理时正文来自本地存档，但评分和来源说明仍以原始字幕来源为准。
+  if (contentSource === 'archive' && transcriptOrigin && transcriptOrigin !== 'archive') {
+    frontmatterData.transcriptOrigin = transcriptOrigin
+  }
   const frontmatter = renderFrontmatter(frontmatterData)
 
   const lines = []
@@ -518,6 +537,8 @@ export function renderVideoNote(input = {}) {
     lines.push('> [!info] 内容来源：YouTube 自动字幕（自动识别，可能存在少量错字）', '')
   } else if (contentSource === 'whisper') {
     lines.push('> [!info] 内容来源：音频，本地 Whisper 转写（自动识别，可能存在同音错字）', '')
+  } else if (contentSource === 'archive') {
+    lines.push('> [!info] 内容来源：本地字幕存档（重整理' + (transcriptOriginName ? '，原文来自 ' + transcriptOriginName : '') + '）', '')
   }
   lines.push('> [!abstract] 一句话总结', `> ${summary || '（暂无摘要）'}`, '')
   if (question) lines.push('> [!question] 这期想回答', `> ${question}`, '')
@@ -653,23 +674,28 @@ export function renderVideoNote(input = {}) {
   lines.push('## 我的补充', '', MANUAL_BEGIN, '', MANUAL_END, '')
 
   lines.push('## 来源统计', '', '<details>', '<summary>展开技术细节</summary>', '')
+  const archiveTranscriptSuffix = contentSource === 'archive'
+    ? '（本地字幕存档' + (transcriptOriginName ? '，原文来自 ' + transcriptOriginName : '') + '）'
+    : ''
   if (platform === 'douyin') {
     lines.push(`- 抖音精选：${url || '（未匹配到抖音视频）'}`)
     lines.push(`- 视频 ID：${videoId || '（无）'}`)
     lines.push(`- 作者：${author || '（未知）'}`)
     lines.push(`- 视频简介：${stats.desc} 字`)
     lines.push(`- 标签：${stats.tags} 个`)
-    lines.push(`- 音频转写：${stats.transcript} 字（本地 Whisper）`)
+    lines.push(`- 音频转写：${stats.transcript} 字${archiveTranscriptSuffix || '（本地 Whisper）'}`)
     lines.push(`- 弹幕：全站 ${stats.totalDanmaku || '未知'} 条（暂未抓取）`)
     lines.push(`- 评论：全站 ${stats.totalComments || '未知'} 条（暂未抓取）`, '')
   } else if (platform === 'youtube') {
-    const ytLabel = contentSource === 'youtube-subtitle'
-      ? '（YouTube 字幕）'
-      : contentSource === 'auto-subtitle'
-        ? '（YouTube 自动字幕）'
-        : contentSource === 'whisper'
-          ? '（本地 Whisper 转写）'
-          : ''
+    const ytLabel = contentSource === 'archive'
+      ? archiveTranscriptSuffix
+      : contentSource === 'youtube-subtitle'
+        ? '（YouTube 字幕）'
+        : contentSource === 'auto-subtitle'
+          ? '（YouTube 自动字幕）'
+          : contentSource === 'whisper'
+            ? '（本地 Whisper 转写）'
+            : ''
     lines.push(`- YouTube 视频：${url || '（未匹配到 YouTube 视频）'}`)
     lines.push(`- 视频 ID：${videoId || '（无）'}`)
     lines.push(`- 频道：${author || '（未知）'}`)
@@ -684,11 +710,15 @@ export function renderVideoNote(input = {}) {
     lines.push(`- UP 主：${author || '（未知）'}`)
     lines.push(`- 视频简介：${stats.desc} 字`)
     lines.push(`- 标签：${stats.tags} 个`)
-    const transcriptLabel = contentSource === 'ai-subtitle'
-      ? '（B站 AI 字幕）'
-      : contentSource === 'up-subtitle'
-        ? '（UP 主字幕）'
-        : ''
+    const transcriptLabel = contentSource === 'archive'
+      ? archiveTranscriptSuffix
+      : contentSource === 'ai-subtitle'
+        ? '（B站 AI 字幕）'
+        : contentSource === 'up-subtitle'
+          ? '（UP 主字幕）'
+          : contentSource === 'whisper'
+            ? '（本地 Whisper 转写）'
+            : ''
     lines.push(`- 字幕：${stats.transcript} 字${transcriptLabel}`)
     lines.push(`- 弹幕：抓取 ${stats.danmaku} 条 / 全站 ${stats.totalDanmaku || '未知'} 条`)
     lines.push(`- 评论：抓取 ${stats.comments} 条 / 全站 ${stats.totalComments || '未知'} 条`, '')

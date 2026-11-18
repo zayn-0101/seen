@@ -812,6 +812,8 @@ export function apply(ctx, rawConfig = {}) {
           logger.log('transcript.error msg=' + (error?.message || error))
         }
       }
+      // 重整理时内容来源标为 archive，但评分与来源说明仍使用原始字幕来源。
+      const noteTranscriptOrigin = String(input?.transcriptOrigin || transcriptSource || '').trim()
       if (content) {
         content.transcript = transcript
         content.transcriptSource = transcriptSource
@@ -840,7 +842,7 @@ export function apply(ctx, rawConfig = {}) {
       const noteResources = contentQuality === 'full' ? summary.resources : []
       const noteQuality = scoreNoteQuality({
         contentQuality,
-        transcriptSource,
+        transcriptSource: noteTranscriptOrigin,
         transcriptLength: transcript.length,
         keyPointCount: summary.keyPoints.length,
         conceptCount: noteConcepts.length,
@@ -920,6 +922,7 @@ export function apply(ctx, rawConfig = {}) {
         fetchStats: content?.fetchStats || null,
         tags: noteTags,
         chapters: noteChapters,
+        transcriptOrigin: noteTranscriptOrigin,
         contentSource: transcriptSource || 'metadata',
         contentQuality,
         noteRoot: config.noteRoot,
@@ -1530,6 +1533,8 @@ export function apply(ctx, rawConfig = {}) {
     const archiveBvid = found.video.bvid || noteMeta?.meta?.bvid || ''
     const archiveVideoId = found.video.videoId || noteMeta?.meta?.videoId || ''
     const archivePage = Number(found.video.page) || Number(noteMeta?.meta?.page) || (archiveSource === 'bilibili' ? extractPage(noteMeta?.url || '') : 1)
+    const archiveTranscript = parsed.text || parsed.timed
+    const archiveOrigin = String(noteMeta?.meta?.transcriptOrigin || noteMeta?.meta?.contentSource || '').trim()
     const prefetchedContent = {
       title: archiveTitle,
       url: archiveUrl,
@@ -1540,9 +1545,10 @@ export function apply(ctx, rawConfig = {}) {
       owner: noteMeta?.meta?.author || found.video.author || '',
       duration: Number(noteMeta?.duration) || 0,
       chapters: [],
-      fetchStats: null,
+      // 存档里已经有字幕正文，来源统计不应再显示 0 字。
+      fetchStats: { transcript: archiveTranscript.length },
     }
-    logger.log('resummarize.note=' + JSON.stringify(archiveTitle) + ' chars=' + (parsed.text || parsed.timed).length + ' archiveOnly=true')
+    logger.log('resummarize.note=' + JSON.stringify(archiveTitle) + ' chars=' + archiveTranscript.length + ' origin=' + (archiveOrigin || 'unknown') + ' archiveOnly=true')
     return await processTitle({
       title: archiveTitle,
       url: archiveUrl,
@@ -1552,9 +1558,10 @@ export function apply(ctx, rawConfig = {}) {
       page: archivePage,
       subject: found.subject,
       subjectLocked: true,
-      transcript: parsed.text || parsed.timed,
+      transcript: archiveTranscript,
       timedTranscript: parsed.timed,
       transcriptSource: 'archive',
+      transcriptOrigin: archiveOrigin,
       refresh: true,
       archiveOnly: true,
       previousNotePath: targetPath,

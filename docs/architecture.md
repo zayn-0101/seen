@@ -103,7 +103,7 @@
 
 重写笔记前的 .bak 与迁移副本放在 vault 外的 `~/.seen/backups/`。
 
-- 视频笔记：frontmatter（含 contentType / quality / format 4）+ 摘要问答 + 类型模板 + 知识点时间戳 + 核心概念 + 原话/术语/资源 + 来源统计（不抓封面、不画思维导图）。
+- 视频笔记：frontmatter（含 contentType / quality / format 4；重整理写 contentSource: archive，并用 transcriptOrigin 保留原始字幕来源）+ 摘要问答 + 类型模板 + 知识点时间戳 + 核心概念 + 原话/术语/资源 + 来源统计（不抓封面、不画思维导图）。
 - 学科学习手册：AUTO 区（mindmap + 学习路径 + 视频链接 + 核心概念 + 术语表 + 常见对比 + 待解问题）+ 用户「我的补充」区。
 - 总览：AUTO 区（学科 mindmap + 学科列表 + 最近更新 + 知识库概况）；`flat` 布局下学科手册与笔记同级，`structured` 布局下分到 `笔记/` 与 `资料/手册/`。
 - 概念页/主题页：按出现篇数阈值自动建页，只维护 AUTO 区；主题页的相关概念只链接真实存在的概念页。

@@ -24,6 +24,30 @@ test('renderVideoNote warns when no transcript and shows real totals', () => {
   assert.equal(formatDuration(3041), '50:41')
 })
 
+test('renderVideoNote keeps original transcript origin for archive re-summaries', () => {
+  const md = renderVideoNote({
+    title: '存档重整理',
+    subject: '测试学科',
+    source: 'bilibili',
+    bvid: 'BV1GJ411x7h7',
+    url: 'https://www.bilibili.com/video/BV1GJ411x7h7',
+    summary: '摘要',
+    keyPoints: Array.from({ length: 6 }, (_, index) => ({ title: '主题' + index, points: ['要点'] })),
+    concepts: Array.from({ length: 4 }, (_, index) => ({ name: '概念' + index, brief: '说明' })),
+    fetchStats: { desc: 20, tags: 3, transcript: 4000, danmaku: 1, comments: 1 },
+    contentSource: 'archive',
+    transcriptOrigin: 'up-subtitle',
+    transcriptLength: 4000,
+    contentQuality: 'full',
+  })
+  assert.ok(md.includes('quality: 5'))
+  assert.ok(md.includes('transcriptOrigin: "up-subtitle"'))
+  assert.ok(md.includes('内容来源：本地字幕存档'))
+  assert.ok(md.includes('原文来自 UP 主字幕'))
+  assert.ok(md.includes('字幕：4000 字（本地字幕存档，原文来自 UP 主字幕）'))
+  assert.ok(!md.includes('音频转写：4000 字（本地 Whisper）'))
+})
+
 test('renderVideoNote labels AI subtitle', () => {
   const md = renderVideoNote({
     title: '测试课程', subject: '机器学习', summary: '摘要',

@@ -392,3 +392,14 @@
 - [x] 删除旧 metadata 孤立笔记后复检：npm run self-check 13 篇（当前格式 13 / 旧格式 0），错误 0、警告 0；索引 239 条双链 / 手册 6 篇，状态 13 条 / 笔记缺失 0 / 字幕缺失 0
 - [x] 0.5.3 universal app 重新构建、固定证书签名并安装到 ~/Applications/Seen.app；启动日志显示通知权限 authorized、SSE HTTP 200
 - [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.3.dmg`（85M，universal）：挂载校验 app 版本 0.5.3、固定证书签名通过、lipo 为 x86_64 + arm64，bundle 内含 `player/wbi/v2`、`LLM_TIMEOUT_MS = 300000`、`通知：` 日志与 `previousNotePath` 复用逻辑
+
+## 2026-11-18 重整理来源语义修复
+
+背景：用存档字幕重整理后，frontmatter 的 `contentSource` 变成 `archive`，评分与来源提示只认这个字段，导致短人工字幕笔记重整理掉分、来源统计显示「音频转写 0 字」、正文没有来源说明。
+
+- [x] 重整理仍写 `contentSource: "archive"`，同时新增 frontmatter `transcriptOrigin` 保存原始字幕来源（旧笔记从原 `contentSource` 回退）
+- [x] 质量分与来源统计标签改用 `transcriptOrigin`；短人工字幕重整理后不会再因为 `archive` 掉 1 分
+- [x] 正文新增「内容来源：本地字幕存档（重整理，原文来自 UP 主字幕 / B站 AI 字幕 / YouTube 字幕 / 本地 Whisper 转写）」；抖音、YouTube、B站的来源统计都显示存档字数，不再是 0 字
+- [x] 新增回归：`renderVideoNote` 的 archive + up-subtitle 场景（quality 5、frontmatter `transcriptOrigin`、来源提示）；`resummarizeNote` 从旧笔记回填原始来源并保留 5 分
+- [x] `cd core && node --test`：356 tests / 356 pass / 0 fail；`npm run check` 109 个文件通过
+- [x] README / CLAUDE.md / docs/contracts.md / docs/architecture.md 同步 `transcriptOrigin` 与 archive 评分说明
