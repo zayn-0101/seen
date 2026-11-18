@@ -119,6 +119,23 @@ cd menubar
 
 打包机首次构建前，在「钥匙串访问 → 证书助理」创建一张名为 `Seen Local Signing` 的「代码签名」自签名证书；`build.sh` 会自动用它签名。没有证书时回退 ad-hoc，重装会重置 macOS 的文件访问授权。
 
+每次构建会把旧的 `menubar/dist/Seen.app` 移到 `menubar/build/previous-app.*` 留作备份，不会自动删除；构建多了会占空间。默认只预览，确认后再加 `--apply`：
+
+```bash
+du -sh menubar/build
+npm run prune:build -- --keep 3          # 预览：保留最新 3 份
+npm run prune:build -- --apply --keep 3  # 真正删除
+```
+
+`--install` 会先在同目录暂存新版本，成功后再替换 `~/Applications/Seen.app`；普通命令失败或收到 INT/TERM/HUP 时会恢复旧版本。SIGKILL、断电等无法捕获的情况不能保证自动回滚，旧版本会留在 `~/.seen/install-backups/`（可用 `SEEN_INSTALL_BACKUP_DIR` 覆盖，备份目录必须与安装目录在同一磁盘），需要时手动放回。
+
+安装备份同样不会自动删除。默认保留最新 2 份，先预览，确认后再加 `--apply`：
+
+```bash
+npm run prune:install -- --keep 2          # 预览：保留最新 2 份
+npm run prune:install -- --apply --keep 2  # 真正删除
+```
+
 ### 如何更新
 
 安装包里内嵌了服务代码，所以**升级要重新下载 dmg 覆盖安装**（直接把新的 `Seen.app` 拖进「应用程序」替换旧的；源码运行的话 `git pull` 后重启服务即可）。
@@ -540,9 +557,12 @@ npm run check                   # 全仓 JavaScript 语法检查
 npm run self-check              # 体检库里的笔记：结构、标签、双链、状态一致性
 npm run self-check:llm          # 再用缓存回放，跑分段与总结的模型回归
 node scripts/maintain-vault.mjs # 按 state 重建索引、概念页、主题页、手册与总览（--dry-run 只统计）
+node scripts/audit-transcripts.mjs # 只读核对 state 与字幕存档的归属/重复/缺失（--json 输出报告）
+npm run prune:build -- --keep 3    # 预览清理 menubar/build 构建备份（--apply 才删除）
+npm run prune:install -- --keep 2  # 预览清理 ~/.seen/install-backups 安装备份（--apply 才删除）
 ```
 
-`self-check` 只读，不联网、不改笔记；用缓存的弹幕/字幕回放，检查版式区块、区块顺序、四层标签、章节时间轴、双链是否断、状态与笔记是否同步。旧格式笔记（frontmatter 里的 `format` 低于当前版本 4）的结构缺失只算警告，当前格式的问题才算错误，退出码 1 表示有错误。`--runs 5` 可加次数，`--json <路径>` 输出机器可读报告。
+`self-check` 只读，不联网、不改笔记；用缓存的弹幕/字幕回放，检查版式区块、区块顺序、四层标签、章节时间轴、双链是否断、状态与笔记是否同步。旧格式笔记（frontmatter 里的 `format` 低于当前版本 4）的结构缺失只算警告，当前格式的问题才算错误，退出码 1 表示有错误。`--runs 5` 可加次数，`--json <路径>` 输出机器可读报告。`audit-transcripts` 同样只读：旧 `字幕/` 路径只报 warning；state 的 transcriptPath 指向别人的存档、路径非法或指向字幕目录外、存档 owner 对不上、同一 owner 多份、同名无主多份、字幕目录读不了（含指向 vault 外部的符号链接）才算 error；它不会自动迁移或删除文件。
 
 开发约定见 [CLAUDE.md](CLAUDE.md)。
 

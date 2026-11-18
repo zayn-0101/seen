@@ -358,3 +358,20 @@
 - [x] 本机 API 防护：所有 API 请求始终校验 Host / Origin / Sec-Fetch-Site / JSON Content-Type；服务只允许绑定本机回环地址，非回环 `SEEN_HOST` 直接拒绝启动；删除 `GET /api/llm/models`，只保留 POST
 - [x] `cd core && node --test`：283 tests / 283 pass / 0 fail；`npm run check` 通过
 - [x] 未迁移或改写真实笔记与历史字幕，未执行安装或发布
+
+## 2026-11-18 四项待审查事项修复
+
+背景：对 `docs/audit-2026-11-17.md` 的四项待审查事项做只读复核，确认问题后按 v3.4 计划分阶段修复；每个阶段由三个只读子代理对抗审查，意见统一后再进入下一阶段。
+
+- [x] 阶段 1a 路径隔离：新增 `core/lib/vault-path.js`，对最深已存在祖先做 realpath、对最终项做 lstat；写操作拒绝符号链接，读允许 vault 内部链接；`obsidian.js`、`vault-search.js` 的 vault I/O 全部接入；`readTranscriptNote` 支持按 owner 读取 `(字幕-hash)` 副本；`readFrontmatterBvid` 改安全签名
+- [x] 阶段 1b 队列超时：`withVaultTimeout` 移到队列外层，队列 tail 等底层任务真正 settle；新增 `drainVaultQueue`，`reprobeVault` 先排空，超时保持只读并返回 `vault-queue-stuck`
+- [x] 阶段 2 批量写入：`defaultState` 增加 `pendingVideos` / `pendingReviews`；`processTitle` 写笔记前先落盘 pending，失败即中止；启动按 bvid/page、videoId/source 或 notePath 跨学科恢复，同一身份只保留一条并合并旧记录，歧义保留 pending；`ready` 与 `reprobeVault()` 共用恢复任务，首次权限不足后重新探测成功会补跑；`recordReview` pending 先行并在末次保存失败时恢复；`renameTag` 返回 `partial / changed / remaining / retryable`，`/api/tags/merge` 与 `/api/reviews` 对 partial 返回 200，面板显示警告
+- [x] 阶段 3 字幕审计：新增只读 `core/lib/transcript-audit.js` 与 `scripts/audit-transcripts.mjs`（JSON v1），扫描新旧字幕目录，旧路径和无主存档只告警，owner 不匹配/重复/不可读为错误；`self-check` 分级接入；`resummarizeNote` 在新路径缺失时回退旧目录并按 owner 校验
+- [x] 阶段 4 构建与安装：`scripts/prune-build-backups.mjs` 默认 dry-run，`--apply --keep N` 才删，拒绝符号链接、目录外路径和非法 keep；`npm run prune:build` 提供入口；`menubar/build.sh` 支持 `SEEN_BUILD_DIR` / `SEEN_DIST_DIR`；`menubar/install-app.sh` 同目录 staging、旧版本备份、普通失败或 INT/TERM/HUP 回滚（SIGKILL/断电不保证）、跨磁盘拒绝；`--install` 改走该脚本；安装备份用 `scripts/prune-install-backups.mjs`（`npm run prune:install`，默认 dry-run，`--apply --keep N` 才删，只处理 `Seen.app.*`，拒绝符号链接和目录外路径）
+- [x] `cd core && node --test`：326 tests / 326 pass / 0 fail；`npm run check` 106 个文件通过；`bash -n menubar/build.sh menubar/install-app.sh scripts/make-release.sh` 通过；临时目录实跑 `menubar/build.sh` 成功且真实构建目录未变化
+- [x] `node scripts/audit-transcripts.mjs`：真实库 12 条状态、12 份存档，错误 0、警告 12（全部旧字幕路径）；`npm run self-check` 仍因既有内容级 `theme-empty` 退出 1
+- [x] 复审追加：`reconcilePendingState` 从笔记回填 summary/question/answer/tags/concepts/quality/review 并重建索引；`normalizeNoteRoot` 统一 `./视频笔记` 等写法，恢复扫描同时支持 structured 与 flat，扫描不完整时保留 pending；`transcript-audit` 交叉核对 state.transcriptPath 与存档 owner（`state-transcript-owner-mismatch`），路径非法或指向字幕目录外报 `state-transcript-invalid` / `state-transcript-outside-archive`，直接读取字幕目录并把外指符号链接报 `archive-dir-unreadable`；`readVaultText` 区分 `vault-unavailable` 与 `not-found`；无 owner 读存档必须 `allowUnowned:true`；`recordReview` 在写入抛错时保留 pending
+- [x] 复审追加（audit2-core）：崩溃恢复按身份跨学科合并同一笔记的旧状态记录，优先使用新路径，删除重复并把记录迁到新学科；`ready` 与 `reprobeVault()` 共用恢复任务，首次 `vaultAccess` 超时、重新探测成功后补跑待处理视频；新增 `core/test/reconcile-pending.test.js` 3 项覆盖同路径旧记录、标题/学科变化和 reprobe 补跑
+- [x] `cd core && node --test`：348 tests / 348 pass / 0 fail；`npm run check` 109 个文件通过；`git diff --check` 无输出
+- [x] 真实库只读验证：`npm run self-check` 13 篇、错误 1（既有 `theme-empty`）、警告 13（12 条旧字幕路径 + 1 条 `chapters-missing`），退出 1；`node scripts/audit-transcripts.mjs` 13 条状态、12 份存档、错误 0、警告 12（全部旧字幕路径）
+- [x] 未删除真实构建备份、未安装新 app、未迁移或改写真实笔记

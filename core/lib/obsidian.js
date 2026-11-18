@@ -13,16 +13,29 @@
  */
 
 import { existsSync, statSync } from 'node:fs'
-import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir } from 'node:fs/promises'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
 import { extractPage } from './bilibili.js'
-import { conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath, weeklyReviewRelPath } from './paths.js'
+import { TRANSCRIPT_DIR, conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath, weeklyReviewRelPath } from './paths.js'
 import { transcriptNoteOwner } from './transcript-note.js'
 import { VAULT_IO_TIMEOUT_MS, createVaultQueue, withVaultTimeout } from './vault-access.js'
+import {
+  ensureVaultRoot,
+  ensureVaultDir,
+  safeReadFile,
+  safeWriteFile,
+  safeReaddir,
+  safeStat,
+  safeUnlink,
+  safeRename,
+  safeCopyFile,
+  safeCopyToExternal,
+  resolveExternalPath,
+} from './vault-path.js'
 import {
   autoBlock,
   mergeManualSection,
@@ -68,6 +81,11 @@ export function setVaultTimeout(ms) {
   return vaultTimeoutMs
 }
 
+/** 等待 vault 串行队列真正排空；超时返回 { ok:false, timedOut:true }，未完成的任务仍占用队列。 */
+export function drainVaultQueue(options = {}) {
+  return vaultQueue.drain(options)
+}
+
 function isPermissionError(error) {
   const code = String(error?.code || '')
   return code === 'EACCES' || code === 'EPERM'
@@ -80,12 +98,16 @@ function isPermissionError(error) {
 async function runVault(task) {
   const guard = activeGuard
   if (guard) guard.ensure()
-  return vaultQueue.run(async () => {
+  // 超时只能包在队列外层：队列的 tail 必须等底层 task 真正 settle，
+  // 否则超时后旧 I/O 仍可能在后台完成并覆盖后续写入。
+  const operation = vaultQueue.run(async () => {
     // 任务排队期间前一个操作可能已经触发熔断，执行前需再次检查。
     if (guard) guard.ensure()
     try {
-      const result = await withVaultTimeout(Promise.resolve().then(task), vaultTimeoutMs, guard)
-      if (guard) guard.noteOk()
+      const result = await Promise.resolve().then(task)
+      // 本次调用已经超时熔断时，晚到的成功不能解除熔断；队列虽然排空，
+      // 仍应由 reprobe 重新探测后再恢复可用。
+      if (guard && !guard.isBlocked()) guard.noteOk()
       return result
     } catch (error) {
       if (guard) {
@@ -98,11 +120,22 @@ async function runVault(task) {
       throw error
     }
   })
+  return withVaultTimeout(operation, vaultTimeoutMs, guard)
 }
 
-async function pathExists(file) {
+async function vaultPathExists(vaultPath, relPath) {
   try {
-    await stat(file)
+    await safeStat({ vaultPath, relPath })
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'vault-path-missing') return false
+    throw error
+  }
+}
+
+async function externalPathExists(file) {
+  try {
+    await lstat(file)
     return true
   } catch (error) {
     if (error?.code === 'ENOENT') return false
@@ -147,17 +180,19 @@ export function safeFilename(name, max = 80) {
   return sanitizeFilename(name, max)
 }
 
-/** 原子写：同目录临时文件写入后 rename 覆盖。 */
-async function atomicWrite(file, content) {
-  const dir = dirname(file)
-  await mkdir(dir, { recursive: true })
-  const tmp = `${file}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+/** 原子写：同目录临时文件写入后 rename 覆盖，所有路径都经过 vault 安全层。 */
+async function atomicWrite({ vaultPath, relPath, content } = {}) {
+  const parts = toPosix(relPath).split('/').filter(Boolean)
+  if (parts.length === 0) throw new Error('缺少文件路径')
+  const dirRel = parts.slice(0, -1).join('/')
+  await ensureVaultDir({ vaultPath, relDir: dirRel })
+  const tmpRel = relPath + '.tmp.' + process.pid + '.' + Date.now() + '.' + Math.random().toString(36).slice(2, 8)
   try {
-    await writeFile(tmp, String(content ?? ''), 'utf8')
-    await rename(tmp, file)
+    await safeWriteFile({ vaultPath, relPath: tmpRel, content })
+    await safeRename({ vaultPath, fromRelPath: tmpRel, toRelPath: relPath })
   } catch (error) {
     try {
-      await unlink(tmp)
+      await safeUnlink({ vaultPath, relPath: tmpRel })
     } catch {
       // 清理失败忽略，保留原始错误
     }
@@ -183,10 +218,9 @@ export function resolveVaultPath(config = {}) {
 export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir } = {}) {
   if (!vaultPath) throw new Error('ensureVaultDirs: 缺少 vaultPath')
   const root = normalizeNoteRoot(noteRoot)
-  const noteDir = absoluteFromRel(vaultPath, root)
   await runVault(async () => {
-    await mkdir(String(vaultPath), { recursive: true })
-    await mkdir(noteDir, { recursive: true })
+    await ensureVaultRoot(vaultPath)
+    await ensureVaultDir({ vaultPath, relDir: root })
   })
   if (stateDir) await mkdir(String(stateDir), { recursive: true })
 }
@@ -201,17 +235,19 @@ export function videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layou
 }
 
 /** 读取 frontmatter 中的 bvid（无 frontmatter / 无 bvid / 读不到返回 null）。 */
-export async function readFrontmatterBvid(filePath) {
-  return runVault(() => readBvidFile(filePath))
+export async function readFrontmatterBvid({ vaultPath, relPath } = {}) {
+  return runVault(async () => (await readNoteIdentityUnsafe({ vaultPath, relPath })).bvid || null)
 }
 
-async function readBvidFile(filePath) {
-  return (await readNoteIdentity(filePath)).bvid || null
+/** 读取笔记身份；走 vault 守卫、串行队列和超时。 */
+export async function readNoteIdentity({ vaultPath, relPath } = {}) {
+  return runVault(() => readNoteIdentityUnsafe({ vaultPath, relPath }))
 }
 
-async function readNoteIdentity(filePath) {
+/** 内部版本：调用方已经在 runVault 内时使用，避免重复排队死锁。 */
+async function readNoteIdentityUnsafe({ vaultPath, relPath } = {}) {
   try {
-    const text = (await readFile(filePath, 'utf8')).replace(/^\uFEFF/, '')
+    const text = (await safeReadFile({ vaultPath, relPath })).replace(/^\uFEFF/, '')
     const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
     if (!frontmatter) return {}
     const field = (name) => {
@@ -246,21 +282,27 @@ function siblingNotePath(base, suffix) {
   return { absPath, relPath: relDir + name }
 }
 
-async function backupFile(file, backupDir = '') {
+async function backupFile(vaultPath, relPath, backupDir = '') {
   const stamp = Date.now()
-  let backup = backupDir
-    ? join(String(backupDir), `${basename(file)}.bak-${stamp}`)
-    : `${file}.bak-${stamp}`
-  let index = 1
-  while (await pathExists(backup)) {
-    backup = backupDir
-      ? join(String(backupDir), `${basename(file)}.bak-${stamp}-${index}`)
-      : `${file}.bak-${stamp}-${index}`
+  const name = basename(relPath)
+  let index = 0
+  for (;;) {
+    const suffix = index === 0 ? '' : '-' + index
+    if (backupDir) {
+      const { target } = await resolveExternalPath({ root: backupDir, relPath: name + '.bak-' + stamp + suffix })
+      if (!(await externalPathExists(target))) {
+        await safeCopyToExternal({ vaultPath, relPath, root: backupDir, destRelPath: name + '.bak-' + stamp + suffix })
+        return target
+      }
+    } else {
+      const backupRel = relPath + '.bak-' + stamp + suffix
+      if (!(await vaultPathExists(vaultPath, backupRel))) {
+        await safeCopyFile({ vaultPath, fromRelPath: relPath, toRelPath: backupRel })
+        return join(vaultPath, backupRel)
+      }
+    }
     index += 1
   }
-  if (backupDir) await mkdir(String(backupDir), { recursive: true })
-  await copyFile(file, backup)
-  return backup
 }
 
 /**
@@ -282,15 +324,15 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
     const tag = safeFilename((targetBvid ? targetBvid + (Number(page) > 1 ? '-p' + Number(page) : '') : targetVideoId) || '重名', 80)
     for (let index = 0; index <= 100; index += 1) {
       if (index > 0) target = siblingNotePath(base, index === 1 ? ` (${tag})` : ` (${tag}-${index})`)
-      if (!(await pathExists(target.absPath))) break
-      const existing = noteIdentity(await readNoteIdentity(target.absPath))
+      if (!(await vaultPathExists(vaultPath, target.relPath))) break
+      const existing = noteIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: target.relPath }))
       const matches = Boolean(identity && existing && identity === existing)
       // 只有目标视频身份明确时才信任旧的无身份笔记：仅凭同名/旧路径可能是另一条视频，
       // 覆盖会丢掉用户手写内容。
       const trustedLegacy = Boolean(identity && !existing && previous && previous === target.relPath)
       if (matches || trustedLegacy) {
         if (!force) return { relPath: target.relPath, absPath: target.absPath, skipped: true }
-        await backupFile(target.absPath, backupDir)
+        await backupFile(vaultPath, target.relPath, backupDir)
         break
       }
       if (index === 100) target = siblingNotePath(base, ` (${tag}-${Date.now()})`)
@@ -299,14 +341,14 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
     // force 重写时把旧笔记里的手写内容搬回来，避免整篇覆盖丢掉
     let finalContent = content
     try {
-      if (await pathExists(target.absPath)) {
-        finalContent = mergeManualSection(await readFile(target.absPath, 'utf8'), content)
+      if (await vaultPathExists(vaultPath, target.relPath)) {
+        finalContent = mergeManualSection(await safeReadFile({ vaultPath, relPath: target.relPath }), content)
       }
     } catch {
       finalContent = content
     }
 
-    await atomicWrite(target.absPath, finalContent)
+    await atomicWrite({ vaultPath, relPath: target.relPath, content: finalContent })
     return { relPath: target.relPath, absPath: target.absPath, skipped: false }
   })
 }
@@ -322,12 +364,12 @@ function manualNotePath({ vaultPath, noteRoot, subject, layout }) {
 export function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout } = {}) {
   const target = manualNotePath({ vaultPath, noteRoot, subject, layout })
   return runVault(async () => {
-    if (!(await pathExists(target.absPath))) {
-      await atomicWrite(target.absPath, renderSubjectManual({ subject, videos, noteRoot, layout, updatedAt: Date.now() }))
+    if (!(await vaultPathExists(vaultPath, target.relPath))) {
+      await atomicWrite({ vaultPath, relPath: target.relPath, content: renderSubjectManual({ subject, videos, noteRoot, layout, updatedAt: Date.now() }) })
     } else {
-      const current = await readFile(target.absPath, 'utf8')
+      const current = await safeReadFile({ vaultPath, relPath: target.relPath })
       const next = upsertAutoBlock(current, autoBlock(subjectManualAutoBody({ subject, videos })))
-      await atomicWrite(target.absPath, next)
+      await atomicWrite({ vaultPath, relPath: target.relPath, content: next })
     }
     return { relPath: target.relPath, absPath: target.absPath }
   })
@@ -344,30 +386,113 @@ export function writeTranscriptNote({ vaultPath, noteRoot, noteName, content } =
   return runVault(async () => {
     let target = base
     let index = 0
-    while (await pathExists(target.absPath)) {
-      const existing = await readFile(target.absPath, 'utf8')
-      const existingOwner = toPosix(transcriptNoteOwner(existing))
-      if ((owner && existingOwner === owner) || existing === String(content ?? '')) break
+    for (;;) {
+      let state = 'missing'
+      try {
+        await safeStat({ vaultPath, relPath: target.relPath })
+        state = 'present'
+      } catch (error) {
+        if (error?.code === 'ENOENT' || error?.code === 'vault-path-missing') state = 'missing'
+        else if (error?.code === 'vault-path-broken-symlink') state = 'broken'
+        else throw error
+      }
+      if (state === 'missing') break
+      if (state === 'present') {
+        const existing = await safeReadFile({ vaultPath, relPath: target.relPath })
+        const existingOwner = toPosix(transcriptNoteOwner(existing))
+        if ((owner && existingOwner === owner) || existing === String(content ?? '')) break
+      }
+      // 同名但归属不同，或 base 是坏链：换一个带哈希后缀的副本，绝不覆盖。
       index += 1
       target = siblingNotePath(base, ` (字幕-${hash}${index > 1 ? '-' + index : ''})`)
     }
-    await atomicWrite(target.absPath, content)
+    await atomicWrite({ vaultPath, relPath: target.relPath, content })
     return target
   })
 }
 
 /** 读取字幕存档原文。文件不存在返回 null。 */
-export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {}) {
+export async function readTranscriptNote({ vaultPath, noteRoot, noteName, owner = '', allowUnowned = false } = {}) {
   const root = normalizeNoteRoot(noteRoot)
   const name = safeFilename(noteName || '未命名视频', 80)
   const relPath = toPosix(transcriptNoteRelPath({ noteRoot: root, noteName: name }))
+  const targetOwner = toPosix(owner)
   return runVault(async () => {
+    let baseText = null
     try {
-      return await readFile(absoluteFromRel(vaultPath, relPath), 'utf8')
+      baseText = await safeReadFile({ vaultPath, relPath })
     } catch (error) {
-      if (error?.code === 'ENOENT') return null
-      throw error
+      // 坏链等同 base 不存在：仍应扫描副本，而不是整次读取失败。
+      if (error?.code !== 'ENOENT' && error?.code !== 'vault-path-broken-symlink') throw error
     }
+    let baseOwner = ''
+    let baseParsed = false
+    if (baseText !== null) {
+      try {
+        baseOwner = toPosix(transcriptNoteOwner(baseText))
+        baseParsed = true
+      } catch {
+        baseParsed = false
+      }
+      if (baseParsed && targetOwner && baseOwner === targetOwner) return baseText
+    }
+    if (!targetOwner) {
+      if (baseText === null || !baseParsed) return null
+      // 没有 owner 就无从确认归属：有主和无主的 base 都只有调用方显式允许时才返回。
+      if (baseOwner) return allowUnowned ? baseText : null
+      return allowUnowned ? baseText : null
+    }
+
+    // base 不存在、无法解析，或明确属于别的笔记：扫描同目录的「(字幕-*)」副本。
+    const directory = dirname(relPath)
+    const baseName = basename(relPath, '.md')
+    const findCopy = async (dirRel, name) => {
+      let entries = []
+      try {
+        entries = await safeReaddir({ vaultPath, relPath: dirRel })
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      for (const entry of entries) {
+        if (!entry.isFile()) continue
+        if (!entry.name.startsWith(name + ' (字幕-') || !entry.name.endsWith('.md')) continue
+        const candidateRel = toPosix(join(dirRel, entry.name))
+        let text
+        try {
+          text = await safeReadFile({ vaultPath, relPath: candidateRel })
+        } catch (error) {
+          if (error?.code === 'ENOENT') continue
+          throw error
+        }
+        let candidateOwner = ''
+        try { candidateOwner = toPosix(transcriptNoteOwner(text)) } catch { continue }
+        if (candidateOwner && candidateOwner === targetOwner) return text
+      }
+      return null
+    }
+    const copy = await findCopy(directory, baseName)
+    if (copy !== null) return copy
+
+    // 升级前的旧目录 <noteRoot>/字幕/：只读回退，不自动移动文件。
+    const legacyRel = toPosix(join(root, TRANSCRIPT_DIR, name + '.md'))
+    let legacyText = null
+    try {
+      legacyText = await safeReadFile({ vaultPath, relPath: legacyRel })
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && error?.code !== 'vault-path-broken-symlink') throw error
+    }
+    if (legacyText !== null) {
+      let legacyOwner = ''
+      try { legacyOwner = toPosix(transcriptNoteOwner(legacyText)) } catch { legacyOwner = '' }
+      if (legacyOwner && legacyOwner === targetOwner) return legacyText
+      const legacyCopy = await findCopy(dirname(legacyRel), baseName)
+      if (legacyCopy !== null) return legacyCopy
+      if (allowUnowned && !legacyOwner) return legacyText
+    }
+
+    // 旧的无主存档只有在调用方确认「同名唯一」时才可用。
+    if (allowUnowned && baseText !== null && baseParsed && !baseOwner) return baseText
+    return null
   })
 }
 
@@ -375,13 +500,16 @@ export async function readTranscriptNote({ vaultPath, noteRoot, noteName } = {})
 export function readVaultText({ vaultPath, relPath } = {}) {
   const rel = toPosix(String(relPath ?? '')).replace(/^\/+/, '')
   if (!rel) return Promise.resolve({ ok: false, error: '缺少文件路径' })
-  const absPath = absoluteFromRel(vaultPath, rel)
   return runVaultTask(async () => {
     try {
-      return { ok: true, relPath: rel, text: await readFile(absPath, 'utf8') }
+      return { ok: true, relPath: rel, text: await safeReadFile({ vaultPath, relPath: rel }) }
     } catch (error) {
-      if (error?.code === 'ENOENT') return { ok: false, error: '文件不存在：' + rel }
-      return { ok: false, error: '读取失败：' + rel + '（' + (error?.message || error) + '）' }
+      const code = String(error?.code || '')
+      // vault 根不存在不是「这篇笔记不存在」：要保留恢复意图，等笔记库重新可访问再试。
+      if (code === 'vault-path-missing') return { ok: false, code: 'vault-unavailable', error: '笔记库不可访问：' + rel }
+      if (code.startsWith('vault-path-')) return { ok: false, code, error: '读取失败：' + rel + '（' + (error?.message || error) + '）' }
+      if (code === 'ENOENT') return { ok: false, code: 'not-found', error: '文件不存在：' + rel }
+      return { ok: false, code: 'read-failed', error: '读取失败：' + rel + '（' + (error?.message || error) + '）' }
     }
   })
 }
@@ -389,14 +517,14 @@ export function readVaultText({ vaultPath, relPath } = {}) {
 /** 只改 frontmatter 的 tags 行（保留其它字段与正文）。 */
 export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
   const relPath = toPosix(String(notePath ?? ''))
-  const absPath = absoluteFromRel(vaultPath, relPath)
   const json = JSON.stringify(Array.isArray(tags) ? tags : [])
   return runVault(async () => {
     let markdown
     try {
-      markdown = await readFile(absPath, 'utf8')
-    } catch {
-      return { ok: false, error: '笔记不存在：' + relPath }
+      markdown = await safeReadFile({ vaultPath, relPath })
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { ok: false, error: '笔记不存在：' + relPath }
+      throw error
     }
     const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
     if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }
@@ -406,7 +534,7 @@ export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
       ? block.replace(/^tags:.*$/m, line)
       : block.replace(/\s*$/, '') + '\n' + line
     const next = markdown.slice(0, match.index) + '---\n' + nextBlock + '\n---' + markdown.slice(match.index + match[0].length)
-    await atomicWrite(absPath, next)
+    await atomicWrite({ vaultPath, relPath, content: next })
     return { ok: true, relPath }
   })
 }
@@ -415,14 +543,14 @@ export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
 export function updateNoteReview({ vaultPath, notePath, review } = {}) {
   const relPath = String(notePath || '').trim().replace(/\\/g, '/')
   if (!relPath) return Promise.resolve({ ok: false, error: '缺少 notePath' })
-  const absPath = absoluteFromRel(vaultPath, relPath)
   const json = JSON.stringify(review && typeof review === 'object' ? review : {})
   return runVault(async () => {
     let markdown
     try {
-      markdown = await readFile(absPath, 'utf8')
-    } catch {
-      return { ok: false, error: '笔记不存在：' + relPath }
+      markdown = await safeReadFile({ vaultPath, relPath })
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { ok: false, error: '笔记不存在：' + relPath }
+      throw error
     }
     const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
     if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }
@@ -432,7 +560,7 @@ export function updateNoteReview({ vaultPath, notePath, review } = {}) {
       ? block.replace(/^review:.*$/m, line)
       : block.replace(/\s*$/, '') + '\n' + line
     const next = markdown.slice(0, match.index) + '---\n' + nextBlock + '\n---' + markdown.slice(match.index + match[0].length)
-    await atomicWrite(absPath, next)
+    await atomicWrite({ vaultPath, relPath, content: next })
     return { ok: true, relPath }
   })
 }
@@ -443,12 +571,12 @@ export function updateOverview({ vaultPath, noteRoot, subjects, videos, layout }
   const relPath = toPosix(join(root, OVERVIEW_FILENAME))
   const target = { absPath: absoluteFromRel(vaultPath, relPath), relPath }
   return runVault(async () => {
-    if (!(await pathExists(target.absPath))) {
-      await atomicWrite(target.absPath, renderOverview({ subjects, videos, noteRoot: root, layout, updatedAt: Date.now() }))
+    if (!(await vaultPathExists(vaultPath, relPath))) {
+      await atomicWrite({ vaultPath, relPath, content: renderOverview({ subjects, videos, noteRoot: root, layout, updatedAt: Date.now() }) })
     } else {
-      const current = await readFile(target.absPath, 'utf8')
+      const current = await safeReadFile({ vaultPath, relPath })
       const next = upsertAutoBlock(current, autoBlock(overviewAutoBody({ subjects, videos, noteRoot: root, layout })))
-      await atomicWrite(target.absPath, next)
+      await atomicWrite({ vaultPath, relPath, content: next })
     }
     return target
   })
@@ -538,11 +666,10 @@ export function writeWeeklyReview({ vaultPath, noteRoot, label, markdown } = {})
   if (!label) throw new Error('writeWeeklyReview: 缺少 label')
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(weeklyReviewRelPath({ noteRoot: root, label }))
-  const absPath = absoluteFromRel(vaultPath, relPath)
   return runVault(async () => {
-    if (await pathExists(absPath)) return { ok: true, skipped: true, relPath, absPath }
-    await atomicWrite(absPath, markdown)
-    return { ok: true, skipped: false, relPath, absPath }
+    if (await vaultPathExists(vaultPath, relPath)) return { ok: true, skipped: true, relPath, absPath: absoluteFromRel(vaultPath, relPath) }
+    await atomicWrite({ vaultPath, relPath, content: markdown })
+    return { ok: true, skipped: false, relPath, absPath: absoluteFromRel(vaultPath, relPath) }
   })
 }
 
@@ -551,14 +678,13 @@ function writeAutoNote({ vaultPath, noteRoot, filename, title, type, markdown } 
   if (!vaultPath) throw new Error('writeAutoNote: 缺少 vaultPath')
   const root = normalizeNoteRoot(noteRoot)
   const relPath = toPosix(join(root, filename))
-  const absPath = absoluteFromRel(vaultPath, relPath)
   const body = autoBlock(String(markdown || ''))
   return runVault(async () => {
-    if (await pathExists(absPath)) {
-      const current = await readFile(absPath, 'utf8')
+    if (await vaultPathExists(vaultPath, relPath)) {
+      const current = await safeReadFile({ vaultPath, relPath })
       const next = upsertAutoBlock(current, body)
-      if (next !== current) await atomicWrite(absPath, next)
-      return { ok: true, relPath, absPath, created: false }
+      if (next !== current) await atomicWrite({ vaultPath, relPath, content: next })
+      return { ok: true, relPath, absPath: absoluteFromRel(vaultPath, relPath), created: false }
     }
     const content = [
       '---',
@@ -574,8 +700,8 @@ function writeAutoNote({ vaultPath, noteRoot, filename, title, type, markdown } 
       '',
       '',
     ].join('\n')
-    await atomicWrite(absPath, content)
-    return { ok: true, relPath, absPath, created: true }
+    await atomicWrite({ vaultPath, relPath, content })
+    return { ok: true, relPath, absPath: absoluteFromRel(vaultPath, relPath), created: true }
   })
 }
 

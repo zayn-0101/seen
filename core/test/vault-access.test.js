@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runVaultTask, setVaultGuard, setVaultTimeout } from '../lib/obsidian.js'
+import { drainVaultQueue, runVaultTask, setVaultGuard, setVaultTimeout } from '../lib/obsidian.js'
 import {
   VAULT_HINT,
   VaultBlockedError,
@@ -83,6 +84,37 @@ test('createVaultQueue runs tasks one at a time', async () => {
   assert.deepEqual(order, ['first-start', 'first-end', 'second-start'])
 })
 
+test('超时不会让旧写入晚到覆盖新数据', async () => {
+  const queue = createVaultQueue()
+  const guard = createVaultGuard()
+  let content = 'initial'
+  const first = queue.run(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    content = 'stale'
+  })
+  const timed = withVaultTimeout(first, 20, guard)
+  const second = queue.run(async () => {
+    content = 'fresh'
+    return 'second'
+  })
+  await assert.rejects(timed, (error) => error instanceof VaultBlockedError && error.code === 'timeout')
+  assert.equal(content, 'initial')
+  assert.equal(await second, 'second')
+  assert.equal(content, 'fresh')
+})
+
+test('drain 等队列真正排空，超时后任务仍占用队列', async () => {
+  const queue = createVaultQueue()
+  let release
+  const task = queue.run(() => new Promise((resolve) => { release = resolve }))
+  const early = await queue.drain({ timeoutMs: 20 })
+  assert.deepEqual(early, { ok: false, timedOut: true })
+  release('done')
+  assert.equal(await task, 'done')
+  const late = await queue.drain({ timeoutMs: 200 })
+  assert.deepEqual(late, { ok: true, timedOut: false })
+})
+
 test('vault 熔断后已经排队的操作不会继续执行', async () => {
   const guard = createVaultGuard()
   setVaultGuard(guard)
@@ -100,5 +132,28 @@ test('vault 熔断后已经排队的操作不会继续执行', async () => {
     await new Promise(resolve => setTimeout(resolve, 65))
     setVaultGuard(null)
     setVaultTimeout(10000)
+  }
+})
+
+test('真实 vault 任务超时后 drain 不会提前放行，旧写入不会覆盖新写入', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'seen-timeout-'))
+  setVaultTimeout(20)
+  try {
+    const first = runVaultTask(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await writeFile(join(dir, 'note.txt'), 'stale')
+    }).catch(error => error)
+    await new Promise(resolve => setTimeout(resolve, 35))
+    const early = await drainVaultQueue({ timeoutMs: 40 })
+    assert.equal(early.ok, false)
+    assert.equal(early.timedOut, true)
+    setVaultTimeout(10000)
+    const second = runVaultTask(() => writeFile(join(dir, 'note.txt'), 'fresh'))
+    await Promise.allSettled([first, second])
+    await drainVaultQueue({ timeoutMs: 500 })
+    assert.equal(await readFile(join(dir, 'note.txt'), 'utf8'), 'fresh')
+  } finally {
+    setVaultTimeout(10000)
+    rmSync(dir, { recursive: true, force: true })
   }
 })

@@ -59,7 +59,7 @@ seen/
 - 自动化测试不得安装系统工具或修改真实用户数据；依赖检测和外部服务使用隔离的替身或临时目录。
 - 菜单栏应用改动后运行：`cd menubar && ./build.sh`。
 - 松鼠系列以 `menubar/icon/squirrel/` 母版为准，用 `node scripts/export-icons.mjs` 统一生成应用、菜单栏和网页资源；完整交付包见 `docs/brand/`。
-- 图标构建使用新的临时工作目录，保留既有构建备份，不自动删除文件。
+- 图标构建使用新的临时工作目录，保留既有构建备份，不自动删除文件；清理用 `npm run prune:build -- --keep N`（默认预览，`--apply` 才删），只处理 `menubar/build/previous-app.*`。`./build.sh --install` 走 `menubar/install-app.sh`：同目录 staging、旧版本备份到 `~/.seen/install-backups/`、普通失败或 INT/TERM/HUP 回滚（SIGKILL/断电不保证），跨磁盘拒绝；安装备份用 `npm run prune:install -- --keep N` 清理（同样默认预览）。
 - 日志不得记录完整弹幕/评论全文、Cookie、密钥。
 - 不硬编码 vault 路径；默认自动检测，允许配置覆盖。
 - 不写死绝对路径：可执行文件按「环境变量 → PATH → 常见安装位置」探测；文档和配置里的路径用 `~` 或相对仓库根。

@@ -23,9 +23,14 @@ export function normalizeNoteLayout(value) {
   return String(value ?? '').trim().toLowerCase() === 'flat' ? 'flat' : 'structured'
 }
 
+/** 归一笔记根目录：反斜杠转正斜杠、去掉空段和 ./，保留 .. 交给配置校验拒绝。 */
+export function normalizeNoteRoot(noteRoot) {
+  const raw = String(noteRoot ?? '').replace(/\\/g, '/').trim()
+  return raw.split('/').filter((part) => part && part !== '.').join('/') || '视频笔记'
+}
+
 function cleanRoot(noteRoot) {
-  const root = String(noteRoot ?? '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
-  return root || '视频笔记'
+  return normalizeNoteRoot(noteRoot)
 }
 
 function cleanSegment(value, fallback) {

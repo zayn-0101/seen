@@ -474,7 +474,8 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const result = await engine.renameTag({ from: body.from, to: body.to })
       const data = await snapshot()
-      return json(res, result.ok ? 200 : 400, { ...data, result, error: result.ok ? undefined : result.message })
+      const accepted = result.ok || result.partial
+      return json(res, accepted ? 200 : 400, { ...data, result, error: accepted ? undefined : result.message })
     }
 
     // 问笔记库：检索相关笔记后让模型回答，返回答案与引用。
@@ -559,7 +560,8 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const result = await engine.recordReview({ notePath: body.notePath, rating: body.rating })
       const data = await snapshot()
-      return json(res, result.ok ? 200 : 400, { ...data, result })
+      const accepted = result.ok || result.partial
+      return json(res, accepted ? 200 : 400, { ...data, result, error: accepted ? undefined : result.message })
     }
 
     // 用字幕存档重整理一篇历史笔记；只读存档，不重新抓取或转写。

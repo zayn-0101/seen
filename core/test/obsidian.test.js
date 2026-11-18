@@ -28,7 +28,7 @@ test('writeVideoNote handles same/different bvid', async () => {
     const first = await writeVideoNote(base)
     assert.equal(first.skipped, false)
     assert.equal(first.relPath, '视频笔记/笔记/机器学习/梯度下降详解.md')
-    assert.equal(await readFrontmatterBvid(first.absPath), 'BV1GJ411x7h7')
+    assert.equal(await readFrontmatterBvid({ vaultPath: vault, relPath: first.relPath }), 'BV1GJ411x7h7')
     const second = await writeVideoNote(base)
     assert.equal(second.skipped, true)
     const other = await writeVideoNote({ ...base, bvid: 'BV1aaaaaaaaa', content: '---\nbvid: "BV1aaaaaaaaa"\n---\n' })
@@ -142,9 +142,22 @@ test('笔记相对路径不能通过 .. 访问 vault 外部', async () => {
   try {
     await ensureVaultDirs({ vaultPath: vault, noteRoot: '视频笔记' })
     writeFileSync(outside, '---\ntags: ["原文"]\n---\n不能改写', 'utf8')
-    await assert.rejects(async () => readVaultText({ vaultPath: vault, relPath: '../outside.md' }), /路径/)
+    const blockedRead = await readVaultText({ vaultPath: vault, relPath: '../outside.md' })
+    assert.equal(blockedRead.ok, false)
+    assert.match(blockedRead.error, /路径/)
     await assert.rejects(async () => updateNoteTags({ vaultPath: vault, notePath: '../outside.md', tags: ['修改'] }), /路径/)
     assert.match(readFileSync(outside, 'utf8'), /不能改写/)
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+})
+
+test('vault 目录不存在时保留可恢复语义，不当作笔记不存在', async () => {
+  const parent = mkdtempSync(join(tmpdir(), 'seen-missing-'))
+  try {
+    const result = await readVaultText({ vaultPath: join(parent, 'not-created'), relPath: '视频笔记/示例/笔记.md' })
+    assert.equal(result.ok, false)
+    assert.equal(result.code, 'vault-unavailable')
   } finally {
     rmSync(parent, { recursive: true, force: true })
   }

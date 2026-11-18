@@ -6,12 +6,17 @@
 #   ./build.sh --bundle --arch=arm64|x64|universal
 #                                 指定目标架构（默认 universal）
 #   ./build.sh --install          构建后安装到 ~/Applications
+#
+# 环境变量（自动化测试用）：
+#   SEEN_BUILD_DIR  覆盖中间产物目录，默认 build
+#   SEEN_DIST_DIR   覆盖构建产物目录，默认 dist
 set -euo pipefail
 cd "$(dirname "$0")"
 
 REPO="$(cd .. && pwd)"
-BUILD_DIR="build"
-APP="dist/Seen.app"
+BUILD_DIR="${SEEN_BUILD_DIR:-build}"
+DIST_DIR="${SEEN_DIST_DIR:-dist}"
+APP="$DIST_DIR/Seen.app"
 NODE_VERSION="24.15.0"
 
 BUNDLE=0
@@ -27,7 +32,7 @@ for arg in "$@"; do
   esac
 done
 
-mkdir -p "$BUILD_DIR" dist
+mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
 bash scripts/make-icons.sh
 
@@ -136,11 +141,8 @@ else
   echo "未找到固定证书 ${SIGN_IDENTITY}，使用 ad-hoc 签名（每次重打包会重置系统权限）"
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 fi
-echo "构建完成：${REPO}/menubar/${APP}（版本 ${VERSION}，${ARCH_MODE}$([ "$BUNDLE" = "1" ] && echo "，含运行时" || echo "，不含运行时")）"
+echo "构建完成：$(cd "$DIST_DIR" && pwd)/Seen.app（版本 ${VERSION}，${ARCH_MODE}$([ "$BUNDLE" = "1" ] && echo "，含运行时" || echo "，不含运行时")）"
 
 if [ "$INSTALL" = "1" ]; then
-  mkdir -p "$HOME/Applications"
-  rm -rf "$HOME/Applications/Seen.app"
-  cp -R "$APP" "$HOME/Applications/Seen.app"
-  echo "已安装：$HOME/Applications/Seen.app"
+  bash install-app.sh "$APP" "$HOME/Applications/Seen.app"
 fi

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
@@ -74,7 +74,7 @@ test('另一个实例持有锁时进入只读状态并说明原因', async () =>
   }
 })
 
-test('状态保存失败时仍返回笔记并带警告', async () => {
+test('状态保存失败时在写笔记前中止并带警告', async () => {
   const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
   const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
   try {
@@ -92,10 +92,10 @@ test('状态保存失败时仍返回笔记并带警告', async () => {
     })
     await api.ready
     const result = await api.scan({ title: '测试视频', url: 'https://www.youtube.com/watch?v=ExampleId01' })
-    assert.equal(result.ok, true, result.message)
+    assert.equal(result.ok, false, result.message)
     assert.equal(result.stateSaved, false)
     assert.ok(result.warnings.some((item) => item.includes('状态保存失败')))
-    assert.match(result.message, /1 项警告/)
+    assert.equal(existsSync(join(vault, '视频笔记', '笔记')), false)
   } finally {
     rmSync(vault, { recursive: true, force: true })
     rmSync(state, { recursive: true, force: true })
@@ -321,6 +321,222 @@ type: "video"
   }
 })
 
+test('启动时按视频身份恢复已写笔记的待处理记录', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '崩溃恢复', bvid: 'BV1ddddddddd', content: '---\nbvid: "BV1ddddddddd"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1ddddddddd:p1': {
+          key: 'bilibili:BV1ddddddddd:p1',
+          activeKey: 'bilibili:BV1ddddddddd:p1',
+          title: '崩溃恢复', subject: '示例', source: 'bilibili', bvid: 'BV1ddddddddd', page: 1,
+          url: 'https://www.bilibili.com/video/BV1ddddddddd', author: '', notePath: '', transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const history = api.getHistory()
+    assert.equal(history.length, 1)
+    assert.equal(history[0].notePath, note.relPath)
+    const saved = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'))
+    assert.deepEqual(saved.pendingVideos, {})
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('启动恢复时从笔记回填摘要、标签、概念与复习进度', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const review = { due: '2026-12-02', interval: 3, ease: 2.5, reps: 1 }
+    const note = await writeVideoNote({
+      vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '字段恢复', bvid: 'BV1fields0001',
+      content: '---\ntitle: "字段恢复"\nbvid: "BV1fields0001"\nsource: "bilibili"\ntags: ["示例","类型/教程","概念/恢复概念"]\nquality: 4\ncontentType: "tutorial"\ncontentQuality: "full"\nreview: ' + JSON.stringify(review) + '\n---\n\n# 字段恢复\n\n> [!abstract] 一句话总结\n> 恢复后的摘要\n\n> [!question] 这期想回答\n> 视频到底讲了什么？\n\n> [!success] 给出的答案\n> 讲清楚了恢复逻辑。\n\n## 视频信息\n',
+    })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1fields0001:p1': {
+          key: 'bilibili:BV1fields0001:p1', activeKey: 'bilibili:BV1fields0001:p1',
+          title: '字段恢复', subject: '示例', source: 'bilibili', bvid: 'BV1fields0001', page: 1,
+          url: 'https://www.bilibili.com/video/BV1fields0001', author: '', notePath: '', transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const history = api.getHistory()
+    assert.equal(history.length, 1)
+    assert.equal(history[0].notePath, note.relPath)
+    assert.equal(history[0].summary, '恢复后的摘要')
+    assert.equal(history[0].question, '视频到底讲了什么？')
+    assert.equal(history[0].answer, '讲清楚了恢复逻辑。')
+    assert.deepEqual(history[0].concepts, ['恢复概念'])
+    assert.equal(history[0].quality, 4)
+    assert.deepEqual(history[0].review, review)
+    const index = readFileSync(join(vault, '视频笔记', '视频索引.md'), 'utf8')
+    assert.match(index, /字段恢复/)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('flat 布局也能按身份恢复待处理记录', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({
+      vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '扁平恢复',
+      layout: 'flat', bvid: 'BV1flat000001', content: '---\nbvid: "BV1flat000001"\n---\n正文',
+    })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1flat000001:p1': {
+          key: 'bilibili:BV1flat000001:p1', activeKey: 'bilibili:BV1flat000001:p1',
+          title: '扁平恢复', subject: '示例', source: 'bilibili', bvid: 'BV1flat000001', page: 1,
+          url: 'https://www.bilibili.com/video/BV1flat000001', author: '', notePath: '', transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      noteLayout: 'flat', provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const history = api.getHistory()
+    assert.equal(history.length, 1)
+    assert.equal(history[0].notePath, note.relPath)
+    assert.equal(JSON.parse(readFileSync(join(state, 'state.json'), 'utf8')).pendingVideos['bilibili:BV1flat000001:p1'], undefined)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('noteRoot 带 ./ 前缀时也能恢复待处理记录', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '根路径恢复', bvid: 'BV1root000001', content: '---\nbvid: "BV1root000001"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1root000001:p1': {
+          key: 'bilibili:BV1root000001:p1', activeKey: 'bilibili:BV1root000001:p1',
+          title: '根路径恢复', subject: '示例', source: 'bilibili', bvid: 'BV1root000001', page: 1,
+          url: 'https://www.bilibili.com/video/BV1root000001', author: '', notePath: '', transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, noteRoot: './视频笔记', stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    assert.equal(api.getHistory().length, 1)
+    assert.equal(api.getHistory()[0].notePath, note.relPath)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('切换布局后仍能恢复另一种布局写入的笔记', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '布局切换恢复', bvid: 'BV1layout0001', content: '---\nbvid: "BV1layout0001"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1layout0001:p1': {
+          key: 'bilibili:BV1layout0001:p1', activeKey: 'bilibili:BV1layout0001:p1',
+          title: '布局切换恢复', subject: '示例', source: 'bilibili', bvid: 'BV1layout0001', page: 1,
+          url: 'https://www.bilibili.com/video/BV1layout0001', author: '', notePath: '', transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true, noteLayout: 'flat',
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    assert.equal(api.getHistory().length, 1)
+    assert.equal(api.getHistory()[0].notePath, note.relPath)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('待处理记录指向别的笔记时按 bvid 找回正确笔记', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const target = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '目标视频', bvid: 'BV1right00001', content: '---\nbvid: "BV1right00001"\n---\n目标' })
+    const other = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '别的视频', bvid: 'BV1other00001', content: '---\nbvid: "BV1other00001"\n---\n别的' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: {},
+      pendingVideos: {
+        'bilibili:BV1right00001:p1': {
+          key: 'bilibili:BV1right00001:p1', activeKey: 'bilibili:BV1right00001:p1',
+          title: '目标视频', subject: '示例', source: 'bilibili', bvid: 'BV1right00001', page: 1,
+          url: 'https://www.bilibili.com/video/BV1right00001', author: '', notePath: other.relPath, transcriptPath: '', createdAt: 1,
+        },
+      },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const history = api.getHistory()
+    assert.equal(history.length, 1)
+    assert.equal(history[0].notePath, target.relPath)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('启动时恢复已写入笔记的复习进度', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const review = { due: '2026-12-01', interval: 3, ease: 2.5, reps: 1 }
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '复习恢复', bvid: 'BV1eeeeeeeee', content: '---\nbvid: "BV1eeeeeeeee"\nreview: ' + JSON.stringify(review) + '\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({
+      subjects: { 示例: { videos: [{ title: '复习恢复', notePath: note.relPath, tags: [] }] } },
+      pendingReviews: { [note.relPath]: { review, at: 1 } },
+    }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    assert.deepEqual(api.getHistory()[0].review, review)
+    const saved = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'))
+    assert.deepEqual(saved.pendingReviews, {})
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
 test('标签合并中途失败时，已写入的笔记与状态仍保持一致', async () => {
   const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
   const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
@@ -337,11 +553,133 @@ test('标签合并中途失败时，已写入的笔记与状态仍保持一致',
     await api.ready
     const result = await api.renameTag({ from: '旧主题', to: '新主题' })
     assert.equal(result.ok, false)
+    assert.equal(result.partial, true)
     assert.equal(result.changed, 1)
+    assert.equal(result.remaining, 1)
+    assert.equal(result.retryable, true)
     const saved = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'))
     assert.deepEqual(saved.subjects.示例.videos[0].tags, ['示例', '新主题'])
     assert.deepEqual(saved.subjects.示例.videos[1].tags, ['示例', '旧主题'])
     assert.match(readFileSync(note.absPath, 'utf8'), /新主题/)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+
+test('复习进度首次落盘失败时不修改笔记', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '复习失败', bvid: 'BV1fffffffff', content: '---\nbvid: "BV1fffffffff"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({ subjects: { 示例: { videos: [{ title: '复习失败', notePath: note.relPath }] } } }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    rmSync(join(state, 'state.json'))
+    mkdirSync(join(state, 'state.json'))
+    const result = await api.recordReview({ notePath: note.relPath, rating: 'easy' })
+    assert.equal(result.ok, false)
+    assert.equal(result.partial, undefined)
+    assert.equal(result.stateSaved, false)
+    assert.equal(result.retryable, true)
+    assert.match(result.message, /状态保存失败/)
+    assert.doesNotMatch(readFileSync(note.absPath, 'utf8'), /^review:/m)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('复习进度末次保存失败后重试不会跳级', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '复习重试', bvid: 'BV1ggggggggg', content: '---\nbvid: "BV1ggggggggg"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({ subjects: { 示例: { videos: [{ title: '复习重试', notePath: note.relPath }] } } }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    const before = readFileSync(join(state, 'state.json'), 'utf8')
+    const firstRun = api.recordReview({ notePath: note.relPath, rating: 'easy' })
+    // 首次 pending 已同步落盘，随后把 state.json 换成目录，让末次保存失败。
+    rmSync(join(state, 'state.json'))
+    mkdirSync(join(state, 'state.json'))
+    const first = await firstRun
+    assert.equal(first.ok, false)
+    assert.equal(first.partial, true)
+    assert.match(readFileSync(note.absPath, 'utf8'), /^review:/m)
+    rmSync(join(state, 'state.json'), { recursive: true, force: true })
+    writeFileSync(join(state, 'state.json'), before)
+    const second = await api.recordReview({ notePath: note.relPath, rating: 'easy' })
+    assert.equal(second.ok, true, second.message)
+    assert.equal(second.review.interval, 1)
+    assert.equal(JSON.parse(readFileSync(note.absPath, 'utf8').match(/^review: (.*)$/m)[1]).interval, 1)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('笔记写入抛错时保留复习待处理记录', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '示例', title: '复习写入异常', bvid: 'BV1throw0001', content: '---\nbvid: "BV1throw0001"\n---\n正文' })
+    writeFileSync(join(state, 'state.json'), JSON.stringify({ subjects: { 示例: { videos: [{ title: '复习写入异常', notePath: note.relPath }] } } }))
+    const api = apply(fakeCtx(new Map()), {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false,
+    })
+    await api.ready
+    // 把笔记换成目录，让 updateNoteReview 在读取时抛错，模拟超时/权限失败。
+    rmSync(note.absPath)
+    mkdirSync(note.absPath)
+    const result = await api.recordReview({ notePath: note.relPath, rating: 'easy' })
+    assert.equal(result.ok, false)
+    assert.equal(result.pendingSaved, true)
+    const saved = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'))
+    assert.ok(saved.pendingReviews[note.relPath])
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
+test('重整理时状态指向别的笔记同名存档，改用属于本篇的副本', async () => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
+  const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
+  try {
+    const note = await writeVideoNote({ vaultPath: vault, noteRoot: '视频笔记', subject: '学科乙', title: '同名视频', source: 'youtube', videoId: 'ExampleId01', content: '---\nsource: "youtube"\nvideoId: "ExampleId01"\n---\n原笔记' })
+    const archive = (notePath, transcript) => renderTranscriptNote({ title: '同名视频', notePath, transcript })
+    const common = { vaultPath: vault, noteRoot: '视频笔记', noteName: '同名视频' }
+    const first = await writeTranscriptNote({ ...common, content: archive('视频笔记/笔记/学科甲/同名视频.md', '甲的字幕') })
+    const second = await writeTranscriptNote({ ...common, content: archive(note.relPath, '乙的字幕') })
+    assert.notEqual(second.relPath, first.relPath)
+    writeFileSync(join(state, 'state.json'), JSON.stringify({ subjects: { 学科乙: { videos: [{
+      title: '同名视频', source: 'youtube', videoId: 'ExampleId01', url: 'https://www.youtube.com/watch?v=ExampleId01',
+      notePath: note.relPath, transcriptPath: first.relPath, createdAt: Date.now(),
+    }] } } }))
+    const ctx = fakeCtx(new Map())
+    ctx.llm.stream = async function* ({ system }) {
+      const response = system.includes('分类助手')
+        ? { isCourse: true, subject: '学科乙', title: '同名视频', keywords: [] }
+        : { summary: '示例摘要', keyPoints: [] }
+      yield { type: 'text-delta', text: JSON.stringify(response) }
+    }
+    const api = apply(ctx, {
+      vaultPath: vault, stateDir: state, autoStart: false, exposeController: true,
+      provider: 'fake', model: 'fake-model', enableMnemon: false, fetchContent: false, fetchTranscript: false,
+    })
+    await api.ready
+    const result = await api.resummarizeNote({ notePath: note.relPath })
+    assert.equal(result.ok, true, result.message)
+    assert.equal(api.getHistory()[0].transcriptPath, second.relPath)
   } finally {
     rmSync(vault, { recursive: true, force: true })
     rmSync(state, { recursive: true, force: true })

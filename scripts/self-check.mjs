@@ -32,6 +32,7 @@ import {
 import { resolveVaultPath } from '../core/lib/obsidian.js'
 import { AUX_DIR, MANUAL_DIR, manualNoteRelPath, normalizeAuxRelPath } from '../core/lib/paths.js'
 import { loadState } from '../core/lib/state.js'
+import { auditTranscripts } from '../core/lib/transcript-audit.js'
 import { listMarkdownFiles } from '../core/lib/vault-search.js'
 import { probeVaultAccess, VAULT_HINT } from '../core/lib/vault-access.js'
 
@@ -169,11 +170,23 @@ async function main() {
         if (normalized !== video.transcriptPath) {
           stateFindings.push({ code: 'state-transcript-path-legacy', level: 'warn', message: '字幕路径还是旧格式：' + video.transcriptPath })
         }
-        if (!normalized || !existsSync(join(String(vaultPath), normalized))) {
-          missingTranscripts += 1
-          stateFindings.push({ code: 'state-transcript-missing', level: 'warn', message: '状态里的字幕存档不存在：' + video.transcriptPath })
-        }
       }
+    }
+
+    // 字幕存档审计：旧路径/缺 owner/无存档为警告，归属不一致与重复为错误。
+    try {
+      const audit = await auditTranscripts({ vaultPath, noteRoot: config.noteRoot, state })
+      missingTranscripts = audit.issues.filter((item) => item.type === 'state-transcript-missing').length
+      for (const issue of audit.issues) {
+        if (issue.type === 'state-transcript-legacy') continue
+        stateFindings.push({
+          code: issue.type,
+          level: issue.severity === 'error' ? 'error' : 'warn',
+          message: issue.message + (issue.file ? '（' + issue.file + '）' : ''),
+        })
+      }
+    } catch (error) {
+      stateFindings.push({ code: 'transcript-audit-failed', level: 'warn', message: '字幕存档审计失败：' + String(error?.message || error) })
     }
     for (const note of notes) {
       const record = stateByPath.get(note.relPath)

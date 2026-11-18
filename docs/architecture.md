@@ -65,7 +65,7 @@
   └─ POST /api/check      前台权限、Obsidian、mnemon、B站、YouTube、LLM 诊断
 ```
 
-- `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（start/stop/setPollInterval/scan/onEvent）。
+- `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（完整清单见 `docs/contracts.md`）。
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
 - 多个 Seen 实例共用同一状态目录与 `instance.lock`：启动时先把 owner 写入唯一临时目录，再用 `renameSync` 原子替换/创建锁目录；清理陈旧锁前核对目录 inode/dev，只删除自己的 owner 文件再 `rmdir`，非空目录不删，避免误删其他进程刚创建的新锁；同 PID 重复启动按占用处理。后启动的实例为只读并在状态里说明原因（锁被占用/锁写入失败/旧锁无法清理），停掉占用者后可接管。
 - `web/` 是原生 HTML/CSS/JS 单页，SSE 实时更新；没有构建步骤、没有前端框架。
@@ -77,8 +77,9 @@
 
 `~/.seen/state/state.json`
 
-- `seen`：去重表，key 为 `bvid:BV...` 或 `title:归一化标题`
+- `seen`：去重表，key 为 `bvid:BV...`（多 P 追加 `:p<n>`）、`douyin:<id>`、`youtube:<id>` 或 `title:归一化标题`
 - `subjects`：学科 → { createdAt, updatedAt, videos[] }
+- `pendingVideos` / `pendingReviews`：写笔记或复习进度前的恢复记录，启动和权限恢复后按身份对账
 - `failures`：失败计数与冷却
 - `stats`：processed / skipped / failed / lastMnemon
 - `lastForeground`：最近一次前台检测结果（供 status/check 展示）
@@ -107,7 +108,8 @@
 - 总览：AUTO 区（学科 mindmap + 学科列表 + 最近更新 + 知识库概况）；`flat` 布局下学科手册与笔记同级，`structured` 布局下分到 `笔记/` 与 `资料/手册/`。
 - 概念页/主题页：按出现篇数阈值自动建页，只维护 AUTO 区；主题页的相关概念只链接真实存在的概念页。
 - 写入采用 tmp + rename 原子替换；学习手册/总览只替换 `<!-- AUTO:START -->` 与 `<!-- AUTO:END -->` 之间。
-- 服务里的 vault 读写使用 `runVaultTask`：权限守卫 → 串行队列 → 10 秒超时熔断。macOS 的 TCC 没授权「文稿文件夹」时，同步 `open` 会让内核一直挂着，整个事件循环（含 HTTP）跟着卡死——所以权限探测放在子进程里做（`probeVaultAccess`），主进程只读结果。部分独立维护脚本仍使用同步文件操作，尚待迁移。
+- 所有 vault 相对路径先由 `vault-path.js` 校验：词法拒绝绝对路径和 `..`，对最深已存在祖先做 realpath、对最终项做 lstat；写操作拒绝符号链接，读允许指向 vault 内部的链接。只处理符号链接，不处理硬链接。
+- 服务里的 vault 读写使用 `runVaultTask`：权限守卫 → 串行队列 → 10 秒超时熔断。超时只影响调用方，底层 I/O 仍会占住队列；队列 tail 等底层任务真正 settle 后才放行，`drainVaultQueue` 用于确认排空，超时则保持只读。macOS 的 TCC 没授权「文稿文件夹」时，同步 `open` 会让内核一直挂着，整个事件循环（含 HTTP）跟着卡死——所以权限探测放在子进程里做（`probeVaultAccess`），主进程只读结果。部分独立维护脚本仍使用同步文件操作，尚待迁移。
 
 ## 模型服务
 
@@ -141,8 +143,10 @@
 | concept.js | 概念归一、跨笔记关联打分、概念索引 |
 | paths.js | 两种目录布局、笔记/手册/字幕/概念页/主题页相对路径、状态路径重映射 |
 | render.js | 三类 Markdown 渲染、类型模板区块与时间链接、复习卡片、Mermaid 转义 |
-| vault-access.js | 笔记库权限探针（子进程）、熔断守卫、串行队列、超时保护 |
+| vault-access.js | 笔记库权限探针（子进程）、熔断守卫、串行队列、超时保护、drain |
+| vault-path.js | vault 内路径校验：realpath + lstat、写拒绝符号链接、安全读/写/列目录/重命名 |
 | obsidian.js | vault 路径、原子写、AUTO 区、冲突处理；全部 async 并经 runVaultTask 过守卫 |
+| transcript-audit.js | 只读核对 state 与字幕存档的归属、重复、缺失，输出稳定 JSON v1 |
 | index-note.js | 视频索引 / 概念索引 / 标签索引的正文生成 |
 | transcript-note.js | 字幕存档的渲染与还原（type: transcript，不参与索引） |
 | topic-pages.js | 概念页（≥2 篇）与主题综述（≥3 篇）的聚合与渲染 |

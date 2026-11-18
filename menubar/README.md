@@ -6,7 +6,7 @@ macOS 菜单栏常驻小应用，作为 Seen 本地服务的控制器。Swift + 
 
 ```bash
 ./build.sh              # → dist/Seen.app
-./build.sh --install    # 复制到 ~/Applications/Seen.app
+./build.sh --install    # 同目录暂存后安装到 ~/Applications/Seen.app，失败或中断回滚（SIGKILL/断电除外）
 ```
 
 功能、登录自启、图标替换和排障说明见根目录 [README](../README.md) 的「菜单栏应用（macOS）」章节。
@@ -22,4 +22,4 @@ macOS 菜单栏常驻小应用，作为 Seen 本地服务的控制器。Swift + 
 - `scripts/make-icons.sh`：调用根目录 `scripts/export-icons.mjs` 统一生成应用、菜单栏和网页图标。
 - `Resources/BrandIcon*`：弹出面板标题旁的彩色松鼠标识。
 
-完整图标包与使用规范见 [`../docs/brand/`](../docs/brand/README.md)。默认构建将已有的 `dist/Seen.app` 移入独立备份目录，再生成新包。
+完整图标包与使用规范见 [`../docs/brand/`](../docs/brand/README.md)。默认构建将已有的 `dist/Seen.app` 移入 `build/previous-app.*` 备份目录，再生成新包；备份不会自动删除，用 `npm run prune:build -- --keep 3` 预览、加 `--apply` 清理。`--install` 的旧版本备份在 `~/.seen/install-backups/`，用 `npm run prune:install -- --keep 2` 预览、加 `--apply` 清理。

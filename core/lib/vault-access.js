@@ -156,7 +156,6 @@ export function createVaultGuard(options = {}) {
     },
   }
 }
-
 /**
  * 给 vault 操作加超时；超时视为文件系统被挂起，熔断并抛 VaultBlockedError。
  * @param {Promise<unknown>} promise
@@ -181,13 +180,39 @@ export function withVaultTimeout(promise, timeoutMs = VAULT_IO_TIMEOUT_MS, guard
 export function createVaultQueue() {
   let tail = Promise.resolve()
   return {
+    /**
+     * 排队执行。返回给调用方的 promise 可能先被 withVaultTimeout 熔断，
+     * 但内部 tail 必须等 task 本身真正 settle，避免旧写入晚到覆盖新数据。
+     */
     run(task) {
-      const next = tail.then(task, task)
-      tail = next.then(
-        () => undefined,
-        () => undefined,
-      )
-      return next
+      const previous = tail
+      let settle
+      const settled = new Promise((resolveSettled) => { settle = resolveSettled })
+      const result = previous.then(async () => {
+        try {
+          return await task()
+        } finally {
+          settle()
+        }
+      }, async () => {
+        try {
+          return await task()
+        } finally {
+          settle()
+        }
+      })
+      tail = settled
+      return result
+    },
+    /** 等待队列真正排空；超时返回 timedOut，任务仍占用队列。 */
+    drain({ timeoutMs = 2000 } = {}) {
+      let timer = null
+      const timeout = new Promise((resolveTimeout) => {
+        timer = setTimeout(() => resolveTimeout({ ok: false, timedOut: true }), Math.max(1, Number(timeoutMs) || 2000))
+      })
+      return Promise.race([tail.then(() => ({ ok: true, timedOut: false })), timeout]).finally(() => {
+        if (timer) clearTimeout(timer)
+      })
     },
   }
 }

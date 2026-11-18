@@ -6,9 +6,9 @@
  * 走 obsidian 的 vault 守卫：没有「文稿文件夹」权限时快速失败，不会挂起服务。
  */
 
-import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { runVaultTask } from './obsidian.js'
+import { safeReadFile, safeReaddir, safeStat } from './vault-path.js'
 
 const MAX_FILE_BYTES = 200 * 1024
 const MAX_FILES = 2000
@@ -18,17 +18,30 @@ function toPosix(value) {
   return String(value ?? '').replace(/\\/g, '/')
 }
 
-async function walkMarkdown(dir, bucket, depth = 0, stats = null) {
+function normalizeRoot(noteRoot) {
+  return toPosix(noteRoot || '视频笔记').replace(/^\.?\/+/, '').replace(/\/+$/, '') || '视频笔记'
+}
+
+/** 单个目录/文件不可访问时跳过整次搜索即可，不应让 vault 里一个坏链接拖垮全部结果。 */
+function skippable(error) {
+  const code = String(error?.code || '')
+  return code === 'ENOENT' || code === 'vault-path-missing' || code === 'vault-path-escape' || code === 'vault-path-broken-symlink' || code === 'vault-path-invalid'
+}
+
+async function walkMarkdown(vaultPath, rootRel, dirRel, bucket, depth = 0, stats = null) {
   if (depth > MAX_DEPTH || bucket.length >= MAX_FILES) {
     if (stats) stats.truncated = true
     return
   }
   let entries = []
   try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch {
-    if (stats) stats.skipped += 1
-    return
+    entries = await safeReaddir({ vaultPath, relPath: dirRel })
+  } catch (error) {
+    if (skippable(error)) {
+      if (stats) stats.skipped += 1
+      return
+    }
+    throw error
   }
   for (const entry of entries) {
     if (bucket.length >= MAX_FILES) {
@@ -36,14 +49,30 @@ async function walkMarkdown(dir, bucket, depth = 0, stats = null) {
       return
     }
     if (entry.name.startsWith('.')) continue
-    const full = join(dir, entry.name)
+    const childRel = (dirRel ? dirRel + '/' : '') + entry.name
     if (entry.isDirectory()) {
       if (entry.name === '_备份') continue
-      await walkMarkdown(full, bucket, depth + 1, stats)
+      await walkMarkdown(vaultPath, rootRel, childRel, bucket, depth + 1, stats)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
-      bucket.push(full)
+      bucket.push(childRel.slice(rootRel.length + 1))
     }
   }
+}
+
+/**
+ * 列出笔记库里的 Markdown 绝对路径与扫描完整性（跳过 _备份、点开头目录）。
+ * 崩溃恢复要靠它判断“确实没有笔记”还是“只扫到了一部分”，不能把截断当成不存在。
+ * @returns {Promise<{ files: string[], truncated: boolean, skipped: number }>}
+ */
+export async function listMarkdownFilesDetailed({ vaultPath, noteRoot = '视频笔记' } = {}) {
+  if (!vaultPath) return { files: [], truncated: false, skipped: 0 }
+  const rootRel = normalizeRoot(noteRoot)
+  return runVaultTask(async () => {
+    const files = []
+    const stats = { truncated: false, skipped: 0 }
+    await walkMarkdown(vaultPath, rootRel, rootRel, files, 0, stats)
+    return { files: files.map((rel) => join(String(vaultPath), rootRel, rel)), ...stats }
+  })
 }
 
 /**
@@ -51,12 +80,8 @@ async function walkMarkdown(dir, bucket, depth = 0, stats = null) {
  * 供工具脚本（自检）复用；不做词典与打分，直接走文件系统。
  * @returns {Promise<string[]>}
  */
-export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' } = {}) {
-  if (!vaultPath) return []
-  const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
-  const files = []
-  await walkMarkdown(rootAbs, files)
-  return files
+export async function listMarkdownFiles(args = {}) {
+  return (await listMarkdownFilesDetailed(args)).files
 }
 
 function splitTerms(query) {
@@ -107,26 +132,35 @@ function kindOf(relPath) {
 }
 
 async function search(vaultPath, noteRoot, terms, limit) {
-  const rootAbs = join(String(vaultPath), String(noteRoot || '视频笔记'))
+  const rootRel = normalizeRoot(noteRoot)
   const files = []
   const stats = { truncated: false, skipped: 0 }
-  await walkMarkdown(rootAbs, files, 0, stats)
+  try {
+    await walkMarkdown(vaultPath, rootRel, rootRel, files, 0, stats)
+  } catch (error) {
+    if (skippable(error)) return { results: [], scanned: 0, skipped: 0, truncated: false }
+    throw error
+  }
 
   const results = []
-  for (const file of files) {
+  for (const relPath of files) {
+    const fullRel = rootRel + '/' + relPath
     let content = ''
     try {
-      const info = await stat(file)
+      const info = await safeStat({ vaultPath, relPath: fullRel })
       if (!info.isFile() || info.size > MAX_FILE_BYTES) {
         stats.skipped += 1
         continue
       }
-      content = await readFile(file, 'utf8')
-    } catch {
-      stats.skipped += 1
-      continue
+      content = await safeReadFile({ vaultPath, relPath: fullRel })
+    } catch (error) {
+      if (skippable(error)) {
+        stats.skipped += 1
+        continue
+      }
+      throw error
     }
-    const name = basename(file, '.md')
+    const name = basename(relPath, '.md')
     const lowerName = name.toLowerCase()
     const lowerContent = content.toLowerCase()
     let score = 0
@@ -142,7 +176,6 @@ async function search(vaultPath, noteRoot, terms, limit) {
       }
     }
     if (score === 0) continue
-    const relPath = toPosix(file).slice(toPosix(rootAbs).length + 1)
     results.push({ title: name, relPath, snippet: firstSnippet, score, kind: kindOf(relPath), match: nameHit ? 'title' : 'content' })
   }
 

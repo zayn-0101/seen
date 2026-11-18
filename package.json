@@ -10,7 +10,9 @@
     "test": "cd core && node --test",
     "check": "node scripts/check-syntax.mjs",
     "self-check": "node scripts/self-check.mjs",
-    "self-check:llm": "node scripts/self-check.mjs --llm"
+    "self-check:llm": "node scripts/self-check.mjs --llm",
+    "prune:build": "node scripts/prune-build-backups.mjs",
+    "prune:install": "node scripts/prune-install-backups.mjs"
   },
   "engines": {
     "node": ">=20"

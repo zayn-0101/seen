@@ -584,7 +584,9 @@ async function mergeTags(from, to, button) {
   try {
     const data = await api('/api/tags/merge', { method: 'POST', body: JSON.stringify({ from, to }) })
     renderSnapshot(data)
-    showToast(data.result?.message || '标签已合并')
+    const warnings = Array.isArray(data.result?.warnings) ? data.result.warnings : []
+    const partial = data.result && (data.result.partial || data.result.ok === false)
+    showToast((data.result?.message || '标签已合并') + (warnings.length ? '；' + warnings.join('；') : ''), Boolean(partial || warnings.length))
     tagCache = null
     tagActive = ''
     await loadTags()
@@ -932,7 +934,8 @@ async function rateReview(notePath, rating, button) {
   try {
     const data = await api('/api/reviews', { method: 'POST', body: JSON.stringify({ notePath, rating }) })
     renderSnapshot(data)
-    showToast(data.result?.message || '已记录')
+    const warnings = Array.isArray(data.result?.warnings) ? data.result.warnings : []
+    showToast((data.result?.message || '已记录') + (warnings.length ? '；' + warnings.join('；') : ''), Boolean(data.result?.partial || warnings.length))
   } catch (error) {
     showToast('记录复习失败：' + (error?.message || error))
     if (button) { button.disabled = false; button.textContent = label || '重试' }

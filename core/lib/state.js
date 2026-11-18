@@ -26,6 +26,9 @@ export function defaultState() {
     stats: { processed: 0, skipped: 0, failed: 0, lastMnemon: null },
     // 主题词 → 出现次数，供提示词复用与标签收敛；旧状态缺这一项时按空表处理
     tagVocabulary: {},
+    // 崩溃恢复：先落盘的「正在写笔记」与「正在写复习」意图，启动时按身份核对后补状态
+    pendingVideos: {},
+    pendingReviews: {},
   }
 }
 
@@ -56,6 +59,8 @@ function mergeState(input) {
   merged.subjects = isPlainObject(input.subjects) ? { ...input.subjects } : {}
   merged.failures = isPlainObject(input.failures) ? { ...input.failures } : {}
   merged.tagVocabulary = normalizeTagVocabulary(input.tagVocabulary)
+  merged.pendingVideos = isPlainObject(input.pendingVideos) ? { ...input.pendingVideos } : {}
+  merged.pendingReviews = isPlainObject(input.pendingReviews) ? { ...input.pendingReviews } : {}
   merged.lastTitle = typeof input.lastTitle === 'string' ? input.lastTitle : ''
   merged.lastRunAt = normalizeNumber(input.lastRunAt, 0)
   merged.stats = { ...base.stats, ...(isPlainObject(input.stats) ? input.stats : {}) }

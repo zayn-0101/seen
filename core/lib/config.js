@@ -8,6 +8,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import { normalizeNoteRoot } from './paths.js'
+
 /** 插件默认配置（契约见 docs/contracts.md） */
 export const DEFAULTS = Object.freeze({
   enabled: true,
@@ -185,8 +187,8 @@ export function resolveConfig(raw = {}) {
   }
 
   requireNonEmptyString(config.noteRoot, 'noteRoot')
-  config.noteRoot = config.noteRoot.trim()
-  if (config.noteRoot.replace(/\\/g, '/').split('/').includes('..')) {
+  config.noteRoot = normalizeNoteRoot(config.noteRoot)
+  if (config.noteRoot.split('/').includes('..')) {
     throw new Error('seen-core: noteRoot 不能包含 .. 路径段')
   }
   if (!NOTE_LAYOUTS.includes(config.noteLayout)) config.noteLayout = DEFAULTS.noteLayout

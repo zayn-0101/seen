@@ -377,14 +377,15 @@ export async function writeConceptIndexNote({ vaultPath, noteRoot, markdown }): 
 export async function writeTagIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
 export async function writeWeeklyReview({ vaultPath, noteRoot, label, markdown }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function writeTranscriptNote({ vaultPath, noteRoot, noteName, content }): Promise<{ relPath, absPath }>
-export async function readTranscriptNote({ vaultPath, noteRoot, noteName }): Promise<string | null>  // 不存在返回 null
-export async function readVaultText({ vaultPath, relPath }): Promise<{ ok: boolean, relPath?: string, text?: string, error?: string }>  // 读任意 vault 内文本（问笔记库用）
+export async function readTranscriptNote({ vaultPath, noteRoot, noteName, owner = '', allowUnowned = false }): Promise<string | null>
+// 无 owner 时只有 allowUnowned=true 才返回 base（无论 base 有无 owner）；有 owner 时先读 base 比对 frontmatter notePath，不匹配则扫描同目录 (字幕-hash) 副本，只有 notePath 精确匹配才返回；ENOENT/存档解析失败才继续扫描，VaultBlocked/EACCES 原样抛出
+export async function readVaultText({ vaultPath, relPath }): Promise<{ ok: boolean, relPath?: string, text?: string, code?: string, error?: string }>  // 读任意 vault 内文本（问笔记库用）；code 区分 not-found / vault-unavailable / vault-path-* / read-failed
 export async function updateNoteTags({ vaultPath, notePath, tags }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 tags 行
 export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 review 行
 // 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
-export async function readFrontmatterBvid(filePath: string): Promise<string | null>
+export async function readFrontmatterBvid({ vaultPath, relPath }): Promise<string | null>
 export async function openInObsidian({ vaultPath, notePath }): Promise<{ ok: boolean, error?: string }>
 
 export function setVaultGuard(guard): void                  // index.js 启动时注入 createVaultGuard 的实例
@@ -395,7 +396,7 @@ export async function runVaultTask(task: () => Promise<T>): Promise<T>  // 供 v
 
 写入规则：
 - 原子写（tmp + rename）。
-- vault 内相对路径不得通过 `..` 越过 vault 根目录；符号链接的边界另行审查。
+- vault 内相对路径不得通过 `..` 越过 vault 根目录；所有 vault 读写必须经 `core/lib/vault-path.js` 的 `resolveVaultPath` / `safe*` 校验（对最深已存在祖先做 realpath，写拒绝最终符号链接，读允许指向 vault 内部的符号链接）。只处理符号链接，不处理硬链接，不宣称完全隔离。
 - 视频笔记同名时按 B 站 BV + 分 P，或其他平台来源 + 视频 ID 判断是否为同一条视频。已确认同一条且 `force=false` 返回 `{ skipped: true }`；`force=true` 时备份并更新对应文件。身份不同或无法确认时使用带标识的同名副本，不能覆盖原笔记；已由状态记录确认的旧笔记路径可作为身份缺失时的依据。
 - 字幕存档按所属笔记路径确认身份；同名且属于不同笔记或身份不明的旧文件不得覆盖，使用新副本并在状态中记录实际 `transcriptPath`。重整理优先读取状态中的路径，再校验所属笔记；缺少所属路径且有同名历史笔记时，拒绝推测归属。
 - 学习手册/总览只替换 AUTO 区；文件不存在则创建（含 frontmatter、H1、AUTO 区、用户区）。
@@ -506,7 +507,8 @@ export function createVaultGuard({ initial } = {}): {
 }
 
 export function withVaultTimeout(promise, timeoutMs, guard): Promise   // 超时抛 VaultBlockedError('timeout') 并 noteBlocked
-export function createVaultQueue(): { run(task): Promise }             // 串行化，避免并发写同一文件
+export function createVaultQueue(): { run(task): Promise, drain({ timeoutMs = 2000 }): Promise<{ ok: boolean, timedOut: boolean }> }
+// run() 串行化，tail 跟随底层任务真正 settle（不是外层超时 promise）；drain() 超时返回 ok:false，未结束的任务继续占队列
 ```
 
 设计要点：判定结果只由探针写；读写失败时按错误码（vaultBlocked / EACCES / EPERM）自动熔断，其余错误原样抛给调用方。
@@ -523,6 +525,37 @@ export async function searchVaultDetailed({ vaultPath, noteRoot, query, limit = 
 export async function listMarkdownFiles({ vaultPath, noteRoot = '视频笔记' }): Promise<string[]>
 // 返回 .md 绝对路径；规则同 searchVault（自检脚本用它遍历笔记库）
 ```
+
+## lib/transcript-audit.js
+
+```js
+export async function auditTranscripts({ vaultPath, noteRoot, state }): Promise<{
+  schema: 'seen.transcript-audit', version: 1, generatedAt, vaultPath, noteRoot,
+  summary: { archives, videos, issues, errors, warnings },
+  issues: Array<{ id, severity: 'error'|'warn', type, file, notePath, message }>,
+}>
+```
+
+只读审计，不恢复、不删除、不改 state；同时扫描 `<noteRoot>/资料/字幕/` 与旧 `<noteRoot>/字幕/`，用 frontmatter 的 `notePath` 作为 owner。
+
+issue 类型与级别：
+
+| type | 级别 | 含义 |
+|---|---|---|
+| `state-transcript-legacy` | warn | state 的 `transcriptPath` 仍是旧 `字幕/` 路径，存档本身存在 |
+| `state-transcript-missing` | warn | state 记录的存档缺失，且没有同 owner 的其他副本 |
+| `state-transcript-owner-mismatch` | error | state 的 `transcriptPath` 指向了另一篇笔记的存档 |
+| `state-transcript-invalid` | error | state 的 `transcriptPath` 含 `..`、指向外部符号链接或无法检查 |
+| `state-transcript-outside-archive` | error | state 的 `transcriptPath` 存在，但不在新旧字幕目录里 |
+| `archive-dir-unreadable` | error | 字幕目录读不了（例如指向 vault 外部或权限不足） |
+| `archive-owner-missing` | warn | 存档没有 `notePath`，无法确认归属 |
+| `archive-owner-unknown` | warn | 存档的 `notePath` 不在 state 里（笔记已删或从未入库） |
+| `archive-owner-mismatch` | error | 同名存档的 `notePath` 与文件名对不上 |
+| `archive-duplicate-owner` | error | 同一个 owner 有多份存档 |
+| `archive-duplicate-name` | error | 无主存档出现同名多份 |
+| `archive-unreadable` | error | 存档读取或解析失败 |
+
+`scripts/audit-transcripts.mjs` 是 CLI：默认人读摘要，`--json` 输出到 stdout，`--json <path>` 写入文件；存在 error 时退出码 1。`scripts/self-check.mjs` 复用同一模块，只在 state 循环里单独报告 legacy 路径，避免重复计数。
 
 ## lib/note-check.js
 
@@ -633,11 +666,13 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
   `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。`getStatus()` 与 `getConfig()` 都返回 `readOnly` / `readOnlyReason`（`locked-by-other` / `lock-write-failed` / `lock-stale-unlink-failed`），状态消息里同步说明只读原因。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。返回 `{ ok, total, done, failed, stateSaved, warnings }`，状态保存失败或单篇警告会汇总到 `warnings`。
+- 写笔记前先把 `{ key, activeKey, title, subject, source, bvid, videoId, page, url, author, notePath, transcriptPath, createdAt, at }` 写入 `state.pendingVideos` 并落盘；首次落盘失败立即中止，不写笔记。启动后 `reconcilePendingState` 跨学科按 bvid+page / videoId+source 精确匹配（notePath 完全一致优先），唯一命中则从笔记回填 summary/question/answer/tags/concepts/quality/contentType/review，合并同身份旧记录、迁移到新学科并删除重复，再重建索引；扫描不完整或身份有歧义时保留 pending。`ready` 与 `reprobeVault()` 共用同一个恢复任务，首次权限不足时会在重新探测成功后补跑。
+- `state.pendingReviews[notePath] = { review, at }` 用于复习进度崩溃恢复；写入笔记前先落盘 pending，恢复时只有笔记 frontmatter 的 `review` 与 pending 完全一致才写回 state。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。
-- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 更新 state 与笔记 frontmatter 的 `review`，返回 `{ ok, stateSaved, warnings, message, review }`，状态保存失败时 `stateSaved:false` 并在 `warnings` 中说明。
+- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 先写 `pendingReviews` 落盘，再更新笔记 frontmatter 与 state。首次落盘失败返回 `{ ok:false, stateSaved:false, retryable:true }`，服务端按失败返回 400，且不碰笔记；笔记更新成功但最终 state 落盘失败时返回 `{ ok:false, partial:true, stateSaved:false, retryable:true }`，保留 pending 供下次启动恢复。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
-- `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改 state 的 `video.tags` 与 `tagVocabulary`，最后 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。
+- `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改该篇 state 的 `video.tags` 并立即落盘，最后更新 `tagVocabulary` 与 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。中途失败返回 `{ ok:false, partial:true, changed, remaining, retryable:true, warnings }`，已改的笔记与 state 保持一致，未处理的保持原样；HTTP `/api/tags/merge` 与 `/api/reviews` 对 `ok || partial` 返回 200 并原样带出 `partial` / `warnings`。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
 - 配置、状态、日志、轮询、编排、工具注册都在这里。

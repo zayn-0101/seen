@@ -34,11 +34,11 @@ import { findRelatedVideos } from './concept.js'
 import { buildTagVocabulary, mergeTags, mergeTagInVideos, rememberTags } from './tags.js'
 import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { answerQuestion } from './ask.js'
-import { searchVault } from './vault-search.js'
+import { searchVault, listMarkdownFiles, listMarkdownFilesDetailed } from './vault-search.js'
 import { scoreNoteQuality } from './note-content.js'
 import { parseNoteMarkdown } from './note-check.js'
-import { normalizeNoteLayout, normalizeStateAuxPaths } from './paths.js'
-import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, readVaultText, updateNoteReview, updateNoteTags, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, toPosix } from './obsidian.js'
+import { normalizeNoteLayout, normalizeNoteRoot, normalizeStateAuxPaths, transcriptNoteRelPath, AUX_DIR, BACKUP_DIR, TRANSCRIPT_DIR, VIDEO_DIR } from './paths.js'
+import { resolveVaultPath, ensureVaultDirs, writeVideoNote, writeTranscriptNote, readTranscriptNote, readVaultText, readNoteIdentity, updateNoteReview, updateNoteTags, updateSubjectManual, updateOverview, openInObsidian, setVaultGuard, drainVaultQueue, toPosix } from './obsidian.js'
 import { parseTranscriptNote, renderTranscriptNote, transcriptNoteOwner } from './transcript-note.js'
 import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
@@ -307,12 +307,21 @@ export function apply(ctx, rawConfig = {}) {
   const recentEvents = []
 
   // 只在取得实例锁之后准备笔记目录，并让调用方能够等待初始化结束。
-  const ready = !readOnly && !vaultGuard.isBlocked()
-    ? ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir }).catch((error) => {
+  // 首次启动 TCC 授权超时、之后 reprobe 成功的路径也必须补跑恢复，且与 ready 共用同一个任务。
+  let recoveryPromise = null
+  function schedulePendingRecovery({ ensureDirs = true } = {}) {
+    if (readOnly || vaultGuard.isBlocked()) return Promise.resolve()
+    if (recoveryPromise) return recoveryPromise
+    recoveryPromise = (async () => {
+      if (ensureDirs) await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+      await reconcilePendingState()
+    })().catch((error) => {
       if (error && error.vaultBlocked) return
       console.error('[seen-core] 准备笔记目录失败：', error)
-    })
-    : Promise.resolve()
+    }).finally(() => { recoveryPromise = null })
+    return recoveryPromise
+  }
+  const ready = schedulePendingRecovery()
 
   const outputDir = join(vaultPath, config.noteRoot)
 
@@ -343,6 +352,277 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
 
+  function parseFrontmatterReview(text) {
+    const match = String(text || '').match(/^---\r?\n([\s\S]*?)\r?\n---/)
+    if (!match) return null
+    const line = match[1].match(/^review:\s*(.+)$/m)
+    if (!line) return null
+    try { return JSON.parse(line[1]) } catch { return null }
+  }
+
+  /** 取 Obsidian callout 的正文（不含 [!kind] 标题行）。 */
+  function calloutText(text, kind) {
+    const lines = String(text || '').split(/\r?\n/)
+    const marker = new RegExp('^>\\s*\\[!' + kind + '\\]', 'i')
+    const out = []
+    let inside = false
+    for (const line of lines) {
+      if (!inside) {
+        if (marker.test(line)) inside = true
+        continue
+      }
+      if (/^>/.test(line)) {
+        out.push(line.replace(/^>\s?/, ''))
+        continue
+      }
+      if (!line.trim() && out.length) break
+      if (line.trim()) break
+    }
+    return out.join('\n').trim()
+  }
+
+  /** 崩溃恢复时从已写好的笔记回填状态里缺的字段，避免索引与跨笔记关联永久缺这篇。 */
+  function recoverVideoFields(text) {
+    const parsed = parseNoteMarkdown(text)
+    const concepts = parsed.tags
+      .filter((tag) => tag.startsWith('概念/'))
+      .map((tag) => tag.slice('概念/'.length).trim())
+      .filter(Boolean)
+    return {
+      summary: calloutText(parsed.body, 'abstract'),
+      question: calloutText(parsed.body, 'question'),
+      answer: calloutText(parsed.body, 'success'),
+      tags: parsed.tags,
+      concepts,
+      quality: parsed.quality || 0,
+      contentType: parsed.contentType || '',
+      contentQuality: parsed.contentQuality || '',
+      review: parseFrontmatterReview(text),
+    }
+  }
+
+  // 启动恢复：上一次进程在「笔记已写、state 未落」之间崩溃时，凭身份把记录补回状态。
+  async function reconcilePendingState() {
+    const pendingVideos = state.pendingVideos && typeof state.pendingVideos === 'object' ? Object.entries(state.pendingVideos) : []
+    const pendingReviews = state.pendingReviews && typeof state.pendingReviews === 'object' ? Object.entries(state.pendingReviews) : []
+    if (!pendingVideos.length && !pendingReviews.length) return
+    let changed = false
+    let restored = false
+    let listing = null
+    const sameText = (a, b) => Boolean(a) && Boolean(b) && String(a).trim().toLowerCase() === String(b).trim().toLowerCase()
+    const hasIdentity = (item) => Boolean(item?.bvid || item?.videoId)
+    // 只认与待处理记录身份一致的笔记：bvid+page 或 videoId+source，避免把别人的笔记补成这篇。
+    const identityMatches = (pending, candidate) => {
+      if (!candidate) return false
+      if (pending?.bvid) {
+        return sameText(pending.bvid, candidate.bvid) && (Number(pending.page) || 1) === (Number(candidate.page) || 1)
+      }
+      if (pending?.videoId) {
+        return String(candidate.videoId || '') === String(pending.videoId) && String(candidate.source || '') === String(pending.source || '')
+      }
+      return false
+    }
+    const listNotes = async () => {
+      if (!listing) {
+        const scan = await listMarkdownFilesDetailed({ vaultPath, noteRoot: config.noteRoot })
+        const root = toPosix(vaultPath).replace(/\/+$/, '') + '/'
+        const rootRel = normalizeNoteRoot(config.noteRoot)
+        const auxDirs = new Set([AUX_DIR, TRANSCRIPT_DIR, BACKUP_DIR])
+        // 恢复不能只看当前布局：用户可能刚在 structured / flat 之间切过。
+        const found = scan.files.map((file) => toPosix(file).replace(root, '')).filter((rel) => {
+          if (!rel.startsWith(rootRel + '/')) return false
+          const rest = rel.slice(rootRel.length + 1).split('/')
+          if (rest.length < 2 || auxDirs.has(rest[0])) return false
+          return rest[0] === VIDEO_DIR ? rest.length >= 3 : rest.length === 2
+        })
+        listing = { files: found, incomplete: scan.truncated || scan.skipped > 0 }
+      }
+      return listing
+    }
+
+    for (const [pendingKey, pending] of pendingVideos) {
+      let notePath = toPosix(pending?.notePath || '')
+      let noteText = ''
+      let identity = null
+      if (notePath) {
+        const read = await readVaultText({ vaultPath, relPath: notePath })
+        if (read.ok) {
+          noteText = read.text
+          try { identity = await readNoteIdentity({ vaultPath, relPath: notePath }) } catch { identity = null }
+        }
+        // 有身份的记录必须与笔记 frontmatter 对得上，不能只看路径存在。
+        if (identity && hasIdentity(pending) && !identityMatches(pending, identity)) {
+          identity = null
+          notePath = ''
+        }
+      }
+      if (!notePath || !identity) {
+        const matches = []
+        let scanFailed = false
+        const scanned = await listNotes()
+        for (const rel of scanned.files) {
+          let candidate = null
+          try { candidate = await readNoteIdentity({ vaultPath, relPath: rel }) } catch { scanFailed = true; continue }
+          if (identityMatches(pending, candidate)) matches.push(rel)
+        }
+        if (matches.length === 1) {
+          notePath = matches[0]
+          const read = await readVaultText({ vaultPath, relPath: notePath })
+          if (read.ok) noteText = read.text
+          try { identity = await readNoteIdentity({ vaultPath, relPath: notePath }) } catch { identity = null }
+        } else if (matches.length > 1) {
+          logger.log('state.pending.reconcile.ambiguous key=' + JSON.stringify(pendingKey) + ' matches=' + matches.length)
+          continue
+        } else if (scanFailed || scanned.incomplete) {
+          logger.log('state.pending.reconcile.scan-incomplete key=' + JSON.stringify(pendingKey) + ' truncated=' + scanned.incomplete + ' failed=' + scanFailed)
+          continue
+        } else {
+          // 笔记根本没有落盘（崩溃发生在写入前），待处理记录已无恢复价值。
+          delete state.pendingVideos[pendingKey]
+          changed = true
+          logger.log('state.pending.video.dropped key=' + JSON.stringify(pendingKey))
+          continue
+        }
+      }
+      if (!notePath || !identity) continue
+      const recovered = noteText ? recoverVideoFields(noteText) : {}
+      const recoveredTags = Array.isArray(recovered.tags) ? recovered.tags.filter(Boolean) : []
+      const recoveredConcepts = Array.isArray(recovered.concepts) ? recovered.concepts.filter(Boolean) : []
+      // 刷新可能改了标题、学科或路径：按身份跨学科收集记录，优先用新路径那条。
+      const matches = []
+      for (const [bucketName, bucket] of Object.entries(state.subjects || {})) {
+        if (!bucket || !Array.isArray(bucket.videos)) continue
+        for (const video of bucket.videos) {
+          if (video && (identityMatches(pending, video) || identityMatches(identity, video))) matches.push({ bucketName, video })
+        }
+      }
+      const exact = matches.find((match) => toPosix(match.video?.notePath || '') === notePath)
+      const chosen = exact || matches[0] || null
+      const subject = pending.subject || chosen?.bucketName || '未分类'
+      if (!state.subjects[subject] || typeof state.subjects[subject] !== 'object') state.subjects[subject] = { videos: [], updatedAt: Date.now() }
+      const videos = Array.isArray(state.subjects[subject].videos) ? state.subjects[subject].videos : (state.subjects[subject].videos = [])
+      let target = chosen?.video || null
+      if (!target) {
+        target = {
+          title: pending.title || '',
+          source: pending.source || identity.source || '',
+          bvid: pending.bvid || identity.bvid || '',
+          videoId: pending.videoId || identity.videoId || '',
+          page: pending.page || identity.page || 1,
+          url: pending.url || '',
+          author: pending.author || '',
+          notePath,
+          transcriptPath: pending.transcriptPath || '',
+          createdAt: pending.createdAt || Date.now(),
+          summary: recovered.summary || '',
+          question: recovered.question || '',
+          answer: recovered.answer || '',
+          tags: recoveredTags,
+          concepts: recoveredConcepts,
+          conceptDetails: [],
+          quality: recovered.quality || 0,
+          contentType: recovered.contentType || '',
+          contentQuality: recovered.contentQuality || '',
+          review: recovered.review || null,
+        }
+        videos.push(target)
+      } else {
+        // 同一身份只留一条：清掉刷新前的旧路径/旧学科记录。
+        for (const match of matches) {
+          if (match.video === target) continue
+          const bucket = state.subjects[match.bucketName]
+          if (!bucket || !Array.isArray(bucket.videos)) continue
+          const index = bucket.videos.indexOf(match.video)
+          if (index >= 0) bucket.videos.splice(index, 1)
+        }
+        if (chosen.bucketName !== subject) {
+          const oldBucket = state.subjects[chosen.bucketName]
+          if (oldBucket && Array.isArray(oldBucket.videos)) {
+            const index = oldBucket.videos.indexOf(target)
+            if (index >= 0) oldBucket.videos.splice(index, 1)
+          }
+          if (!videos.includes(target)) videos.push(target)
+        }
+        Object.assign(target, {
+          title: pending.title || target.title || '',
+          source: pending.source || identity.source || target.source || '',
+          bvid: pending.bvid || identity.bvid || target.bvid || '',
+          videoId: pending.videoId || identity.videoId || target.videoId || '',
+          page: pending.page || identity.page || target.page || 1,
+          url: pending.url || target.url || '',
+          author: pending.author || target.author || '',
+          notePath,
+          transcriptPath: pending.transcriptPath || target.transcriptPath || '',
+          summary: recovered.summary || target.summary || '',
+          question: recovered.question || target.question || '',
+          answer: recovered.answer || target.answer || '',
+          tags: recoveredTags.length ? recoveredTags : (target.tags || []),
+          concepts: recoveredConcepts.length ? recoveredConcepts : (target.concepts || []),
+          quality: recovered.quality || target.quality || 0,
+          contentType: recovered.contentType || target.contentType || '',
+          contentQuality: recovered.contentQuality || target.contentQuality || '',
+          review: recovered.review || target.review || null,
+        })
+        if (!target.conceptDetails) target.conceptDetails = []
+        if (!target.createdAt) target.createdAt = pending.createdAt || Date.now()
+      }
+      restored = true
+      markSeen(state, pending.activeKey || pending.key || pendingKey, {
+        at: Date.now(),
+        title: pending.title || '',
+        source: pending.source || identity.source || '',
+        bvid: pending.bvid || identity.bvid || '',
+        videoId: pending.videoId || identity.videoId || '',
+        notePath,
+        isCourse: true,
+      })
+      delete state.pendingVideos[pendingKey]
+      changed = true
+      logger.log('state.pending.video.reconciled key=' + JSON.stringify(pendingKey) + ' note=' + JSON.stringify(notePath))
+    }
+
+    for (const [notePath, pending] of pendingReviews) {
+      const read = await readVaultText({ vaultPath, relPath: notePath })
+      if (!read.ok) {
+        // 只有「这篇笔记确定不存在」才能丢弃恢复意图；笔记库不可访问、权限、守卫、超时都要保留。
+        if (read.code === 'not-found') {
+          delete state.pendingReviews[notePath]
+          changed = true
+        } else {
+          logger.log('state.pending.review.read-failed path=' + JSON.stringify(notePath) + ' code=' + JSON.stringify(read.code || ''))
+        }
+        continue
+      }
+      const review = parseFrontmatterReview(read.text)
+      const expected = pending?.review
+      if (review && expected && JSON.stringify(review) === JSON.stringify(expected)) {
+        for (const bucket of Object.values(state.subjects || {})) {
+          const video = (bucket?.videos || []).find((item) => toPosix(item?.notePath || '') === toPosix(notePath))
+          if (video) video.review = review
+        }
+      } else {
+        // 笔记里的复习状态与待处理记录不一致：以笔记为准丢弃 pending，但要留下可追踪的日志。
+        logger.log('state.pending.review.mismatch path=' + JSON.stringify(notePath))
+      }
+      // 笔记已经读到了：要么恢复成功，要么说明当时的写入没发生，pending 都不再需要。
+      delete state.pendingReviews[notePath]
+      changed = true
+    }
+
+    if (changed && !readOnly) {
+      if (!save()) {
+        logger.log('state.pending.reconcile.save.error')
+      } else if (restored) {
+        // 恢复出来的笔记要立刻回到索引、手册和概念页，否则这篇会长期缺席。
+        try {
+          await rebuildKnowledgePages()
+        } catch (error) {
+          logger.log('state.pending.reconcile.rebuild.error msg=' + (error?.message || error))
+        }
+      }
+    }
+  }
+
   async function processTitle(input) {
     if (running) return { ok: false, message: '已有任务正在处理，请稍后再试' }
     running = true
@@ -352,6 +632,7 @@ export function apply(ctx, rawConfig = {}) {
     let source = ''
     let inputBvid = null
     let inputVideoId = null
+    let noteWritten = false
     const warnings = []
     try {
       rawTitle = cleanTitle(input?.title || '')
@@ -638,6 +919,30 @@ export function apply(ctx, rawConfig = {}) {
         layout: config.noteLayout,
       })
 
+      // 写笔记前先把恢复意图落盘：崩溃后启动时可凭 bvid/videoId 身份找回这篇笔记，避免重复生成。
+      const pendingKey = activeKey || key
+      const pendingSnapshot = {
+        key,
+        activeKey,
+        title: finalTitle,
+        subject,
+        source,
+        bvid: noteBvid,
+        videoId: noteVideoId,
+        page: notePage,
+        url: content?.url || input?.url || '',
+        author: content?.owner || content?.author || '',
+        notePath: '',
+        transcriptPath: '',
+        createdAt,
+        at: Date.now(),
+      }
+      state.pendingVideos[pendingKey] = pendingSnapshot
+      if (!save()) {
+        delete state.pendingVideos[pendingKey]
+        return { ok: false, stateSaved: false, warnings: ['状态保存失败：未写入笔记，避免重启后出现无记录的孤儿笔记'], message: '状态保存失败，已停止写入这篇笔记' }
+      }
+
       const writeResult = await writeVideoNote({
         vaultPath,
         noteRoot: config.noteRoot,
@@ -653,6 +958,7 @@ export function apply(ctx, rawConfig = {}) {
         force: refresh || Boolean(input?.force),
         backupDir: config.stateDir ? join(config.stateDir, '..', 'backups') : '',
       })
+      noteWritten = true
 
       // 字幕原文单独存档，记录实际路径以区分不同学科的同名笔记。
       let transcriptPath = ''
@@ -679,6 +985,12 @@ export function apply(ctx, rawConfig = {}) {
           warnings.push(msg)
           logger.log('transcript.archive.error msg=' + msg)
         }
+      }
+
+      if (state.pendingVideos[pendingKey]) {
+        state.pendingVideos[pendingKey].notePath = writeResult.relPath
+        state.pendingVideos[pendingKey].transcriptPath = transcriptPath
+        if (!save()) warnings.push('状态保存失败：重启后可能重复处理这条视频')
       }
 
       const isNewSubject = !state.subjects[subject]
@@ -779,6 +1091,7 @@ export function apply(ctx, rawConfig = {}) {
       rememberTags(state, noteTags)
       clearFailure(state, activeKey)
       pruneSeen(state)
+      delete state.pendingVideos[pendingKey]
       const stateSaved = save()
       if (!stateSaved) warnings.push('状态保存失败：重启后可能重复处理这条视频')
 
@@ -821,6 +1134,7 @@ export function apply(ctx, rawConfig = {}) {
       }
       let errorStateSaved = true
       if (activeKey || key) {
+        if (!noteWritten && state.pendingVideos[activeKey || key]) delete state.pendingVideos[activeKey || key]
         recordFailure(state, activeKey || key, msg, {
           title: rawTitle,
           url: input?.url || '',
@@ -1162,17 +1476,33 @@ export function apply(ctx, rawConfig = {}) {
     if (!found) return { ok: false, message: '没有找到这条历史笔记' }
     const noteName = basename(found.video.notePath || found.video.title || '未命名视频', '.md')
     let markdown = null
+    let archiveOwner = ''
     try {
       if (found.video.transcriptPath) {
         const archived = await readVaultText({ vaultPath, relPath: found.video.transcriptPath })
-        if (archived.ok) markdown = archived.text
+        if (archived.ok) {
+          markdown = archived.text
+          archiveOwner = toPosix(transcriptNoteOwner(markdown))
+          if (archiveOwner && archiveOwner !== targetPath) markdown = null
+        }
       }
-      if (!markdown) markdown = await readTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName })
+      if (!markdown) {
+        markdown = await readTranscriptNote({ vaultPath, noteRoot: config.noteRoot, noteName, owner: targetPath, allowUnowned: true })
+        if (markdown) archiveOwner = toPosix(transcriptNoteOwner(markdown))
+      }
     } catch (error) {
       return { ok: false, message: '读取字幕存档失败：' + String(error?.message || error) }
     }
-    if (!markdown) return { ok: false, message: '这篇笔记还没有字幕存档，先重刷一次生成存档后再试' }
-    const archiveOwner = toPosix(transcriptNoteOwner(markdown))
+    if (!markdown) {
+      const legacy = await readVaultText({ vaultPath, relPath: transcriptNoteRelPath({ noteRoot: config.noteRoot, noteName }) })
+      if (legacy.ok) {
+        const legacyOwner = toPosix(transcriptNoteOwner(legacy.text))
+        if (legacyOwner && legacyOwner !== targetPath) {
+          return { ok: false, message: '字幕存档属于另一篇笔记，已停止重整理，请先检查同名字幕存档' }
+        }
+      }
+      return { ok: false, message: '这篇笔记还没有字幕存档，先重刷一次生成存档后再试' }
+    }
     if (archiveOwner && archiveOwner !== targetPath) {
       return { ok: false, message: '字幕存档属于另一篇笔记，已停止重整理，请先检查同名字幕存档' }
     }
@@ -1244,22 +1574,50 @@ export function apply(ctx, rawConfig = {}) {
     }
     if (!found) return { ok: false, message: '找不到这篇笔记：' + relPath }
     const now = Date.now()
+    const previousReview = found.review
     const current = found.review && found.review.due ? found.review : initialReview(now)
     const review = nextReview(current, normalized, now)
+    // 先落盘复习意图：笔记已改、状态未落之间崩溃时，启动恢复可据此补回 state。
+    state.pendingReviews[relPath] = { review, at: now }
+    if (!save()) {
+      delete state.pendingReviews[relPath]
+      return { ok: false, stateSaved: false, retryable: true, message: '状态保存失败，未修改笔记；请稍后重试', review }
+    }
     let noteResult
+    let noteError = null
     try {
       noteResult = await updateNoteReview({ vaultPath, notePath: relPath, review })
     } catch (error) {
+      // 超时/权限失败时底层写入可能已经发生，不能删 pending，留给启动对账或用户重试。
+      noteError = error
       noteResult = { ok: false, error: error?.message || '更新笔记里的复习状态失败' }
     }
-    if (!noteResult.ok) return { ok: false, message: noteResult.error || '更新笔记里的复习状态失败', review }
+    if (!noteResult.ok) {
+      if (noteError) {
+        return {
+          ok: false,
+          retryable: true,
+          pendingSaved: true,
+          message: (noteResult.error || '更新笔记里的复习状态失败') + '；已保留恢复记录，稍后可重试',
+          review,
+        }
+      }
+      delete state.pendingReviews[relPath]
+      save()
+      return { ok: false, message: noteResult.error || '更新笔记里的复习状态失败', review }
+    }
     found.review = review
     const warnings = []
     let stateSaved = true
+    delete state.pendingReviews[relPath]
     try {
       saveState(statePath, state)
     } catch (error) {
       stateSaved = false
+      // 内存里的进度也要回滚：否则同进程重试会在未落盘的进度上再前进一档。
+      found.review = previousReview
+      // 保存失败时把待处理记录放回内存，磁盘上的旧 pending 仍可用于重启恢复。
+      state.pendingReviews[relPath] = { review, at: now }
       warnings.push('状态保存失败：重启后可能丢失这次复习进度')
       logger.log('state.save.error msg=' + (error?.message || error))
     }
@@ -1268,7 +1626,9 @@ export function apply(ctx, rawConfig = {}) {
     const message = stateSaved
       ? (normalized === 'easy' ? '记住了，下次 ' + review.due + ' 再见' : normalized === 'hard' ? '有点模糊，' + review.due + ' 再复习一次' : '没关系，明天再来')
       : '复习进度已写入笔记，但状态保存失败：重启后可能丢失这次复习进度'
-    return { ok: true, stateSaved, warnings, message, review }
+    return stateSaved
+      ? { ok: true, stateSaved, warnings, message, review }
+      : { ok: false, partial: true, stateSaved: false, retryable: true, warnings, message, review }
   }
 
   /** 问笔记库：搜索相关笔记，读正文交给模型回答并返回引用。 */
@@ -1322,7 +1682,10 @@ export function apply(ctx, rawConfig = {}) {
     const result = mergeTagInVideos(videos, source, target)
     if (result.changed === 0) return { ok: false, message: '没有找到这个主题标签' }
     let changed = 0
-    for (const item of result.changedVideos) {
+    // 没有 notePath 的旧记录无法写回笔记，跳过而不是让它永远卡在 partial。
+    const targets = result.changedVideos.filter((item) => String(item.notePath || '').trim())
+    const skipped = result.changedVideos.length - targets.length
+    for (const item of targets) {
       let noteResult
       try {
         noteResult = await updateNoteTags({ vaultPath, notePath: item.notePath, tags: item.tags })
@@ -1333,18 +1696,28 @@ export function apply(ctx, rawConfig = {}) {
         if (changed > 0) {
           try { await rebuildKnowledgePages() } catch (error) { logger.log('tags.merge.rebuild.error msg=' + (error?.message || error)) }
         }
-        return { ok: false, message: noteResult.error || '更新笔记标签失败', changed }
+        return { ok: false, partial: changed > 0, changed, remaining: targets.length - changed, retryable: true, message: noteResult.error || '更新笔记标签失败', warnings: changed > 0 ? ['部分笔记已更新，剩余笔记未处理，可稍后重试'] : [] }
       }
+      let previousTags = []
       for (const data of Object.values(state.subjects || {})) {
         const video = (Array.isArray(data?.videos) ? data.videos : []).find((entry) => entry.notePath === item.notePath)
-        if (video) { video.tags = item.tags; break }
+        if (video) {
+          previousTags = Array.isArray(video.tags) ? video.tags.slice() : []
+          video.tags = item.tags
+          break
+        }
       }
       changed += 1
       try {
         saveState(statePath, state)
       } catch (error) {
         logger.log('state.save.error msg=' + (error?.message || error))
-        return { ok: false, message: '笔记已更新，但保存状态失败：' + (error?.message || error), changed }
+        // 回滚当前这篇的内存标签，保证同进程重试时还能再次改这篇笔记。
+        for (const data of Object.values(state.subjects || {})) {
+          const video = (Array.isArray(data?.videos) ? data.videos : []).find((entry) => entry.notePath === item.notePath)
+          if (video) { video.tags = previousTags; break }
+        }
+        return { ok: false, partial: true, stateSaved: false, retryable: true, changed, remaining: targets.length - changed, message: '笔记已更新，但保存状态失败：' + (error?.message || error), warnings: ['状态保存失败：请稍后重试，部分笔记可能已更新'] }
       }
     }
     if (state.tagVocabulary && typeof state.tagVocabulary === 'object') {
@@ -1352,10 +1725,20 @@ export function apply(ctx, rawConfig = {}) {
       if (count > 0) state.tagVocabulary[target] = (Number(state.tagVocabulary[target]) || 0) + count
       delete state.tagVocabulary[source]
     }
-    try { saveState(statePath, state) } catch (error) { logger.log('state.save.error msg=' + (error?.message || error)) }
+    try {
+      saveState(statePath, state)
+    } catch (error) {
+      logger.log('state.save.error msg=' + (error?.message || error))
+      return { ok: false, partial: true, stateSaved: false, retryable: true, changed, remaining: 0, message: '标签已合并到笔记，但保存状态失败：' + (error?.message || error), warnings: ['状态保存失败：重启后标签索引可能不一致'] }
+    }
     logger.log('tags.merge from=' + JSON.stringify(source) + ' to=' + JSON.stringify(target) + ' changed=' + changed)
-    try { await rebuildKnowledgePages() } catch (error) { logger.log('tags.merge.rebuild.error msg=' + (error?.message || error)) }
-    return { ok: true, changed, message: '已把「' + source + '」合并到「' + target + '」，更新 ' + changed + ' 篇笔记' }
+    const warnings = []
+    if (skipped > 0) warnings.push('有 ' + skipped + ' 条旧记录没有笔记路径，已跳过')
+    try { await rebuildKnowledgePages() } catch (error) {
+      logger.log('tags.merge.rebuild.error msg=' + (error?.message || error))
+      warnings.push('知识库页面重建失败：' + (error?.message || error))
+    }
+    return { ok: true, changed, warnings, message: '已把「' + source + '」合并到「' + target + '」，更新 ' + changed + ' 篇笔记' + (warnings.length ? '（有警告）' : '') }
   }
 
   /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
@@ -1560,11 +1943,24 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 重新探测 vault 权限；成功则补齐目录。 */
   async function reprobeVault() {
+    const drained = await drainVaultQueue({ timeoutMs: 2000 })
+    if (!drained.ok) {
+      const status = vaultGuard.status()
+      return {
+        ...status,
+        ok: false,
+        blocked: true,
+        code: 'vault-queue-stuck',
+        detail: '上一次 vault 操作仍未结束，已保持只读；请重启应用后再试',
+        hint: VAULT_HINT,
+      }
+    }
     const result = await probeVaultAccess(vaultPath)
     vaultGuard.apply(result)
     if (result.ok && !readOnly) {
       try {
         await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+        await schedulePendingRecovery({ ensureDirs: false })
       } catch (error) {
         if (!(error && error.vaultBlocked)) console.error('[seen-core] 重试准备笔记目录失败：', error)
       }

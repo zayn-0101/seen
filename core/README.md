@@ -18,8 +18,11 @@ await controller.ready // 等待笔记目录准备完成
 `apply` 返回控制器：
 
 ```
-start() / stop() / setPollInterval(ms) / scan({ url, force })
-getStatus() / getSnapshot() / getHistory() / getConfig() / getEvents()
+start() / stop() / setPollInterval(ms) / setNoteLayout(layout) / setEditorPass(enabled)
+scan({ url, force }) / refreshHistory({ limit, onProgress }) / retryFailure(key)
+rebuildKnowledgePages() / resummarizeNote({ notePath })
+getReviews() / recordReview({ notePath, rating }) / askLibrary({ question })
+renameTag({ from, to }) / getStatus() / getSnapshot() / getHistory() / getConfig() / getEvents()
 onEvent(fn) / isReadOnly() / isStarted()
 ```
 
@@ -35,8 +38,10 @@ onEvent(fn) / isReadOnly() / isStarted()
 | `lib/analyze.js` | 提示词与 LLM 输出解析 |
 | `lib/render.js` | Markdown 渲染（笔记、手册、总览） |
 | `lib/obsidian.js` | vault 写入与 AUTO 区块更新 |
+| `lib/vault-path.js` `vault-access.js` | vault 路径边界校验、权限守卫与串行队列 |
+| `lib/transcript-audit.js` | 字幕存档只读审计（owner、重复、旧路径） |
 | `lib/session.js` `ytdlp.js` | B 站登录态、yt-dlp 定位与自动安装 |
-| `lib/whisper.js` | 音频工具与本地转写：ffmpeg 缺失自动下载、模型按推荐选项下载，调 whisper.cpp 转写 |
+| `lib/whisper.js` | 音频工具与本地转写：ffmpeg 缺失自动下载、Whisper 模型由面板按推荐安装，调 whisper.cpp 转写 |
 | `lib/download.js` | 下载候选地址：官方优先，GitHub release 追加镜像兜底 |
 | `lib/foreground*.js` | 前台窗口检测（macOS / Windows） |
 | `lib/state.js` | 状态持久化与去重记录 |
