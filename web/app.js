@@ -1233,6 +1233,13 @@ async function saveNoteLayout(layout) {
 }
 
 /** 解析输入框：支持一行一个，也容忍空格 / 逗号分隔。 */
+function fitManualUrl() {
+  const input = $('manualUrl')
+  if (!input) return
+  input.style.height = 'auto'
+  input.style.height = Math.min(input.scrollHeight, 96) + 'px'
+}
+
 function parseScanInput(raw) {
   return String(raw || '')
     .split(/[\s,，、]+/)
@@ -1450,6 +1457,7 @@ $('historySearch').addEventListener('input', () => {
 $('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))
 $('reprocess').addEventListener('click', reprocessHistory)
+$('manualUrl').addEventListener('input', fitManualUrl)
 $('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
 $('check').addEventListener('click', check)
 $('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })

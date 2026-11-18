@@ -445,3 +445,13 @@
 - [x] 新增 `core/test/server-integration.test.js` 的更新接口测试
 - [x] `cd core && node --test`：370 tests / 370 pass / 0 fail；`npm run check` 113 个文件通过
 - [x] README / CLAUDE.md 同步手动检查入口
+
+
+## 2026-11-18 输入框占位居中
+
+背景：添加视频的输入框用 `rows="2"` 的 textarea 撑两行，单行占位文字落在第一行顶部，看起来偏上。
+
+- [x] `#manualUrl` 改为 `rows="1"`，CSS 高度固定为一行（`height: 21px`，与 `line-height: 1.5` × 14px 一致），由外层 flex 垂直居中
+- [x] 粘贴多行内容时按 `scrollHeight` 自动增高，最高 96px；清空后回到一行
+- [x] Playwright 实测：外框高 50px，输入框高 21px，上下各 14.5px；三行内容增高到 63px
+- [x] `cd core && node --test`：370 tests / 370 pass / 0 fail；`npm run check` 113 个文件通过
