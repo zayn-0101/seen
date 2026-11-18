@@ -391,3 +391,4 @@
 - [x] cd core && node --test：354 tests / 354 pass / 0 fail；npm run check 109 个文件通过
 - [x] 删除旧 metadata 孤立笔记后复检：npm run self-check 13 篇（当前格式 13 / 旧格式 0），错误 0、警告 0；索引 239 条双链 / 手册 6 篇，状态 13 条 / 笔记缺失 0 / 字幕缺失 0
 - [x] 0.5.3 universal app 重新构建、固定证书签名并安装到 ~/Applications/Seen.app；启动日志显示通知权限 authorized、SSE HTTP 200
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.3.dmg`（85M，universal）：挂载校验 app 版本 0.5.3、固定证书签名通过、lipo 为 x86_64 + arm64，bundle 内含 `player/wbi/v2`、`LLM_TIMEOUT_MS = 300000`、`通知：` 日志与 `previousNotePath` 复用逻辑
