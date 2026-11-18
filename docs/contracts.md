@@ -666,6 +666,13 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `installWhisperCli({ onProgress, timeout })`：用 Homebrew 安装 whisper.cpp（官方无预编译包）。只在用户显式触发时调用（服务端 `POST /api/install/whisper-cli`），进度按 brew 输出行回调，默认 15 分钟超时；已存在时返回 `{ ok:true, skipped:true }`。
 - 抖音与 YouTube 共用；`lib/douyin.js` 保留同名 re-export 以兼容既有调用。
 
+## lib/process-queue.js
+
+- `createProcessQueue({ run, keyOf, onError, maxPending })`：前台轮询与处理解耦的串行队列。`push(item)` 返回 `{ ok, key, size }`；同 key 在运行中或等待中返回 `{ ok:false, duplicate:true }`，等待数达到 `maxPending`（默认 8）返回 `{ ok:false, full:true }`。
+- 队列自动 drain，一次只跑一条；`run` 抛错交给 `onError` 后继续下一条，不阻断队列。
+- `clear()` 只清空等待项并返回数量（运行中的任务不受影响）；`size()` 含运行中；`whenIdle()` 等待队列清空。
+- `index.js` 的 `observeOnce` 只入队、不 await `processTitle`；`stop()` 清空等待队列。
+
 ## lib/index.js
 
 引擎入口：`export const name`、`export function apply(ctx, rawConfig)`。独立服务直接调用 `apply(ctx, { autoStart: false, exposeController: true })`。

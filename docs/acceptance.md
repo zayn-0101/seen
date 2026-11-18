@@ -410,3 +410,17 @@
 - [x] 0.5.4 universal app 构建、固定证书签名并安装到 `~/Applications/Seen.app`；启动后 `GET /api/status` 返回 ok、只读关闭、vault ok，菜单栏日志显示通知权限 authorized、SSE HTTP 200
 - [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.4.dmg`（85M，universal）：挂载校验 app 版本 0.5.4、固定证书签名通过、lipo 为 x86_64 + arm64，bundle 内含 `transcriptOrigin`
 - [x] DMG SHA256：`3aefe14a64d5c4d90772c57c67f555f44cf5bbc8f4c7efa3ef88fbe947965f3d`（`dist/Seen-v0.5.4.dmg.sha256`）
+
+## 2026-11-18 通知排版与串行队列
+
+背景：抖音精选的通知标题是标签页口号「抖音精选电脑版 - 抖音旗下优质视频平台」，平台还单独占一行；另外第一条视频转写期间打开第二条，轮询在等 `processTitle`，第二条不会被观察。
+
+- [x] 通知标题固定为视频标题，副标题为「拾影 · 平台 · 阶段」，平台不再单独占一行；四个节点（开始整理 / 本地转写中 / 笔记已生成 / 处理失败）统一由 `server/notification.js` 的 builder 生成
+- [x] 抖音的「开始整理」等 `fetchDouyinContent` 抛出 metadata 事件（缓存命中也发）后再通知，使用页面解析出的真实标题；转写与转写进度事件带 title/author，B站与 YouTube 同步补齐
+- [x] 失败与 vault-blocked 事件带 title/source，处理失败通知也能显示视频名而不是「新视频」
+- [x] 前台轮询与处理解耦：`core/lib/process-queue.js` 串行队列（同 key 去重、最多 8 条、单条失败不阻断后续、`clear()` 返回清空数量）
+- [x] `observeOnce` 只入队不 await `processTitle`；第一条转写时第二条进入队列，前一条结束后自动处理；`stop()` 清空等待队列
+- [x] 新增 `core/test/process-queue.test.js`（串行顺序、运行中/等待中去重、失败继续、clear、上限、whenIdle）与 `core/test/notification.test.js`（平台标签、副标题、四个 builder、标题去站点后缀/话题标签）
+- [x] 临时服务端到端：用真实抖音缓存重新总结，`server.log` 记录「通知：<视频标题> | 作者：<作者>」与「通知：<视频标题> | 已归入「语言学」」；笔记写入临时库，未碰真实 vault
+- [x] `cd core && node --test`：369 tests / 369 pass / 0 fail；`npm run check` 113 个文件通过
+- [x] README / CLAUDE.md / docs/architecture.md / docs/contracts.md 同步通知文案与串行队列

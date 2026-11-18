@@ -303,6 +303,16 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
     const cached = readCache(id, config)
     if (cached) {
       if (onProgress) onProgress({ stage: 'cache', message: '命中抖音缓存', videoId: id })
+      if (onProgress) {
+        onProgress({
+          stage: 'metadata',
+          message: '读取抖音视频信息',
+          videoId: id,
+          title: cached.title || '',
+          author: cached.author || cached.owner || '',
+          duration: Number(cached.duration) || 0,
+        })
+      }
       return cached
     }
   }
@@ -315,6 +325,16 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
   const playUrl = mediaUrl(detail)
   if (!playUrl) throw new Error('抖音页面没有返回可播放地址')
   const meta = buildContent(detail, { url, id })
+  if (onProgress) {
+    onProgress({
+      stage: 'metadata',
+      message: '读取抖音视频信息',
+      videoId: id,
+      title: meta.title,
+      author: meta.author || meta.owner || '',
+      duration: meta.duration,
+    })
+  }
   if (onProgress) onProgress({ stage: 'audio', message: '下载并提取音频', videoId: id, duration: meta.duration })
   const audio = await downloadAudio(playUrl, config, onProgress)
   try {
@@ -328,6 +348,8 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
           ? '本地 Whisper 转写中，预计约 ' + estimateMinutes + ' 分钟'
           : '本地 Whisper 转写中',
         videoId: id,
+        title: meta.title,
+        author: meta.author || meta.owner || '',
         duration: meta.duration,
         estimateMinutes,
       })
@@ -342,6 +364,8 @@ export async function fetchDouyinContent({ url, title = '', config = {}, force =
         stage: 'transcribe-progress',
         message: '本地 Whisper 转写中 ' + progress.percent + '%',
         videoId: id,
+        title: meta.title,
+        author: meta.author || meta.owner || '',
         percent: progress.percent,
       }),
     })

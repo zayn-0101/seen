@@ -43,6 +43,7 @@ import { parseTranscriptNote, renderTranscriptNote, transcriptNoteOwner } from '
 import { collectReviews, initialReview, nextReview, normalizeRating } from './review-schedule.js'
 import { VAULT_HINT, createVaultGuard, probeVaultAccess } from './vault-access.js'
 import { findMnemon, rememberVideo } from './mnemon.js'
+import { createProcessQueue } from './process-queue.js'
 
 export const name = 'seen-core'
 
@@ -629,6 +630,7 @@ export function apply(ctx, rawConfig = {}) {
     let key = ''
     let activeKey = ''
     let rawTitle = ''
+    let displayTitle = ''
     let source = ''
     let inputBvid = null
     let inputVideoId = null
@@ -746,6 +748,7 @@ export function apply(ctx, rawConfig = {}) {
 
       const fallbackTitle = rawTitle || inputBvid || inputVideoId || '未命名视频'
       const title = (content?.matched && content.title && !/^https?:\/\//i.test(content.title)) ? content.title : (source === 'bilibili' ? cleanBiliTitle(fallbackTitle) : cleanTitle(fallbackTitle))
+      displayTitle = title
       const desc = content?.desc || ''
       const tags = content?.tags || []
       const existing = Object.keys(state.subjects)
@@ -1139,7 +1142,7 @@ export function apply(ctx, rawConfig = {}) {
       const msg = String(error?.message || error)
       if (error && error.vaultBlocked) {
         logger.log('vault.blocked code=' + (error.code || '') + ' msg=' + msg)
-        emit('vault-blocked', { code: error.code || 'timeout', detail: error.detail || msg, hint: VAULT_HINT })
+        emit('vault-blocked', { code: error.code || 'timeout', detail: error.detail || msg, hint: VAULT_HINT, title: displayTitle || rawTitle, source })
         return { ok: false, message: '笔记没有写入：' + VAULT_HINT }
       }
       let errorStateSaved = true
@@ -1159,13 +1162,24 @@ export function apply(ctx, rawConfig = {}) {
         }
       }
       logger.log('process.error key=' + JSON.stringify(key) + ' msg=' + msg)
-      emit('error', { message: msg })
+      emit('error', { message: msg, title: displayTitle || rawTitle, source })
       console.error('[seen-core] 处理失败（不影响后续轮询）：', error)
       return { ok: false, message: '处理失败：' + msg, stateSaved: errorStateSaved, warnings }
     } finally {
       running = false
     }
   }
+
+  // 前台轮询与视频处理解耦：第一条还在转写时，第二条只入队等待，
+  // 轮询继续观察，避免第二条因为「running」被漏掉。
+  const processQueue = createProcessQueue({
+    run: (item) => processTitle(item),
+    keyOf: (item) => item?.key || '',
+    maxPending: 8,
+    onError: (error, item) => {
+      logger.log('process.queue.error key=' + JSON.stringify(item?.key || '') + ' msg=' + (error?.message || error))
+    },
+  })
 
   async function observeOnce() {
     if (!config.enabled || !started) return
@@ -1219,7 +1233,12 @@ export function apply(ctx, rawConfig = {}) {
       const p = pending
       pending = null
       emit('stable', { title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
-      await processTitle({ title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
+      // 不在这里 await：第一条视频转写期间仍要继续轮询，
+      // 第二条识别到后排队，等前一条结束再处理。
+      const queued = processQueue.push(p)
+      if (!queued.ok && queued.full) {
+        logger.log('process.queue.full key=' + JSON.stringify(p.key) + ' size=' + queued.size)
+      }
     }
   }
 
@@ -1347,6 +1366,8 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function stop() {
+    const cleared = processQueue.clear()
+    if (cleared > 0) logger.log('process.queue.cleared count=' + cleared)
     if (!started) return { ok: true, message: '轮询已停止' }
     started = false
     clearPollTimer()

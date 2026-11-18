@@ -15,6 +15,12 @@ import { spawn } from 'node:child_process'
 import { apply } from '../core/lib/index.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
+import {
+  buildFailedNotification,
+  buildSavedNotification,
+  buildStartedNotification,
+  buildTranscribingNotification,
+} from './notification.js'
 import { buildWeeklyReview } from '../core/lib/review.js'
 import { writeWeeklyReview } from '../core/lib/obsidian.js'
 import { VAULT_HINT, probeVaultAccess } from '../core/lib/vault-access.js'
@@ -201,50 +207,30 @@ let installingWhisperModel = false
 let refreshingHistory = false
 let resummarizing = false
 
-function platformName(source) {
-  if (source === 'douyin') return '抖音'
-  if (source === 'youtube') return 'YouTube'
-  return 'B站'
-}
-
 function notifySaved(data = {}) {
-  emitNotification({
-    title: '拾影 · 笔记已生成',
-    subtitle: [data.subject, platformName(data.source)].filter(Boolean).join(' · '),
-    body: data.title || '新视频',
-  })
+  emitNotification(buildSavedNotification(data))
 }
 
 /** 识别到视频、开始处理时提醒一次，避免用户以为没反应。 */
 function notifyStarted(data = {}) {
-  const title = data.title || data.videoId || data.bvid || '新视频'
-  emitNotification({
-    title: '拾影 · 开始整理',
-    subtitle: platformName(data.source),
-    body: String(title).slice(0, 120),
-  })
+  emitNotification(buildStartedNotification(data))
 }
 
 /** 进入本地转写（最慢的一步）时提醒，并给出预计耗时。 */
 function notifyTranscribing(data = {}) {
-  const minutes = Number(data.estimateMinutes) || 0
-  emitNotification({
-    title: '拾影 · 本地转写中',
-    subtitle: String(data.title || '').slice(0, 60),
-    body: minutes > 0 ? '没有可用字幕，预计约 ' + minutes + ' 分钟' : '没有可用字幕，正在转写音频',
-  })
+  emitNotification(buildTranscribingNotification(data))
 }
 
 function notifyFailed(data = {}) {
-  emitNotification({
-    title: '拾影 · 处理失败',
-    body: String(data.message || '未知错误').slice(0, 160),
-  })
+  emitNotification(buildFailedNotification(data))
 }
 
 engine.onEvent((event) => {
   broadcast(event)
-  if (event.type === 'detected') notifyStarted(event.data)
+  // 抖音的标签页标题是站点口号，真正标题在页面解析后才有：
+  // 等 fetchDouyinContent 发出 metadata 事件再通知，避免通知里出现网站副标题。
+  if (event.type === 'detected' && event.data?.source !== 'douyin') notifyStarted(event.data)
+  if (event.type === 'progress' && event.data?.stage === 'metadata') notifyStarted(event.data)
   if (event.type === 'progress' && event.data?.stage === 'transcribe') notifyTranscribing(event.data)
   if (event.type === 'saved') {
     log('笔记已生成：' + event.data?.notePath)
@@ -257,7 +243,7 @@ engine.onEvent((event) => {
   }
   if (event.type === 'vault-blocked') {
     log('笔记没有写入：' + VAULT_HINT)
-    notifyFailed({ message: '没有「文稿文件夹」权限，笔记未写入' })
+    notifyFailed({ ...event.data, message: '没有「文稿文件夹」权限，笔记未写入' })
   }
 })
 

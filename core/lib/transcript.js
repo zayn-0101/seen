@@ -381,6 +381,8 @@ export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', au
           message: estimateMinutes > 0 ? '本地 Whisper 转写中，预计约 ' + estimateMinutes + ' 分钟' : '本地 Whisper 转写中',
           bvid,
           page,
+          title,
+          author,
           duration: seconds,
           estimateMinutes,
         })
@@ -397,6 +399,8 @@ export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', au
           message: '本地 Whisper 转写中 ' + progress.percent + '%',
           bvid,
           page,
+          title,
+          author,
           percent: progress.percent,
         }),
       })

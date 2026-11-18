@@ -396,6 +396,8 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
               ? '本地 Whisper 转写中，预计约 ' + estimateMinutes + ' 分钟'
               : '本地 Whisper 转写中',
             videoId: id,
+            title: meta.title,
+            author: meta.author,
             duration: meta.duration,
             estimateMinutes,
           })
@@ -411,6 +413,8 @@ export async function fetchYoutubeContent({ url = '', title = '', config = {}, f
             stage: 'transcribe-progress',
             message: '本地 Whisper 转写中 ' + progress.percent + '%',
             videoId: id,
+            title: meta.title,
+            author: meta.author,
             percent: progress.percent,
           }),
         })

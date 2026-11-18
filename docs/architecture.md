@@ -12,7 +12,8 @@
   → cleanTitle + extractBvid / extractDouyinId / extractYoutubeId
   → 去重（state.seen：bvid 优先，其次 <source>:<videoId>）
   → 稳定计数（stablePolls=2）
-  → processTitle()
+  → 推入串行队列（process-queue.js，按 bvid/videoId/source/title/page 去重，最多 8 条）
+  → processTitle()（一次只跑一条；轮询不等它，后续视频继续入队）
       → session.getBilibiliCookieHeader()（yt-dlp 将浏览器 Cookie 写入临时文件，读取后清理）
       → fetchContent()：
           → URL/BV 直取 view（title/desc/tags/pages/cid/subtitle）
@@ -156,4 +157,5 @@
 | note-check.js | 笔记结构 / 标签 / 章节时间轴 / 双链的纯函数断言（离线自检与模型回放回归） |
 | note-clean.js | 旧笔记清理（去掉 format 2 时代的封面字段与封面图） |
 | mnemon.js | CLI 探测与 remember 调用 |
+| process-queue.js | 前台轮询与处理解耦的串行队列：去重、限长、失败不阻断后续 |
 | index.js | 引擎入口、轮询、编排、内部工具注册 |
