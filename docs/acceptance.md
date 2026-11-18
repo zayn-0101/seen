@@ -389,4 +389,5 @@
 - [x] 临时库端到端：4 万字级 B站音频转写经 POST /api/resummarize 重新总结，5 分 08 秒完成，quality 从 3 升到 5，contentSource=archive、contentType=opinion，含完整 summary/question/answer/关键数字/论证结构/10 个知识点/6 个概念
 - [x] 真实库复跑：同一篇 14,437 字字幕存档重新总结，15:44–15:51 完成，笔记 15,990 bytes、quality 5、warnings 空、stateSaved true；未产生第三篇重复笔记
 - [x] cd core && node --test：354 tests / 354 pass / 0 fail；npm run check 109 个文件通过
+- [x] 删除旧 metadata 孤立笔记后复检：npm run self-check 13 篇（当前格式 13 / 旧格式 0），错误 0、警告 0；索引 239 条双链 / 手册 6 篇，状态 13 条 / 笔记缺失 0 / 字幕缺失 0
 - [x] 0.5.3 universal app 重新构建、固定证书签名并安装到 ~/Applications/Seen.app；启动日志显示通知权限 authorized、SSE HTTP 200

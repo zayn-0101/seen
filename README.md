@@ -570,7 +570,7 @@ npm run prune:install -- --keep 2  # 预览清理 ~/.seen/install-backups 安装
 
 - 笔记、缓存、配置全部在本机
 - 视频内容只在总结时发送给你配置的模型服务
-- B 站 Cookie 仅用于抓取字幕和评论，通过 yt-dlp 临时读取，用后立即删除，不写日志、不写配置
+- B 站 Cookie 仅用于抓取播放器信息（含 AI 字幕）、字幕、评论和音频，通过 yt-dlp 临时读取，用后立即删除，不写日志、不写配置
 - 抖音解析使用独立的临时 Chrome profile，不读取日常浏览器的 Cookie
 - YouTube 解析通过本机 yt-dlp 完成，不读取浏览器 Cookie，也不调用 YouTube Data API
 - API Key 保存在 `~/.seen/llm.json`（权限 600），接口回显脱敏，日志不记录

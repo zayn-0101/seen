@@ -2,7 +2,7 @@
 
 拾影（Seen）的应用核心：检测前台浏览器视频 → 学科分类 → 抓取字幕/弹幕/评论 → LLM 总结 → 渲染 Obsidian Markdown。
 
-纯 ESM、零 npm 依赖，可单独 import 和测试；外部可执行文件（yt-dlp、ffmpeg、whisper-cli）按需探测，yt-dlp 缺失时会自动下载。
+纯 ESM、零 npm 依赖，可单独 import 和测试；外部可执行文件（yt-dlp、ffmpeg、whisper-cli）按需探测，yt-dlp 与 ffmpeg 缺失时会自动下载并校验，whisper-cli 与本地模型由面板引导安装。
 
 ## 作为库使用
 
@@ -26,7 +26,7 @@ renameTag({ from, to }) / getStatus() / getSnapshot() / getHistory() / getConfig
 onEvent(fn) / isReadOnly() / isStarted()
 ```
 
-事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / error / status`。
+事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
 ## 模块
 
