@@ -424,3 +424,12 @@
 - [x] 临时服务端到端：用真实抖音缓存重新总结，`server.log` 记录「通知：<视频标题> | 作者：<作者>」与「通知：<视频标题> | 已归入「语言学」」；笔记写入临时库，未碰真实 vault
 - [x] `cd core && node --test`：369 tests / 369 pass / 0 fail；`npm run check` 113 个文件通过
 - [x] README / CLAUDE.md / docs/architecture.md / docs/contracts.md 同步通知文案与串行队列
+
+
+## 2026-11-18 v0.5.5 发布
+
+- [x] `cd core && node --test`：369 tests / 369 pass / 0 fail；`npm run check` 113 个文件通过
+- [x] 0.5.5 universal app 构建、固定证书签名并安装到 `~/Applications/Seen.app`；`GET /api/status` 返回 ok、只读关闭、vault ok，菜单栏日志显示通知权限 authorized、SSE HTTP 200
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.5.dmg`（85M，universal）：挂载校验 app 版本 0.5.5、固定证书签名通过、lipo 为 x86_64 + arm64，bundle 内含 `cleanNotificationTitle` 与 `processQueue`
+- [x] DMG SHA256：`88f4d0e80ae01fc82b375f1f83cd5faa1b64d009e762b33abb7f79c150e12feb`（`dist/Seen-v0.5.5.dmg.sha256`）
+- [x] 安装备份清理：`npm run prune:install -- --apply --keep 2` 删除最旧的 `Seen.app.20261118-183830`，释放 233.7 MB；保留最近两份
