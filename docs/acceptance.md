@@ -375,3 +375,18 @@
 - [x] `cd core && node --test`：348 tests / 348 pass / 0 fail；`npm run check` 109 个文件通过；`git diff --check` 无输出
 - [x] 真实库只读验证：`npm run self-check` 13 篇、错误 1（既有 `theme-empty`）、警告 13（12 条旧字幕路径 + 1 条 `chapters-missing`），退出 1；`node scripts/audit-transcripts.mjs` 13 条状态、12 份存档、错误 0、警告 12（全部旧字幕路径）
 - [x] 未删除真实构建备份、未安装新 app、未迁移或改写真实笔记
+
+## 2026-11-18 B站字幕/转写与通知修复
+
+背景：40 分钟 B站视频无 UP 主字幕，旧实现仅 46 秒就生成 metadata-only 笔记（简介 0 字、字幕 0 字、quality 1），且用户没有收到任何处理节点通知。
+
+- [x] B站播放器接口改为优先 /x/player/wbi/v2：AI 字幕 URL 必须包含当前 aid + cid，避免部分登录态下 /x/player/v2 返回最近观看视频的字幕地址；字幕 URL 统一补全协议并只接受 https；优先级 ai-zh → zh-Hans/zh-CN/zh → ai-en/en
+- [x] B站字幕抓取带 Cookie，失败后 yt-dlp 自动无 Cookie 重试；仍无字幕则下载 bestaudio + ffmpeg + Whisper 本地转写。每一步失败写入 transcript 的 detail/attempts，日志不再静默
+- [x] processTitle 记录 bili cookie=ok/none 与 transcript source/detail/length/attempts；transcript 事件带 detail，面板可看出当前来源
+- [x] 总结可靠性：LLM 单次超时从 120 秒提高到 300 秒（server/llm.js 同步）；校验要求 summary 非空且不等于标题、keyPoints 至少一项非空；两轮都失败时用字幕 digest 的句子构造 summary 与「内容要点」，不再退化成标题
+- [x] 重复笔记防护：writeVideoNote 在 previousNotePath 存在且笔记身份与目标完全一致时沿用旧路径，标题变化不再生成第二篇笔记，也不覆盖身份不明的手写文件
+- [x] 通知：菜单栏应用新增 SeenLog，Notifier/EventStream 记录权限状态、SSE 连接、收到 notification 事件、通知投递成功/失败；应用运行时由 UNUserNotificationCenter 投递，独立服务仍用 osascript 兜底
+- [x] 临时库端到端：4 万字级 B站音频转写经 POST /api/resummarize 重新总结，5 分 08 秒完成，quality 从 3 升到 5，contentSource=archive、contentType=opinion，含完整 summary/question/answer/关键数字/论证结构/10 个知识点/6 个概念
+- [x] 真实库复跑：同一篇 14,437 字字幕存档重新总结，15:44–15:51 完成，笔记 15,990 bytes、quality 5、warnings 空、stateSaved true；未产生第三篇重复笔记
+- [x] cd core && node --test：354 tests / 354 pass / 0 fail；npm run check 109 个文件通过
+- [x] 0.5.3 universal app 重新构建、固定证书签名并安装到 ~/Applications/Seen.app；启动日志显示通知权限 authorized、SSE HTTP 200

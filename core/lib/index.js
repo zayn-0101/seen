@@ -672,6 +672,7 @@ export function apply(ctx, rawConfig = {}) {
       let cookieHeader = null
       if (!archiveOnly && source === 'bilibili') {
         try { cookieHeader = await getBilibiliCookieHeader({ config, url: input?.url || '' }) } catch { cookieHeader = null }
+        logger.log('bili cookie=' + (cookieHeader ? 'ok' : 'none'))
       }
       let content = prefetchedContent
       if (!archiveOnly && config.fetchContent) {
@@ -779,6 +780,8 @@ export function apply(ctx, rawConfig = {}) {
       let transcript = input?.transcript || content?.transcript || ''
       let timedTranscript = input?.timedTranscript || content?.timedTranscript || ''
       let transcriptSource = input?.transcriptSource || content?.transcriptSource || (transcript ? 'up-subtitle' : '')
+      let transcriptDetail = ''
+      let transcriptAttempts = []
       if (!archiveOnly && !transcript && config.fetchTranscript && content?.bvid) {
         try {
           const tr = await fetchTranscript({
@@ -792,16 +795,20 @@ export function apply(ctx, rawConfig = {}) {
             config,
             cookieHeader,
             force: Boolean(input?.force),
-            playerInfo: { subtitles: content.subtitleEntries || [] },
+            aid: content.aid || null,
+            subtitleEntries: content.subtitleEntries || [],
             onProgress: (progress) => emit('progress', { source, ...progress }),
           })
+          transcriptDetail = tr?.detail || ''
+          transcriptAttempts = Array.isArray(tr?.attempts) ? tr.attempts : []
           if (tr?.text) {
             transcript = tr.text
             timedTranscript = tr.timed || ''
             transcriptSource = tr.source || 'ai-subtitle'
-            logger.log('transcript source=' + transcriptSource + ' detail=' + tr.detail + ' length=' + transcript.length)
           }
+          logger.log('transcript source=' + (transcriptSource || 'none') + ' detail=' + transcriptDetail + ' length=' + transcript.length + (transcriptAttempts.length ? ' attempts=' + transcriptAttempts.join(' | ') : ''))
         } catch (error) {
+          transcriptDetail = '调用异常：' + (error?.message || error)
           logger.log('transcript.error msg=' + (error?.message || error))
         }
       }
@@ -811,7 +818,7 @@ export function apply(ctx, rawConfig = {}) {
         content.timedTranscript = timedTranscript
         if (content.fetchStats) content.fetchStats.transcript = transcript.length
       }
-      emit('transcript', { source: transcriptSource || 'none', length: transcript.length })
+      emit('transcript', { source: transcriptSource || 'none', length: transcript.length, detail: transcriptDetail })
       const contentForSummary = content
         ? { ...content, transcript, transcriptSource, timedTranscript }
         : (transcript ? { transcript, transcriptSource } : null)

@@ -188,6 +188,7 @@ const notifier = createNotifier({ enabled: process.env.SEEN_DISABLE_NOTIFY !== '
 // 通知同时写入 SSE：菜单栏应用用自己的 UNUserNotificationCenter 投递，
 // 独立运行服务时仍由 osascript 兜底。
 function emitNotification(payload) {
+  log('通知：' + (payload?.title || '') + ' | ' + (payload?.body || ''))
   notifier.notify(payload)
   broadcast({ type: 'notification', data: payload, at: Date.now() })
 }

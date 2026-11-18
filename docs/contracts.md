@@ -132,8 +132,15 @@ export async function searchVideo(title: string): Promise<{ bvid, aid, title, de
 export async function fetchView(bvid: string, p = 1): Promise<ViewInfo>
 export async function fetchDanmaku(cid: number|string): Promise<string[]>
 export async function fetchComments(aid: number|string): Promise<string[]>
-export async function fetchSubtitle(view: ViewInfo): Promise<string>
-export async function fetchContent({ ref, title, fetchContent = true }): Promise<ContentResult>
+export async function fetchPlayerInfo(bvid: string, cid: number|string, { cookieHeader = '' } = {}): Promise<{ needLoginSubtitle: boolean, subtitles: any[], viewPoints: any[] }>
+// 优先 /x/player/wbi/v2，失败或空回退 /x/player/v2；wbi 返回的 AI 字幕 URL 带当前 aid+cid
+export function normalizeSubtitleUrl(value: string): string
+export function isAiSubtitleEntry(entry: any): boolean
+export function subtitleSourceFromEntry(entry: any): 'ai-subtitle' | 'up-subtitle'
+export function pickSubtitleEntry(entries: any[], { aid = null, cid = null } = {}): any | null
+// AI 字幕 URL 必须包含 String(aid)+String(cid)；优先 ai-zh、zh-Hans、zh-CN、zh、ai-en、en
+export async function fetchSubtitle(view: ViewInfo, options?: { entries?: any[], aid?: number|string|null, cid?: number|string|null, cookieHeader?: string }): Promise<string>
+export async function fetchContent({ ref, title, fetchContent = true, cookieHeader = '', commentLimit = 20 }): Promise<ContentResult>
 export async function fetchTags(bvid: string): Promise<string[]>  // 可选：直接命中 bvid 时补标签，失败返回 []
 
 export interface ContentResult {
@@ -161,7 +168,7 @@ export interface ContentResult {
 - 搜索相似度 < 0.5 → 返回 null。
 - 弹幕去重、≤150 条、XML 上限 5MB。
 - 评论匿名接口实际最多约 3 条，按实际数量返回。
-- 字幕接口失败静默返回空字符串。
+- fetchSubtitle 内部失败返回空字符串；fetchTranscript 会记录 attempts/detail 并继续降级，不再让整条链路静默。
 - `fetchContent` 不得抛错；内部捕获并返回 matched:false 或空字段。
 - 多 P：`fetchContent` 返回 `page`（从 URL 的 `?p=` 或默认 1）与 `part`（分 P 名）；P2 起标题用 `buildBiliDisplayTitle` 拼成「系列名 - Pn 分P名」，P1 保持系列名。
 
@@ -179,9 +186,10 @@ export function chooseSubtitle(subtitles: any[]): any | null
 export function buildBilibiliAudioArgs({ url, dir, cookieBrowser }): string[]
 // --no-warnings --no-playlist -f bestaudio -o <dir>/audio.%(ext)s，可选 --cookies-from-browser，最后是 url
 
-export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', author = '', duration = 0, config = {}, cookieHeader = '', force = false, onProgress }): Promise<{ text: string, timed: string, source: string, detail: string, page?: number }>
-// 先读缓存 → yt-dlp 字幕 → 无字幕且 config.fetchTranscript !== false 时下载音频并用 Whisper 转写；
-// 进度阶段：audio → transcribe → transcribe-progress；失败不抛错，返回空 text/detail，不阻断仅元数据笔记。
+export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', author = '', duration = 0, config = {}, cookieHeader = '', force = false, onProgress, aid = null, subtitleEntries = [] }): Promise<{ text: string, timed: string, source: string, detail: string, attempts?: string[], page?: number }>
+// 先读缓存 → 播放器字幕（pickSubtitleEntry 已校验 aid+cid）→ yt-dlp 字幕（带 Cookie 失败自动无 Cookie 重试）
+// → 无字幕且 config.fetchTranscript !== false 时下载音频并用 Whisper 转写；
+// 进度阶段：audio → transcribe → transcribe-progress；失败不抛错，返回空 text/detail/attempts，不阻断仅元数据笔记。
 // 缓存 TTL 用 transcriptCacheDays（默认 30 天），写 version 2、bvid、cid。
 ```
 

@@ -317,7 +317,7 @@ export function createLlmClient(config = loadLlmConfig()) {
       if (request.signal.aborted) ac.abort()
       else request.signal.addEventListener('abort', onAbort, { once: true })
     }
-    const timer = setTimeout(() => ac.abort(new Error('LLM 请求超时')), 180000)
+    const timer = setTimeout(() => ac.abort(new Error('LLM 请求超时')), 300000)
     try {
       const res = await fetch(currentBaseURL() + '/chat/completions', {
         method: 'POST',

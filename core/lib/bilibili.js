@@ -521,31 +521,41 @@ export async function fetchTags(bvid) {
 /**
  * 获取播放器信息：字幕列表（需要登录时可能为空）与章节 view_points。
  * 匿名也能拿到 view_points；登录 Cookie 可拿到 AI 字幕列表。
+ *
+ * 注意：优先使用 /x/player/wbi/v2。部分登录态下 /x/player/v2 会把
+ * “最近观看视频”的 AI 字幕 URL 返回给当前视频，不能直接采信。
  */
 export async function fetchPlayerInfo(bvid, cid, { cookieHeader = '' } = {}) {
   const id = extractBvid(String(bvid ?? '')) || String(bvid ?? '').trim()
   if (!id || !cid) return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
-  try {
-    const data = await biliFetch(
-      BILI_API + '/x/player/v2?bvid=' + encodeURIComponent(id) + '&cid=' + encodeURIComponent(String(cid)),
-      { headers: cookieHeader ? { Cookie: cookieHeader } : {} }
-    )
-    if (data?.code !== 0) return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
-    const d = data?.data ?? {}
-    return {
-      needLoginSubtitle: d.need_login_subtitle === true,
-      subtitles: Array.isArray(d?.subtitle?.subtitles) ? d.subtitle.subtitles : [],
-      viewPoints: Array.isArray(d?.view_points)
+  const headers = cookieHeader ? { Cookie: cookieHeader } : {}
+  const params = 'bvid=' + encodeURIComponent(id) + '&cid=' + encodeURIComponent(String(cid))
+  const urls = [
+    BILI_API + '/x/player/wbi/v2?' + params,
+    BILI_API + '/x/player/v2?' + params,
+  ]
+  for (const url of urls) {
+    try {
+      const data = await biliFetch(url, { headers })
+      if (data?.code !== 0) continue
+      const d = data?.data ?? {}
+      const subtitles = Array.isArray(d?.subtitle?.subtitles) ? d.subtitle.subtitles : []
+      const viewPoints = Array.isArray(d?.view_points)
         ? d.view_points.map((item) => ({
             from: toNumber(item?.from) ?? 0,
             to: toNumber(item?.to) ?? 0,
             content: String(item?.content ?? ''),
           }))
-        : [],
-    }
-  } catch {
-    return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
+        : []
+      if (subtitles.length === 0 && viewPoints.length === 0) continue
+      return {
+        needLoginSubtitle: d.need_login_subtitle === true,
+        subtitles,
+        viewPoints,
+      }
+    } catch { /* 换下一个接口 */ }
   }
+  return { needLoginSubtitle: false, subtitles: [], viewPoints: [] }
 }
 
 /** 抓取弹幕 XML：去重、最多 150 条、响应上限 5MB。 */
@@ -617,25 +627,64 @@ export async function fetchComments(aid, { limit = 20, cookieHeader = '' } = {})
   return results.slice(0, max)
 }
 
+/** 规范化字幕 URL：补协议、只允许 http(s)。 */
+export function normalizeSubtitleUrl(value) {
+  let url = String(value ?? '').trim()
+  if (url.startsWith('//')) url = 'https:' + url
+  else if (url.startsWith('http://')) url = 'https://' + url.slice('http://'.length)
+  return /^https:\/\//i.test(url) ? url : ''
+}
+
+/** AI 字幕（B站服务端预生成的 ASR 资源）还是 UP 主上传字幕。 */
+export function isAiSubtitleEntry(entry) {
+  const lan = String(entry?.lan || '').toLowerCase()
+  const doc = String(entry?.lan_doc || '').toLowerCase()
+  return lan.startsWith('ai-') || doc.includes('ai') || doc.includes('自动')
+}
+
+export function subtitleSourceFromEntry(entry) {
+  return isAiSubtitleEntry(entry) ? 'ai-subtitle' : 'up-subtitle'
+}
+
+/**
+ * 从字幕列表中选一条可用字幕。
+ * AI 字幕 URL 必须包含当前视频的 aid+cid：B站 player/v2 在部分登录态下
+ * 会返回“最近观看视频”的字幕 URL，若不校验会把别的视频内容当成本视频。
+ */
+export function pickSubtitleEntry(entries, { aid = null, cid = null } = {}) {
+  const list = Array.isArray(entries)
+    ? entries.filter((entry) => entry && normalizeSubtitleUrl(entry.subtitle_url))
+    : []
+  const usable = list.filter((entry) => {
+    if (!isAiSubtitleEntry(entry) || !aid || !cid) return true
+    const url = normalizeSubtitleUrl(entry.subtitle_url)
+    return url.includes(String(aid) + String(cid))
+  })
+  const priority = ['ai-zh', 'zh-Hans', 'zh-CN', 'zh', 'ai-en', 'en']
+  for (const lang of priority) {
+    const found = usable.find((entry) => String(entry.lan || '').toLowerCase() === lang.toLowerCase())
+    if (found) return found
+  }
+  return usable.find((entry) => isAiSubtitleEntry(entry)) || usable[0] || null
+}
+
 /** 抓取字幕文本；任何失败静默返回空字符串。 */
-export async function fetchSubtitle(view) {
+export async function fetchSubtitle(view, options = {}) {
   try {
-    const list = Array.isArray(view?.subtitle)
-      ? view.subtitle
-      : Array.isArray(view?.subtitle?.list)
-        ? view.subtitle.list
-        : []
-    const priority = ['ai-zh', 'zh-Hans', 'zh-CN', 'zh', 'ai-en', 'en']
-    const item = priority
-      .map((lang) => list.find((entry) => entry && entry.subtitle_url && String(entry.lan || '').toLowerCase() === lang.toLowerCase()))
-      .find(Boolean) || list.find((entry) => entry && entry.subtitle_url)
+    const list = Array.isArray(options.entries)
+      ? options.entries
+      : Array.isArray(view?.subtitle)
+        ? view.subtitle
+        : Array.isArray(view?.subtitle?.list)
+          ? view.subtitle.list
+          : []
+    const item = pickSubtitleEntry(list, options)
     if (!item) return ''
-
-    let url = String(item.subtitle_url).trim()
-    if (url.startsWith('//')) url = 'https:' + url
-    else if (url.startsWith('http://')) url = 'https://' + url.slice('http://'.length)
-
-    const data = await biliFetch(url)
+    const url = normalizeSubtitleUrl(item.subtitle_url)
+    if (!url) return ''
+    const data = await biliFetch(url, {
+      headers: options.cookieHeader ? { Cookie: options.cookieHeader } : {},
+    })
     const body = Array.isArray(data?.body) ? data.body : []
     return body
       .map((entry) => String(entry?.content ?? '').trim())
@@ -765,23 +814,31 @@ export async function fetchContent(input = {}) {
     try {
       playerInfo = await fetchPlayerInfo(bvid, cid, { cookieHeader })
     } catch { /* 降级 */ }
-    const subtitleEntries = playerInfo.subtitles.length
-      ? playerInfo.subtitles
-      : (Array.isArray(view?.subtitle) ? view.subtitle : [])
+    const officialSubtitles = Array.isArray(view?.subtitle)
+      ? view.subtitle
+      : (Array.isArray(view?.subtitle?.list) ? view.subtitle.list : [])
+    const subtitleEntries = []
+    const seenSubtitles = new Set()
+    for (const entry of [...playerInfo.subtitles, ...officialSubtitles]) {
+      if (!entry || !normalizeSubtitleUrl(entry.subtitle_url)) continue
+      const key = String(entry.lan || '') + '|' + String(entry.subtitle_url)
+      if (seenSubtitles.has(key)) continue
+      seenSubtitles.add(key)
+      subtitleEntries.push(entry)
+    }
+    const pickedSubtitle = pickSubtitleEntry(subtitleEntries, { aid, cid })
+    const pickedSubtitleSource = pickedSubtitle ? subtitleSourceFromEntry(pickedSubtitle) : ''
 
     const [fetchedTags, transcript, danmaku, comments] = await Promise.all([
       search?.tags?.length ? Promise.resolve(search.tags) : fetchTags(bvid).catch(() => []),
-      // 只使用 view 里 UP 主上传的字幕；AI 字幕统一由 transcript.js 通过 yt-dlp 获取。
-      // 原因：B站 player/v2 的 AI 字幕 URL 在部分登录态下会返回与当前视频无关的内容。
-      fetchSubtitle(view).catch(() => ''),
+      // 优先 wbi/v2 的 AI 字幕；pickSubtitleEntry 会校验 AI 字幕 URL 的 aid+cid，
+      // 避免 player/v2 在部分登录态下返回“最近观看视频”的字幕。
+      fetchSubtitle(view, { entries: subtitleEntries, aid, cid, cookieHeader }).catch(() => ''),
       cid ? fetchDanmaku(cid).catch(() => []) : Promise.resolve([]),
       aid ? fetchComments(aid, { limit: commentLimit, cookieHeader }).catch(() => []) : Promise.resolve([]),
     ])
     const tags = fetchedTags.length ? fetchedTags : []
-    const officialSubtitles = Array.isArray(view?.subtitle) ? view.subtitle : []
-    const transcriptSource = transcript
-      ? (officialSubtitles.some((entry) => String(entry?.lan || '').toLowerCase().startsWith('ai-') || /ai|自动/i.test(String(entry?.lan_doc || ''))) ? 'ai-subtitle' : 'up-subtitle')
-      : ''
+    const transcriptSource = transcript ? (pickedSubtitleSource || 'up-subtitle') : ''
 
     return emptyContent({
       matched: true,

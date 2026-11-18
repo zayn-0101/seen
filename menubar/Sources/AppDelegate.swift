@@ -157,18 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var signalSources: [DispatchSourceSignal] = []
 
     private func log(_ text: String) {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".seen")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("menubar.log")
-        let stamp = ISO8601DateFormatter().string(from: Date())
-        let line = "[" + stamp + "] " + text + "\n"
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(Data(line.utf8))
-            try? handle.close()
-        } else {
-            try? Data(line.utf8).write(to: url)
-        }
+        SeenLog.write(text)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

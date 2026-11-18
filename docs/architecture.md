@@ -17,9 +17,9 @@
       → fetchContent()：
           → URL/BV 直取 view（title/desc/tags/pages/cid/subtitle）
           → 无 URL 时 searchVideo(title) + 相似度 ≥0.5
-          → fetchPlayerInfo()：AI 字幕列表 + view_points 章节
+          → fetchPlayerInfo()：优先 /x/player/wbi/v2 取 AI 字幕列表 + view_points 章节
           → 并发抓弹幕（≤150）与评论（登录态最多 100，默认 50）
-      → transcript.fetchTranscript()：AI 字幕 / UP 主字幕 / yt-dlp SRT，失败则下载音频 + 本地 Whisper 转写
+      → transcript.fetchTranscript()：播放器字幕（校验 AI 字幕 URL 的 aid+cid）→ yt-dlp SRT → 下载音频 + 本地 Whisper 转写
       → classify()：LLM JSON → {isCourse, subject, title, keywords}
       → 非课程：markSeen，静默
       → summarize()：LLM JSON → {summary, keyPoints, discussion, mnemonSummary}
@@ -35,7 +35,7 @@
 
 当前支持三类来源：
 
-- **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕通过 yt-dlp 读取 Chrome Cookie；没有字幕时用 yt-dlp 下载音频 + ffmpeg 转 wav + 本地 Whisper 转写。多 P 视频按 page/cid 区分，去重键带 `:p<n>`，字幕缓存按 `<bvid>__<cid>.json`。
+- **B站**：`bilibili.js` 使用公开接口 + 登录态评论；AI 字幕优先从 `/x/player/wbi/v2` 取（必须校验字幕 URL 含当前 aid+cid，避免 player/v2 在部分登录态下返回最近观看视频的字幕），取不到再用 yt-dlp 读 Chrome Cookie 下载；仍没有字幕时用 yt-dlp 下载音频 + ffmpeg 转 wav + 本地 Whisper 转写，yt-dlp 带 Cookie 失败会自动无 Cookie 重试。每一步失败原因写入 transcript detail，便于诊断。多 P 视频按 page/cid 区分，去重键带 `:p<n>`，字幕缓存按 `<bvid>__<cid>.json`。
 - **抖音精选**：`douyin.js` 用无头 Chrome 打开 `douyin.com/jingxuan?modal_id=...`，读取 SSR 的 `RENDER_DATA` 获取标题/作者/标签/统计/视频直链；带 UA/中文 locale/反自动化参数，失败重试一次并区分验证页与作品不存在；ffmpeg 抽音频，本地 `whisper-cli` 转写。只识别 `/jingxuan` 精选入口；普通 `/video/<id>`、用户页不进入处理，`isDouyinJingxuanUrl` 统一判定。结果缓存到 `~/.seen/cache/douyin`（默认 30 天）。
 - **YouTube**：`youtube.js` 用本机 yt-dlp `-J` 取元数据（标题/频道/时长/简介/章节/字幕轨道），逐级降级取文本：
 

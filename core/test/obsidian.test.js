@@ -79,6 +79,29 @@ test('不同分 P、其他平台视频或身份不明的同名文件不会被强
   }
 })
 
+test('标题变化时强制重写沿用 previousNotePath，不生成重复笔记', async () => {
+  const vault = await setup()
+  try {
+    const common = { vaultPath: vault, noteRoot: '视频笔记', subject: '示例', source: 'bilibili', bvid: 'BV1title00001' }
+    const old = await writeVideoNote({
+      ...common,
+      title: '旧标题',
+      content: '---\ntitle: "旧标题"\nbvid: "BV1title00001"\n---\n旧内容',
+    })
+    const updated = await writeVideoNote({
+      ...common,
+      title: '旧标题【栏目】',
+      previousNotePath: old.relPath,
+      force: true,
+      content: '---\ntitle: "旧标题【栏目】"\nbvid: "BV1title00001"\n---\n新内容',
+    })
+    assert.equal(updated.relPath, old.relPath)
+    assert.match(readFileSync(old.absPath, 'utf8'), /新内容/)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+  }
+})
+
 test('previousNotePath 不能在没有目标身份时覆盖无身份同名笔记', async () => {
   const vault = await setup()
   try {

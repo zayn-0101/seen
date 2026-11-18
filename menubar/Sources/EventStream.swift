@@ -23,6 +23,7 @@ final class EventStream: NSObject, URLSessionDataDelegate {
 
     func start() {
         stopped = false
+        SeenLog.write("SSE：启动事件订阅")
         connect()
     }
 
@@ -31,6 +32,7 @@ final class EventStream: NSObject, URLSessionDataDelegate {
         reconnectWork?.cancel()
         task?.cancel()
         task = nil
+        SeenLog.write("SSE：停止事件订阅")
     }
 
     private func connect() {
@@ -43,6 +45,7 @@ final class EventStream: NSObject, URLSessionDataDelegate {
         buffer.removeAll(keepingCapacity: true)
         task = session.dataTask(with: request)
         task?.resume()
+        SeenLog.write("SSE：连接 " + url.absoluteString)
     }
 
     private func scheduleReconnect() {
@@ -53,6 +56,18 @@ final class EventStream: NSObject, URLSessionDataDelegate {
         }
         reconnectWork = work
         DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: work)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let http = response as? HTTPURLResponse {
+            SeenLog.write("SSE：HTTP " + String(http.statusCode))
+        }
+        completionHandler(.allow)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -66,6 +81,9 @@ final class EventStream: NSObject, URLSessionDataDelegate {
                 let json = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                 guard let data = json.data(using: .utf8),
                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                if let type = object["type"] as? String, type == "notification" {
+                    SeenLog.write("SSE：收到 notification 事件")
+                }
                 DispatchQueue.main.async { [weak self] in
                     self?.onEvent?(object)
                 }
@@ -75,6 +93,11 @@ final class EventStream: NSObject, URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard !stopped else { return }
+        if let error {
+            SeenLog.write("SSE：连接断开 " + error.localizedDescription + "，3 秒后重连")
+        } else {
+            SeenLog.write("SSE：连接结束，3 秒后重连")
+        }
         scheduleReconnect()
     }
 }

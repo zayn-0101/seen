@@ -2,18 +2,18 @@
  * 视频字幕 / 转写获取。
  *
  * 优先级：
- *  1) 登录态 x/player/v2 的 AI 字幕或 UP 主字幕（需要浏览器 Cookie）
- *  2) yt-dlp 直接下载 AI 字幕（--cookies-from-browser）
- *  3) 官方 view.subtitle（由 bilibili.js 的 fetchSubtitle 处理）
+ *  1) 播放器接口（wbi/v2）给出的 AI 字幕或 UP 主字幕（URL 已校验 aid+cid）
+ *  2) yt-dlp 下载字幕（先带浏览器 Cookie，失败自动无 Cookie 重试）
+ *  3) 下载音频 + 本地 Whisper 转写
  *
- * 所有失败都静默降级，返回空文本。
+ * 每一步失败都会记录在 detail/attempts 中，便于诊断；不再静默返回空文本。
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
-import { BILI_UA, BILI_REFERER } from './bilibili.js'
+import { BILI_UA, BILI_REFERER, pickSubtitleEntry, subtitleSourceFromEntry } from './bilibili.js'
 import { ensureYtDlp } from './ytdlp.js'
 import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, transcribeAudio } from './whisper.js'
 
@@ -200,62 +200,74 @@ async function fetchSubtitleText(entry, cookieHeader = '') {
 }
 
 async function downloadViaYtDlp({ url, config = {} } = {}) {
-  if (!url) return null
+  if (!url) return { error: '缺少视频地址' }
   const ready = await ensureYtDlp(config)
-  if (!ready.ok || !ready.path) return null
+  if (!ready.ok || !ready.path) return { error: ready.error || 'yt-dlp 不可用' }
   const ytdlp = ready.path
-  const tmpDir = mkdtempSync(join(tmpdir(), 'seen-core-subs-'))
-  try {
-    const langs = Array.isArray(config.transcriptLangs) && config.transcriptLangs.length
-      ? config.transcriptLangs.join(',')
-      : 'ai-zh,zh-Hans,zh-CN,zh'
-    const args = [
-      '--no-warnings',
-      '--skip-download',
-      '--write-subs',
-      '--write-auto-subs',
-      '--sub-langs', langs,
-      '--sub-format', 'srt',
-      '--no-playlist',
-      '-o', join(tmpDir, '%(id)s.%(ext)s'),
-    ]
-    if (config.useBrowserCookies !== false) {
-      args.push('--cookies-from-browser', config.cookieBrowser || 'chrome')
-    }
-    args.push(url)
-    await execFileP(ytdlp, args, { timeout: 120000, maxBuffer: 30 * 1024 * 1024 })
-    const files = []
-    for (const entry of readdirSync(tmpDir)) {
-      const file = join(tmpDir, entry)
-      try { if (statSync(file).isFile() && /\.srt$/i.test(entry)) files.push(file) } catch { /* 忽略 */ }
-    }
-    if (files.length === 0) return null
-    files.sort((a, b) => {
-      const score = (file) => {
-        const name = basename(file).toLowerCase()
-        if (name.includes('ai-zh')) return 0
-        if (name.includes('zh-hans') || name.includes('zh-cn')) return 1
-        return 2
+  const langs = Array.isArray(config.transcriptLangs) && config.transcriptLangs.length
+    ? config.transcriptLangs.join(',')
+    : 'ai-zh,zh-Hans,zh-CN,zh'
+
+  const run = async (cookieBrowser) => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'seen-core-subs-'))
+    try {
+      const args = [
+        '--no-warnings',
+        '--skip-download',
+        '--write-subs',
+        '--write-auto-subs',
+        '--sub-langs', langs,
+        '--sub-format', 'srt',
+        '--no-playlist',
+        '-o', join(tmpDir, '%(id)s.%(ext)s'),
+      ]
+      if (cookieBrowser) args.push('--cookies-from-browser', cookieBrowser)
+      args.push(url)
+      await execFileP(ytdlp, args, { timeout: 120000, maxBuffer: 30 * 1024 * 1024 })
+      const files = []
+      for (const entry of readdirSync(tmpDir)) {
+        const file = join(tmpDir, entry)
+        try { if (statSync(file).isFile() && /\.srt$/i.test(entry)) files.push(file) } catch { /* 忽略 */ }
       }
-      return score(a) - score(b)
-    })
-    const file = files[0]
-    const raw = readFileSync(file, 'utf8')
-    const segments = parseSrtSegments(raw)
-    const text = segments.length
-      ? segments.map((segment) => segment.text).join(' ').replace(/\s+/g, ' ').trim()
-      : parseSrt(raw)
-    if (!text) return null
-    return {
-      text,
-      timed: segments.length ? buildTimedTranscript(segments) : '',
-      source: /ai-zh/i.test(basename(file)) ? 'ai-subtitle' : 'up-subtitle',
+      if (files.length === 0) throw new Error('没有下载到字幕文件')
+      files.sort((a, b) => {
+        const score = (file) => {
+          const name = basename(file).toLowerCase()
+          if (name.includes('ai-zh')) return 0
+          if (name.includes('zh-hans') || name.includes('zh-cn')) return 1
+          return 2
+        }
+        return score(a) - score(b)
+      })
+      const file = files[0]
+      const raw = readFileSync(file, 'utf8')
+      const segments = parseSrtSegments(raw)
+      const text = segments.length
+        ? segments.map((segment) => segment.text).join(' ').replace(/\s+/g, ' ').trim()
+        : parseSrt(raw)
+      if (!text) throw new Error('字幕文件没有可用文本')
+      return {
+        text,
+        timed: segments.length ? buildTimedTranscript(segments) : '',
+        source: /ai-zh|zh-hans|zh-cn/i.test(basename(file)) ? 'ai-subtitle' : 'up-subtitle',
+        detail: cookieBrowser ? 'yt-dlp' : 'no-cookie',
+      }
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
     }
-  } catch {
-    return null
-  } finally {
-    try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
   }
+
+  const attempts = []
+  const cookieBrowser = config.useBrowserCookies !== false ? (config.cookieBrowser || 'chrome') : ''
+  if (cookieBrowser) {
+    try { return await run(cookieBrowser) } catch (error) {
+      attempts.push('带 Cookie 失败：' + (error?.message || error))
+    }
+  }
+  try { return await run('') } catch (error) {
+    attempts.push('无 Cookie 失败：' + (error?.message || error))
+  }
+  return { error: attempts.join('；') || 'yt-dlp 没有找到字幕' }
 }
 
 /** 组装 B站音频下载参数（单独导出便于测试）。 */
@@ -277,47 +289,87 @@ async function downloadBilibiliAudio({ url, config = {}, onProgress } = {}) {
   if (!ytdlpReady.ok || !ytdlpReady.path) throw new Error(ytdlpReady.error || 'yt-dlp 不可用')
   const ffmpegReady = await ensureFfmpeg(config, { onProgress })
   if (!ffmpegReady.ok || !ffmpegReady.path) throw new Error(ffmpegReady.error || 'ffmpeg 不可用')
-  const tmpDir = mkdtempSync(join(tmpdir(), 'seen-bili-audio-'))
-  try {
-    const cookieBrowser = config.useBrowserCookies !== false ? (config.cookieBrowser || 'chrome') : ''
-    const args = buildBilibiliAudioArgs({ url, dir: tmpDir, cookieBrowser })
-    await execFileP(ytdlpReady.path, args, { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 30 * 1024 * 1024 })
-    const files = readdirSync(tmpDir).filter((name) => /^audio\./i.test(name))
-    if (files.length === 0) throw new Error('没有下载到音频文件')
-    const audioFile = join(tmpDir, files[0])
-    const wav = join(tmpDir, 'audio.wav')
-    await execFileP(ffmpegReady.path, ['-y', '-i', audioFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024 })
-    if (!existsSync(wav) || statSync(wav).size < 1000) throw new Error('音频转 wav 失败')
-    return { dir: tmpDir, wav }
-  } catch (error) {
-    try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
-    throw error
+
+  const tryDownload = async (cookieBrowser) => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'seen-bili-audio-'))
+    try {
+      const args = buildBilibiliAudioArgs({ url, dir: tmpDir, cookieBrowser })
+      await execFileP(ytdlpReady.path, args, { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 30 * 1024 * 1024 })
+      const files = readdirSync(tmpDir).filter((name) => /^audio\./i.test(name))
+      if (files.length === 0) throw new Error('没有下载到音频文件')
+      const audioFile = join(tmpDir, files[0])
+      const wav = join(tmpDir, 'audio.wav')
+      await execFileP(ffmpegReady.path, ['-y', '-i', audioFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024 })
+      if (!existsSync(wav) || statSync(wav).size < 1000) throw new Error('音频转 wav 失败')
+      return { dir: tmpDir, wav }
+    } catch (error) {
+      try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
+      throw error
+    }
   }
+
+  const attempts = []
+  const cookieBrowser = config.useBrowserCookies !== false ? (config.cookieBrowser || 'chrome') : ''
+  if (cookieBrowser) {
+    try { return await tryDownload(cookieBrowser) } catch (error) {
+      attempts.push('带 Cookie 下载音频失败：' + (error?.message || error))
+    }
+  }
+  try { return await tryDownload('') } catch (error) {
+    attempts.push('无 Cookie 下载音频失败：' + (error?.message || error))
+  }
+  throw new Error(attempts.join('；') || '音频下载失败')
 }
 
 /**
- * 获取视频字幕文本：先字幕，再 B站音频 + 本地 Whisper。
- * @returns {Promise<{ text: string, timed: string, source: string, detail: string }>}
+ * 获取视频字幕文本：先 B站字幕（wbi/v2 已验证 aid+cid），再 yt-dlp，最后音频 + Whisper。
+ * 每一步的失败原因都放进 detail/attempts，避免再次出现“瞬间返回空、日志里什么都没有”。
+ * @returns {Promise<{ text: string, timed: string, source: string, detail: string, attempts?: string[] }>}
  */
-export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', author = '', duration = 0, config = {}, cookieHeader = '', force = false, onProgress } = {}) {
+export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', author = '', duration = 0, config = {}, cookieHeader = '', force = false, onProgress, aid = null, subtitleEntries = [] } = {}) {
+  const attempts = []
   try {
     if (!force) {
       const cached = readCache(bvid, cid, config)
       if (cached) return cached
     }
-    // 以 yt-dlp 为主：它会按视频自身解析 B站 AI 字幕，避免 player/v2 在某些登录态下
-    // 返回“最近观看视频”的字幕 URL，导致把别的视频内容当成本视频讲解。
+    // 1) 播放器接口已经给出的字幕（wbi/v2 的 AI 字幕 URL 已包含 aid+cid）。
+    const picked = pickSubtitleEntry(subtitleEntries, { aid, cid })
+    if (picked) {
+      try {
+        const text = await fetchSubtitleText(picked, cookieHeader)
+        if (text) {
+          const result = { text, timed: '', source: subtitleSourceFromEntry(picked), detail: 'player-info', page }
+          writeCache(bvid, cid, result)
+          return result
+        }
+        attempts.push('播放器字幕为空')
+      } catch (error) {
+        attempts.push('播放器字幕失败：' + (error?.message || error))
+      }
+    } else if (Array.isArray(subtitleEntries) && subtitleEntries.length > 0) {
+      attempts.push('播放器字幕 URL 与当前视频不匹配')
+    } else {
+      attempts.push('播放器未返回字幕（未登录或 Cookie 不可用）')
+    }
+
+    // 2) yt-dlp：优先带 Cookie，失败后自动无 Cookie 重试（B站音频通常无 Cookie 也能拿）。
     const downloaded = await downloadViaYtDlp({ url, config })
     if (downloaded?.text) {
-      const result = { ...downloaded, page, detail: 'yt-dlp' }
+      const result = { ...downloaded, page }
       writeCache(bvid, cid, result)
       return result
     }
-  } catch { /* 降级 */ }
-  if (config.fetchTranscript === false) return { text: '', timed: '', source: '', detail: '已关闭转写' }
+    if (downloaded?.error) attempts.push(downloaded.error)
+  } catch (error) {
+    attempts.push('字幕尝试失败：' + (error?.message || error))
+  }
+  if (config.fetchTranscript === false) return { text: '', timed: '', source: '', detail: '已关闭转写', attempts }
+
+  // 3) 音频 + 本地 Whisper。
   try {
     const modelReady = await ensureWhisperModel(config)
-    if (!modelReady.ok) return { text: '', timed: '', source: '', detail: modelReady.error || '未找到可用的 Whisper 模型' }
+    if (!modelReady.ok) return { text: '', timed: '', source: '', detail: modelReady.error || '未找到可用的 Whisper 模型', attempts }
     if (onProgress) onProgress({ stage: 'audio', message: '没有可用字幕，下载音频后本地转写', bvid, page })
     const audio = await downloadBilibiliAudio({ url, config, onProgress })
     try {
@@ -356,6 +408,6 @@ export async function fetchTranscript({ bvid, cid, page = 1, url, title = '', au
     }
   } catch (error) {
     if (onProgress) onProgress({ stage: 'transcribe-failed', message: '音频转写失败：' + (error?.message || error), bvid, page })
-    return { text: '', timed: '', source: '', detail: String(error?.message || error || '转写失败') }
+    return { text: '', timed: '', source: '', detail: '转写失败：' + String(error?.message || error || '未知错误'), attempts }
   }
 }

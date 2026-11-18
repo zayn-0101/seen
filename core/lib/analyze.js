@@ -17,7 +17,7 @@ import { normalizeContentType, normalizeKeyPointPoints, normalizeQuotes, normali
 import { normalizeTagTypes, normalizeThemes } from './tags.js'
 
 const DEFAULT_MAX_TOKENS = 4096
-const LLM_TIMEOUT_MS = 120000
+const LLM_TIMEOUT_MS = 300000
 const JSON_FAIL = Symbol('json-fail')
 
 /* ------------------------------------------------------------------ */
@@ -977,7 +977,7 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
       : content.transcriptSource === 'up-subtitle'
         ? '（来源：UP 主字幕）'
         : content.transcriptSource === 'whisper'
-          ? '（来源：抖音音频 Whisper 转写，自动识别，可能存在同音错字）'
+          ? '（来源：语音识别 Whisper 转写，自动识别，可能存在同音错字）'
           : ''
     parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcriptBody, 14000))
   }
@@ -1073,12 +1073,41 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
 const SUMMARIZE_SYSTEM =
   '你是学习笔记整理专家，负责把视频课程内容整理成结构化的知识总结。你只输出严格合法的 JSON 对象。'
 
-function isValidSummaryRaw(raw) {
+function hasNonEmptyKeyPoints(raw) {
+  const list = raw?.keyPoints ?? raw?.key_points ?? raw?.keypoints ?? raw?.topics ?? raw?.points
+  if (!Array.isArray(list)) return false
+  return list.some((item) => {
+    if (typeof item === 'string') return Boolean(cleanText(item))
+    if (!item || typeof item !== 'object') return false
+    const title = cleanText(item.title ?? item.topic ?? item.name ?? item.heading ?? '')
+    const points = item.points ?? item.items ?? item.details ?? item.bullets
+    return Boolean(title) || (Array.isArray(points) && points.some((point) =>
+      cleanText(typeof point === 'string' ? point : point?.text ?? point?.content ?? point?.point ?? '')
+    ))
+  })
+}
+
+function isValidSummaryRaw(raw, { fallbackTitle = '' } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
-  return Boolean(
-    pickString(raw.summary, raw.abstract, raw.overview) ||
-      Array.isArray(raw.keyPoints ?? raw.key_points ?? raw.topics)
-  )
+  const summary = cleanText(pickString(raw.summary, raw.abstract, raw.overview, raw.brief) || '')
+  if (!summary) return false
+  if (fallbackTitle && summary === cleanText(fallbackTitle)) return false
+  return hasNonEmptyKeyPoints(raw)
+}
+
+function buildDigestFallback(title, digest) {
+  const text = cleanText(digest)
+  const sentences = text
+    .split(/\n+|(?<=[。！？])/)
+    .map((item) => cleanText(item))
+    .filter((item) => item.length >= 8)
+  const summary = truncateText(sentences[0] || text || cleanText(title), 120)
+  const points = sentences.slice(0, 5).map((item) => ({ text: truncateText(item, 120) }))
+  return normalizeSummary({
+    summary,
+    keyPoints: points.length ? [{ title: '内容要点', points }] : [],
+    mnemonSummary: truncateText(text || summary, 800),
+  }, title)
 }
 
 /**
@@ -1155,17 +1184,17 @@ export async function summarize(ctx, config, input = {}) {
       return null
     }
     const parsed = parseJson(text)
-    if (!isValidSummaryRaw(parsed)) return null
+    if (!isValidSummaryRaw(parsed, { fallbackTitle })) return null
     return normalizeSummary(parsed, fallbackTitle)
   }
 
   let result = await request('')
   if (!result) {
     result = await request(
-      '（注意：上一次你的回复无法解析为合法 JSON。请严格只输出一个合法 JSON 对象本身，前后不要任何解释文字、不要 markdown 代码块、不要尾逗号。）'
+      '（注意：上一次你的回复无法解析为合法 JSON，或者缺少 summary 和至少一个非空 keyPoints。请严格只输出一个合法 JSON 对象本身，必须包含 summary 与非空 keyPoints 数组；前后不要任何解释文字、不要 markdown 代码块、不要尾逗号。）'
     )
   }
-  const finalResult = result || normalizeSummary(null, fallbackTitle)
+  const finalResult = result || buildDigestFallback(fallbackTitle, transcriptDigest || transcriptText)
   if (config?.editorPass) {
     const edited = await editSummary(ctx, config, {
       title: fallbackTitle,

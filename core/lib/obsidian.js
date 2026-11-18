@@ -320,6 +320,14 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
 
   return runVault(async () => {
     let target = base
+    // 标题变化（例如平台标题多了栏目后缀）时，沿用状态记录的旧笔记路径，
+    // 避免同一条视频因为 finalTitle 变化而生成第二篇笔记。只信任身份匹配的旧文件。
+    if (previous && (await vaultPathExists(vaultPath, previous))) {
+      const previousIdentity = noteIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: previous }))
+      if (identity && previousIdentity && identity === previousIdentity) {
+        target = { relPath: previous, absPath: absoluteFromRel(vaultPath, previous) }
+      }
+    }
 
     const tag = safeFilename((targetBvid ? targetBvid + (Number(page) > 1 ? '-p' + Number(page) : '') : targetVideoId) || '重名', 80)
     for (let index = 0; index <= 100; index += 1) {
