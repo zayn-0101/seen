@@ -844,23 +844,54 @@ function stopStageClock() {
   state.processingStarted = 0
 }
 
-function renderUpdate(update) {
+function renderUpdate(update, options = {}) {
   const banner = $('updateBanner')
+  const dot = $('updateDot')
   if (!banner) return
   if (!update || !update.latest) {
     banner.hidden = true
+    if (dot) dot.classList.add('hidden')
     return
   }
-  // 用户点过「关闭」的版本不再提示
+  // 用户点过「关闭」的版本不再提示；手动点「检查更新」时强制显示
   let dismissed = ''
   try { dismissed = localStorage.getItem('seen.updateDismissed') || '' } catch { dismissed = '' }
-  if (dismissed === update.latest) {
+  if (!options.ignoreDismissed && dismissed === update.latest) {
     banner.hidden = true
+    if (dot) dot.classList.add('hidden')
     return
   }
   banner.hidden = false
+  if (dot) dot.classList.remove('hidden')
   $('updateText').textContent = '发现新版本 v' + update.latest + '（当前 v' + (update.current || '') + '）'
   $('updateLink').href = update.url || 'https://github.com/zayn-0101/seen/releases'
+}
+
+async function checkForUpdates() {
+  const button = $('navUpdate')
+  const label = $('navUpdateLabel')
+  if (!button || !label || button.disabled) return
+  const original = label.textContent
+  button.disabled = true
+  label.textContent = '检查中'
+  try {
+    const data = await api('/api/update?force=1')
+    if (data.disabled) {
+      showToast('更新检查已关闭（SEEN_DISABLE_UPDATE_CHECK=1）', true)
+      return
+    }
+    if (data.available) {
+      renderUpdate({ ...data, current: data.current }, { ignoreDismissed: true })
+      showToast('发现新版本 v' + data.latest + '，可在顶部查看', true)
+      return
+    }
+    showToast('已是最新版本 v' + (data.current || ''), true)
+  } catch (error) {
+    showToast('检查更新失败：' + error.message, true)
+  } finally {
+    label.textContent = original
+    button.disabled = false
+  }
 }
 
 function renderVaultBanner(vault) {
@@ -1626,6 +1657,7 @@ function updateNavigation() {
 
 $('llmPill').addEventListener('click', openSettings)
 $('navSettings').addEventListener('click', openSettings)
+$('navUpdate').addEventListener('click', checkForUpdates)
 $('closeSettings').addEventListener('click', closeSettingsDialog)
 $('settingsDialog').addEventListener('close', () => {
   if (location.hash === '#settings') {

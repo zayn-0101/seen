@@ -150,3 +150,14 @@ test('空周不提前创建回顾文件，只读实例不写入笔记', async t 
   assert.equal((await post(readonly.base, '/api/llm/models', { provider: 'fixture', baseURL: readonly.modelBase + '/v1', apiKey: '' })).status, 200)
   await assert.rejects(readFile(join(readonly.vault, '视频笔记', '视频索引.md')))
 })
+
+test('更新检查接口返回当前版本，关闭时明确标记', async t => {
+  const f = await startFixture()
+  t.after(() => f.stop())
+  const data = await (await fetch(f.base + '/api/update?force=1')).json()
+  assert.equal(data.ok, true)
+  assert.match(data.current, /^\d+\.\d+\.\d+$/)
+  assert.equal(data.disabled, true)
+  assert.equal(data.available, false)
+  assert.equal(data.latest, '')
+})

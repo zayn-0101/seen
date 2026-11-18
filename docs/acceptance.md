@@ -433,3 +433,15 @@
 - [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.5.dmg`（85M，universal）：挂载校验 app 版本 0.5.5、固定证书签名通过、lipo 为 x86_64 + arm64，bundle 内含 `cleanNotificationTitle` 与 `processQueue`
 - [x] DMG SHA256：`88f4d0e80ae01fc82b375f1f83cd5faa1b64d009e762b33abb7f79c150e12feb`（`dist/Seen-v0.5.5.dmg.sha256`）
 - [x] 安装备份清理：`npm run prune:install -- --apply --keep 1` 删除两份较旧备份 `Seen.app.20261118-183830`、`Seen.app.20261118-193741`，共释放约 467 MB；保留最新的 0.5.4 安装备份用于回滚
+
+
+## 2026-11-18 手动检查更新
+
+背景：此前只有启动时被动检查，面板顶部横幅关闭后没有任何入口；用户按提示去找「检查更新」却找不到。
+
+- [x] 服务端新增 `GET /api/update`，支持 `?force=1` 绕过 24 小时缓存；返回当前版本、最新版本、是否有更新、发布页、检查时间与是否禁用
+- [x] 侧栏「设置」下新增「更新」按钮（带未读圆点），点击调用 `/api/update?force=1`，按钮显示「检查中」并禁用，结果用 toast 提示；发现新版本时强制重新打开被关闭的顶部提示条
+- [x] 临时服务验证：`SEEN_DISABLE_UPDATE_CHECK=1` 时返回 disabled 且 toast 明确提示；正常模式返回 current/latest 0.5.5 并提示「已是最新版本」
+- [x] 新增 `core/test/server-integration.test.js` 的更新接口测试
+- [x] `cd core && node --test`：370 tests / 370 pass / 0 fail；`npm run check` 113 个文件通过
+- [x] README / CLAUDE.md 同步手动检查入口

@@ -411,6 +411,19 @@ const server = createServer(async (req, res) => {
       return json(res, 200, await snapshot())
     }
 
+    if (pathname === '/api/update' && req.method === 'GET') {
+      const info = await checkUpdate({ force: url.searchParams.get('force') === '1' })
+      return json(res, 200, {
+        ok: true,
+        current: APP_VERSION,
+        latest: info.latest,
+        available: info.available,
+        url: info.url,
+        checkedAt: info.checkedAt,
+        disabled: UPDATE_DISABLED,
+      })
+    }
+
     if (pathname === '/api/search' && req.method === 'GET') {
       const status = await engine.getStatus()
       if (!status.vaultPath) return json(res, 400, { error: '没有找到 Obsidian vault' })

@@ -98,6 +98,8 @@ a { color: inherit; }
 .nav-link:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-link[aria-current="location"] { background: rgba(203, 93, 43, .23); color: #fff3e9; }
 .nav-link[aria-current="location"]::before { content: ""; position: absolute; top: 12px; bottom: 12px; left: 0; width: 3px; border-radius: 4px; background: #ed8451; }
+.nav-link:disabled { cursor: progress; opacity: .72; }
+.nav-badge { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #ed8451; box-shadow: 0 0 0 3px rgba(237, 132, 81, .18); }
 .sidebar-foot { display: flex; align-items: center; gap: 9px; margin-top: auto; padding: 20px 12px 0; border-top: 1px solid rgba(230, 240, 230, .16); color: var(--sidebar-muted); font-size: 11px; }
 .sidebar-dot { width: 7px; height: 7px; border-radius: 50%; background: #a5b1a7; }
 .sidebar-dot.online { background: #93c995; }
