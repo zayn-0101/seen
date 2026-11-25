@@ -132,6 +132,12 @@ export function apply(ctx, rawConfig = {}) {
   }
   const readOnlyLabel = reasonLabels[readOnlyReason] || '另一个实例持有锁'
   const readOnlyMessage = readOnly ? readOnlyLabel + '，当前为只读模式' : ''
+  // 先留下升级前的有效状态，再做任何归一化写盘。
+  if (!readOnly) {
+    try { seedStateBackup(statePath) } catch (error) {
+      logger.log('state.backup.error ' + (error.code || error.message))
+    }
+  }
   const normalizedAuxPaths = normalizeStateAuxPaths(state, { vaultPath, noteRoot: config.noteRoot })
   if (normalizedAuxPaths > 0) {
     logger.log('state.aux-path.normalized count=' + normalizedAuxPaths)
@@ -142,12 +148,6 @@ export function apply(ctx, rawConfig = {}) {
       } catch (error) {
         logger.log('state.aux-path.save.error msg=' + (error?.message || error))
       }
-    }
-  }
-
-  if (!readOnly) {
-    try { seedStateBackup(statePath) } catch (error) {
-      logger.log('state.backup.error ' + (error.code || error.message))
     }
   }
 

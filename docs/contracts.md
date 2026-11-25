@@ -48,7 +48,7 @@ export function normalizeSubjectName(name: string): string
 
 ## lib/instance-lock.js
 
-`withInstanceLock(stateDir, task)` 使用服务的 `stateDir/instance.lock` 执行写入型维护任务。锁覆盖读取、异步计算和最终写盘，任务结束或抛错时释放。
+`withInstanceLock(stateDir, task)` 使用服务的 `stateDir/instance.lock` 执行写入型维护任务。锁覆盖读取、异步计算和最终写盘；普通结束或抛错时释放，vault I/O 超时则保留锁，等待进程退出后由下一位写入者回收。
 
 ## lib/state.js
 
@@ -703,7 +703,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。新笔记写 `contentSource: 'archive'`，并从原笔记的 `transcriptOrigin`（没有该字段时回退 `contentSource`）取原始来源写入 `transcriptOrigin`；质量分按它计算，来源统计用存档字数。已经是 `archive` 且没有记录原始来源的旧笔记无法还原，只标为「更早的字幕存档」。
 - 启动时严格读取状态。已有 `state.json` 无法读取或结构无效时，控制器返回 `readOnlyReason:"state-unreadable"`，保留原文件和知识库索引。维护命令严格读取状态后才允许写入。
 - 视频重生成沿用已登记的笔记路径和学科。多个不同路径对应同一视频时，按视频强制重生成请求返回 `duplicate-video`，指定笔记的存档重整与历史重刷仍可逐篇执行。
-- `scanBatch(inputs)` 和 `refreshHistory({ limit, onProgress })` 在批次结束后合并更新知识库。连续队列任务在空闲前合并重建。`POST /api/scan` 可传 `{ urls, force }`，返回每个失败项目，单条 `{ url, force }` 保留。
+- `scanBatch(inputs)` 和 `refreshHistory({ limit, onProgress })` 在批次结束后合并更新知识库。连续队列任务在空闲前合并重建。`POST /api/scan` 可传 `{ urls, force }`（一次最多 20 个），返回每个失败项目，单条 `{ url, force }` 保留。
 - `getSnapshot()` 的 `duplicateVideos` 列出同一平台身份下的多个笔记路径。
 - 服务的 mnemon 默认关闭，保存明确的开启偏好且本机可用时生效。`SEEN_DISABLE_MNEMON=1` 优先。
 - 服务保存模型设置后同步调用 `setModel({ provider, model })`，后续模型请求和状态快照立即采用新选择。模型和界面设置通过同目录临时文件原子替换，模型配置权限为 `0600`。

@@ -533,6 +533,7 @@ const server = createServer(async (req, res) => {
         if (!Array.isArray(body.urls) || !body.urls.length || body.urls.some(url => typeof url !== 'string' || !url.trim())) {
           return json(res, 400, { error: '请提供至少一个视频链接' })
         }
+        if (body.urls.length > 20) return json(res, 400, { error: '一次最多粘贴 20 个视频链接' })
         const result = await engine.scanBatch(body.urls.map(url => ({ url: url.trim(), force: Boolean(body.force) })))
         return json(res, result.ok ? 200 : 409, { ...await snapshot(), result })
       }

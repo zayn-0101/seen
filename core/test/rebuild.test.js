@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, existsSync, appendFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync, appendFileSync, writeFileSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildHistoryFromState, rebuildKnowledgePages } from '../lib/rebuild.js'
@@ -113,4 +113,20 @@ test('概念和主题退出建页范围时只更新自动区，重新达标后�
     assert.match(text, /\[\[.*第一篇/)
     assert.ok(text.endsWith(manual))
   }
+})
+
+test('用户重命名概念页后不把改名文件标成退出收录', async t => {
+  const vaultPath = mkdtempSync(join(tmpdir(), 'seen-renamed-pages-'))
+  t.after(() => rmSync(vaultPath, { recursive: true, force: true }))
+  const state = makeState(Date.now())
+  const config = { vaultPath, noteRoot: '视频笔记', layout: 'structured' }
+  await rebuildKnowledgePages({ ...config, state })
+  const dir = join(vaultPath, '视频笔记', '资料', '概念')
+  const source = join(dir, '双向链接.md')
+  const renamed = join(dir, '双向链接（我的）.md')
+  renameSync(source, renamed)
+  await rebuildKnowledgePages({ ...config, state })
+  const text = readFileSync(renamed, 'utf8')
+  assert.match(text, /\[\[.*第一篇/)
+  assert.doesNotMatch(text, /不在知识库的自动收录范围/)
 })

@@ -756,6 +756,7 @@ export async function markInactiveKnowledgePages({ vaultPath, noteRoot, concepts
   for (const { type, pathFor, pages } of pageKinds) {
     const dir = toPosix(dirname(pathFor({ noteRoot, name: '占位' })))
     const current = new Set(pages.map(page => fileKey(basename(pathFor({ noteRoot, name: safeFilename(page.name, 80) })))))
+    const currentTitles = new Set(pages.map(page => fileKey(page.name)))
     const entries = await runVault(async () => {
       try {
         return await safeReaddir({ vaultPath, relPath: dir })
@@ -775,8 +776,11 @@ export async function markInactiveKnowledgePages({ vaultPath, noteRoot, concepts
         }
         const { frontmatter, body } = splitFrontmatter(text)
         const noteType = frontmatter.match(/^type:\s*(["']?)([\w-]+)\1[ \t]*$/m)?.[2]
+        const noteTitle = frontmatter.match(/^title:\s*(["']?)(.*?)\1[ \t]*$/m)?.[2] || ''
         const start = body.indexOf(AUTO_START)
         if (noteType !== type || start < 0 || body.indexOf(AUTO_END, start + AUTO_START.length) < 0) return
+        // 用户可能重命名了页面文件；只要 frontmatter 标题仍属于当前收录范围，就不要把它标成退出收录。
+        if (noteTitle && currentTitles.has(fileKey(noteTitle))) return
         const next = text.slice(0, text.length - body.length) + upsertAutoBlock(body, notice)
         if (next !== text) await atomicWrite({ vaultPath, relPath, content: next })
       })

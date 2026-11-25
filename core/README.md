@@ -18,8 +18,8 @@ await controller.ready // 等待笔记目录准备完成
 `apply` 返回控制器：
 
 ```
-start() / stop() / setPollInterval(ms) / setNoteLayout(layout) / setEditorPass(enabled) / setModel({ provider, model })
-scan({ url, force }) / refreshHistory({ limit, onProgress }) / retryFailure(key)
+start() / stop() / setPollInterval(ms) / setNoteLayout(layout) / setEditorPass(enabled) / setModel({ provider, model }) / setMnemonEnabled(enabled)
+scan({ url, force }) / scanBatch(inputs) / refreshHistory({ limit, onProgress }) / retryFailure(key)
 rebuildKnowledgePages() / resummarizeNote({ notePath }) / reprobeVault()
 getReviews() / recordReview({ notePath, rating }) / askLibrary({ question })
 renameTag({ from, to }) / getStatus() / getSnapshot() / getHistory() / getConfig() / getEvents()

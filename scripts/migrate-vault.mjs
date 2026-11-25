@@ -31,7 +31,7 @@
  *   node scripts/migrate-vault.mjs --state-only --apply
  */
 import { withInstanceLock } from '../core/lib/instance-lock.js'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { resolveConfig } from '../core/lib/config.js'
 import { loadState, saveState } from '../core/lib/state.js'
@@ -62,6 +62,11 @@ import {
 
 const apply = process.argv.includes('--apply')
 const stateOnly = process.argv.includes('--state-only')
+const allowedArgs = new Set(['--apply', '--state-only'])
+if (process.argv.slice(2).some(arg => !allowedArgs.has(arg))) {
+  console.error('用法：node scripts/migrate-vault.mjs [--apply] [--state-only]')
+  process.exit(2)
+}
 const STAMP = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
 function readConfig() {
@@ -70,14 +75,23 @@ function readConfig() {
   return resolveConfig({ ...(vaultPath ? { vaultPath } : {}), ...(stateDir ? { stateDir } : {}) })
 }
 
+function assertRealDirectory(dir) {
+  const info = lstatSync(dir)
+  if (info.isSymbolicLink()) throw new Error('迁移路径包含符号链接，已停止：' + dir)
+  if (!info.isDirectory()) throw new Error('迁移路径不是目录：' + dir)
+}
+
 function listMarkdown(dir) {
   const result = []
   if (!existsSync(dir)) return result
+  assertRealDirectory(dir)
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) result.push(...listMarkdown(full))
-    else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) result.push(full)
+    const info = lstatSync(full)
+    if (info.isSymbolicLink()) throw new Error('迁移路径包含符号链接，已停止：' + full)
+    if (info.isDirectory()) result.push(...listMarkdown(full))
+    else if (info.isFile() && entry.name.toLowerCase().endsWith('.md')) result.push(full)
   }
   return result
 }
@@ -85,11 +99,14 @@ function listMarkdown(dir) {
 function listAllFiles(dir) {
   const result = []
   if (!existsSync(dir)) return result
+  assertRealDirectory(dir)
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) result.push(...listAllFiles(full))
-    else if (entry.isFile()) result.push(full)
+    const info = lstatSync(full)
+    if (info.isSymbolicLink()) throw new Error('迁移路径包含符号链接，已停止：' + full)
+    if (info.isDirectory()) result.push(...listAllFiles(full))
+    else if (info.isFile()) result.push(full)
   }
   return result
 }
@@ -197,7 +214,8 @@ function main(config) {
     }
   }
   if (!existsSync(rootAbs)) {
-    console.log('笔记根目录不存在：' + newRootAbs)
+    console.error('笔记根目录不存在：' + newRootAbs)
+    process.exitCode = 1
     return
   }
 

@@ -18,6 +18,11 @@ import { probeVaultAccess, VAULT_HINT } from '../core/lib/vault-access.js'
 
 const argv = process.argv.slice(2)
 const dryRun = argv.includes('--dry-run')
+const allowedArgs = new Set(['--dry-run'])
+if (argv.some(arg => !allowedArgs.has(arg))) {
+  console.error('用法：node scripts/maintain-vault.mjs [--dry-run]')
+  process.exit(2)
+}
 
 const config = resolveConfig({
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),

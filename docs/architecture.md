@@ -85,7 +85,7 @@
 - `failures`：失败计数与冷却
 - `stats`：processed / skipped / failed / lastMnemon
 - `lastForeground`：最近一次前台检测结果（供 status/check 展示）
-- 启动时严格读取：`state.json` 无法读取或结构无效时进入只读（`readOnlyReason: state-unreadable`），保留原文件和知识库索引；维护脚本取得相同目录的实例锁后再读取状态。保存已提交的状态时保留最近两份不同快照，待写入记录单独落盘。
+- 启动时严格读取：`state.json` 无法读取或结构无效时进入只读（`readOnlyReason: state-unreadable`），保留原文件和知识库索引；写入型维护脚本取得相同目录的实例锁后再读取状态。保存已提交的状态时保留最近两份不同快照，待写入记录单独落盘。
 
 ## Obsidian 文件
 
