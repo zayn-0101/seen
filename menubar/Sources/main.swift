@@ -25,22 +25,25 @@ if let index = CommandLine.arguments.firstIndex(of: "--autostart") {
 
 // 无人值守自检：打印一次状态 JSON 后退出，不创建菜单栏图标。
 if CommandLine.arguments.contains("--self-check") {
-    let sem = DispatchSemaphore(value: 0)
-    var line = "{\"ok\":false,\"error\":\"timeout\"}"
     Task {
+        let report: [String: Any]
         do {
-            let s = try await API.status(timeout: 3)
-            let subjects = s.subjects.map { "\"\($0.name)\"" }.joined(separator: ",")
-            line = "{\"ok\":true,\"polling\":\(s.polling),\"readOnly\":\(s.readOnly),\"intervalMs\":\(s.intervalMs),\"subjects\":[\(subjects)]}"
+            let status = try await API.status(timeout: 3)
+            report = ["ok": status.ok, "polling": status.polling, "readOnly": status.readOnly,
+                      "intervalMs": status.intervalMs, "subjects": status.subjects.map { $0.name }]
         } catch {
-            let text = String(describing: error).replacingOccurrences(of: "\"", with: "'")
-            line = "{\"ok\":false,\"error\":\"\(text)\"}"
+            report = ["ok": false, "error": error.localizedDescription]
         }
-        sem.signal()
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report)
+            print(String(decoding: data, as: UTF8.self))
+        } catch {
+            fputs("无法编码自检结果。\n", stderr)
+            exit(1)
+        }
+        exit(report["ok"] as? Bool == true ? 0 : 1)
     }
-    _ = sem.wait(timeout: .now() + 6)
-    print(line)
-    exit(0)
+    dispatchMain()
 }
 
 let app = NSApplication.shared

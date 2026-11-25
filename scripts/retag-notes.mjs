@@ -9,22 +9,16 @@
  *
  * 只读笔记正文前 3000 字做判断，不重跑转写和总结。
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { join, relative } from 'node:path'
 
 import { callLlm, normalizeConcepts, parseJson } from '../core/lib/analyze.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
-import { buildConceptIndex } from '../core/lib/concept.js'
-import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from '../core/lib/index-note.js'
-import {
-  resolveVaultPath,
-  writeConceptIndexNote,
-  writeIndexNote,
-  writeTagIndexNote,
-} from '../core/lib/obsidian.js'
+import { splitFrontmatter } from '../core/lib/note-check.js'
+import { readVaultText, resolveVaultPath, updateNoteTags } from '../core/lib/obsidian.js'
+import { buildHistoryFromState, writeKnowledgeIndexes } from '../core/lib/rebuild.js'
 import { loadState, saveState } from '../core/lib/state.js'
 import {
-  buildTagIndex,
   buildTagVocabulary,
   mergeTags,
   normalizeTagTypes,
@@ -38,7 +32,12 @@ const BODY_CHARS = 3000
 const argv = process.argv.slice(2)
 const apply = argv.includes('--apply')
 const limitIndex = argv.indexOf('--limit')
-const limit = limitIndex >= 0 ? Number(argv[limitIndex + 1]) || 0 : 0
+const limitText = limitIndex < 0 ? '0' : argv[limitIndex + 1] || ''
+const limit = Number(limitText)
+if (!/^\d+$/.test(limitText) || !Number.isSafeInteger(limit)) {
+  console.error('--limit 需要非负整数，0 表示全部')
+  process.exit(2)
+}
 
 const config = resolveConfig({
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
@@ -56,20 +55,16 @@ const client = createLlmClient(llmConfig)
 const ctx = { llm: client }
 const llmOptions = { provider: llmConfig.provider, model: llmConfig.model }
 
-/** 拆出 frontmatter 与正文。 */
-function splitFrontmatter(markdown) {
-  const text = String(markdown || '').replace(/^\uFEFF/, '')
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
-  if (!match) return { frontmatter: '', body: text }
-  return { frontmatter: match[1], body: text.slice(match[0].length) }
-}
-
 /** 读 frontmatter 里现有的 tags 数组。 */
 function readTags(frontmatter) {
   const line = String(frontmatter || '')
     .split(/\r?\n/)
     .find((item) => /^tags:/.test(item))
   if (!line) return []
+  if (line.slice(5).trim() === '') {
+    const list = frontmatter.match(/^tags:[ \t]*((?:\r?\n[ \t]*-[ \t]+[^\r\n]+)+)/m)
+    return list ? list[1].trim().split(/\r?\n/).map(item => item.replace(/^\s*-\s+/, '').trim().replace(/^(["'])(.*)\1$/, '$2')) : []
+  }
   try {
     const parsed = JSON.parse(line.slice(5).trim())
     return Array.isArray(parsed) ? parsed.map(String) : []
@@ -85,19 +80,6 @@ function conceptsFromTags(tags) {
     .filter((tag) => tag.startsWith('概念/'))
     .map((tag) => tag.slice(3).trim())
     .filter(Boolean)
-}
-
-/** 替换（或补上）frontmatter 的 tags 行。 */
-function writeTags(markdown, tags) {
-  const lines = String(markdown || '').split('\n')
-  if (lines[0] !== '---') return markdown
-  const end = lines.indexOf('---', 1)
-  if (end === -1) return markdown
-  const value = 'tags: ' + JSON.stringify(tags)
-  const index = lines.findIndex((line, i) => i > 0 && i < end && /^tags:/.test(line))
-  if (index === -1) lines.splice(end, 0, value)
-  else lines[index] = value
-  return lines.join('\n')
 }
 
 function buildPrompt({ title, subject, summary, concepts, body, vocabulary, needConcepts }) {
@@ -148,22 +130,28 @@ console.log('模型：' + (llmConfig.model || '（未配置）') + ' · ' + (llm
 console.log((apply ? '【写入模式】' : '【预演模式】不会改任何文件，加 --apply 才写') + ' 共 ' + picked.length + ' 篇')
 console.log('')
 
-const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+const stamp = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)
 const backupRoot = join(config.stateDir, '..', 'backups', '重打标签-' + stamp)
 
 let changed = 0
 let failed = 0
+let backedUp = false
 for (const [index, item] of picked.entries()) {
   const { subject, video } = item
   const absPath = join(vaultPath, video.notePath)
   const label = '[' + (index + 1) + '/' + picked.length + '] ' + video.title
-  if (!existsSync(absPath)) {
-    console.log(label + ' → 跳过（笔记不存在：' + video.notePath + '）')
+  const note = await readVaultText({ vaultPath, relPath: video.notePath })
+  if (!note.ok) {
+    console.log(label + ' → ' + note.error)
     failed += 1
     continue
   }
-  const markdown = readFileSync(absPath, 'utf8')
-  const { frontmatter, body } = splitFrontmatter(markdown)
+  const { frontmatter, body } = splitFrontmatter(note.text)
+  if (!frontmatter) {
+    console.log(label + ' → 缺少笔记属性区，已跳过')
+    failed += 1
+    continue
+  }
   const oldTags = readTags(frontmatter)
   const storedConcepts = Array.isArray(video.concepts) ? video.concepts : []
   // 早期笔记的状态里没有 concepts 字段，但旧标签可能留着「概念/xxx」，用它兜底
@@ -186,6 +174,11 @@ for (const [index, item] of picked.entries()) {
       maxTokens: needConcepts ? 1200 : 800,
     })
     parsed = parseJson(raw)
+    const themes = parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes
+    const types = parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types
+    if (![themes, types].some(value => Array.isArray(value) || typeof value === 'string')) {
+      throw new Error('模型未返回可用的主题词或类型')
+    }
   } catch (error) {
     console.log(label + ' → 失败：' + String((error && error.message) || error))
     failed += 1
@@ -202,59 +195,49 @@ for (const [index, item] of picked.entries()) {
   console.log(label)
   console.log('  旧：' + (oldTags.length ? oldTags.join(' · ') : '（无）'))
   console.log('  新：' + tags.join(' · '))
-  if (!tags.length || tags.join('|') === oldTags.join('|')) {
+  const noteChanged = JSON.stringify(tags) !== JSON.stringify(oldTags)
+  const stateTagsChanged = JSON.stringify(tags) !== JSON.stringify(video.tags || [])
+  const addConcepts = !storedConcepts.length && concepts.length > 0
+  if (!tags.length || (!noteChanged && !stateTagsChanged && !addConcepts)) {
     console.log('  → 无变化')
     continue
   }
-  changed += 1
   if (!apply) {
+    changed += 1
     // 预演也把新词累加进内存词表，让后面的篇目复用同一套写法（不落盘）
-    rememberTags(state, tags)
+    if (stateTagsChanged) rememberTags(state, tags)
     continue
   }
 
-  const backupPath = join(backupRoot, relative(join(vaultPath, config.noteRoot), absPath))
-  mkdirSync(dirname(backupPath), { recursive: true })
-  copyFileSync(absPath, backupPath)
-  writeFileSync(absPath, writeTags(markdown, tags), 'utf8')
+  if (noteChanged) {
+    const result = await updateNoteTags({
+      vaultPath, notePath: video.notePath, tags,
+      backup: { root: backupRoot, destRelPath: relative(join(vaultPath, config.noteRoot), absPath) },
+    })
+    if (!result.ok) {
+      console.log(label + ' → ' + result.error)
+      failed += 1
+      continue
+    }
+    backedUp = true
+  }
+  changed += 1
   video.tags = tags
   // 从旧标签还原出来的概念要落回状态，否则概念索引还是缺这几篇
-  if (!storedConcepts.length && concepts.length) video.concepts = concepts
-  rememberTags(state, tags)
+  if (addConcepts) video.concepts = concepts
+  if (stateTagsChanged) rememberTags(state, tags)
+  saveState(stateFile, state)
 }
 
-if (apply && changed > 0) {
-  saveState(stateFile, state)
-  const history = []
-  for (const [subject, data] of Object.entries(state.subjects || {})) {
-    for (const video of (data && data.videos) || []) {
-      if (!video) continue
-      history.push({
-        subject,
-        title: video.title || '',
-        source: video.source || 'bilibili',
-        bvid: video.bvid || '',
-        videoId: video.videoId || '',
-        url: video.url || '',
-        author: video.author || '',
-        notePath: video.notePath || '',
-        summary: video.summary || '',
-        keywords: video.keywords || [],
-        concepts: Array.isArray(video.concepts) ? video.concepts : [],
-        tags: Array.isArray(video.tags) ? video.tags : [],
-        createdAt: video.createdAt || 0,
-      })
-    }
-  }
-  const noteRoot = config.noteRoot
-  writeIndexNote({ vaultPath, noteRoot, markdown: buildIndexMarkdown(history, { noteRoot }) })
-  writeConceptIndexNote({ vaultPath, noteRoot, markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot }) })
-  writeTagIndexNote({ vaultPath, noteRoot, markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot }) })
+// 即使笔记已在上次写完，重试也要补齐随后未成功的索引。
+if (apply && picked.length > failed) {
+  await writeKnowledgeIndexes({ vaultPath, noteRoot: config.noteRoot, history: buildHistoryFromState(state) })
   console.log('')
-  console.log('备份：' + backupRoot)
+  if (backedUp) console.log('备份：' + backupRoot)
   console.log('索引已重建：视频索引.md / 概念索引.md / 标签索引.md')
 }
 
 console.log('')
 console.log('完成：处理 ' + picked.length + ' 篇，需改动 ' + changed + ' 篇，失败 ' + failed + ' 篇')
-if (!apply && changed > 0) console.log('确认无误后加 --apply 写入（会先备份到 ~/.seen/state/backups/重打标签-<时间>）')
+if (failed) process.exitCode = 1
+if (!apply && changed > 0) console.log('加 --apply 写入时，每篇原文会备份到 ' + join(config.stateDir, '..', 'backups') + ' 下独立的重打标签目录')

@@ -74,15 +74,20 @@ export function videosForManual(state, subject) {
   }))
 }
 
+/** 按同一份历史快照写入三份索引，供全量重建与重打标签共用。 */
+export async function writeKnowledgeIndexes({ vaultPath, noteRoot, history }) {
+  await writeIndexNote({ vaultPath, noteRoot, markdown: buildIndexMarkdown(history, { noteRoot }) })
+  await writeConceptIndexNote({ vaultPath, noteRoot, markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot }) })
+  await writeTagIndexNote({ vaultPath, noteRoot, markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot }) })
+}
+
 /**
  * 重建全部知识库页面。
  * @returns {Promise<{videos:number, concepts:number, topics:number, subjects:number}>}
  */
 export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, log = () => {} } = {}) {
   const history = buildHistoryFromState(state)
-  await writeIndexNote({ vaultPath, noteRoot, markdown: buildIndexMarkdown(history, { noteRoot }) })
-  await writeConceptIndexNote({ vaultPath, noteRoot, markdown: buildConceptIndexMarkdown(buildConceptIndex(history), { noteRoot }) })
-  await writeTagIndexNote({ vaultPath, noteRoot, markdown: buildTagIndexMarkdown(buildTagIndex(history), { noteRoot }) })
+  await writeKnowledgeIndexes({ vaultPath, noteRoot, history })
   const conceptPages = collectConceptPages(history)
   for (const page of conceptPages) {
     await writeConceptPage({ vaultPath, noteRoot, name: page.name, markdown: buildConceptPageMarkdown({ ...page, noteRoot }) })

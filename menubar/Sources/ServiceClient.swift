@@ -57,7 +57,7 @@ enum API {
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 throw ServiceError.badResponse("HTTP \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
             }
-            return parse(data)
+            return try parse(data)
         } catch let error as ServiceError {
             throw error
         } catch {
@@ -100,11 +100,14 @@ enum API {
         return []
     }
 
-    private static func parse(_ data: Data) -> ServiceStatus {
+    private static func parse(_ data: Data) throws -> ServiceStatus {
         var result = ServiceStatus()
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let status = root["status"] as? [String: Any] else { return result }
-        result.ok = status["ok"] as? Bool ?? false
+              let status = root["status"] as? [String: Any],
+              let ok = status["ok"] as? Bool else {
+            throw ServiceError.badResponse("缺少有效的 status.ok 字段")
+        }
+        result.ok = ok
         result.polling = status["polling"] as? Bool ?? false
         result.readOnly = status["readOnly"] as? Bool ?? false
         result.intervalMs = status["pollIntervalMs"] as? Int ?? 15000

@@ -514,7 +514,7 @@ export function readVaultText({ vaultPath, relPath } = {}) {
 }
 
 /** 只改 frontmatter 的 tags 行（保留其它字段与正文）。 */
-export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
+export function updateNoteTags({ vaultPath, notePath, tags, backup } = {}) {
   const relPath = toPosix(String(notePath ?? ''))
   const json = JSON.stringify(Array.isArray(tags) ? tags : [])
   return runVault(async () => {
@@ -525,14 +525,16 @@ export function updateNoteTags({ vaultPath, notePath, tags } = {}) {
       if (error?.code === 'ENOENT') return { ok: false, error: '笔记不存在：' + relPath }
       throw error
     }
-    const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+    const match = markdown.match(/^(\uFEFF?---)(\r?\n)([\s\S]*?)\r?\n---(?=\r?\n|$)/)
     if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }
-    const block = match[1]
+    const [, opening, eol, block] = match
     const line = 'tags: ' + json
-    const nextBlock = /^tags:.*$/m.test(block)
-      ? block.replace(/^tags:.*$/m, line)
-      : block.replace(/\s*$/, '') + '\n' + line
-    const next = markdown.slice(0, match.index) + '---\n' + nextBlock + '\n---' + markdown.slice(match.index + match[0].length)
+    const field = /^tags:[^\r\n]*(?:(?:\r?\n)[ \t]*-[ \t]+[^\r\n]*)*/m
+    const nextBlock = field.test(block) ? block.replace(field, () => line) : block + eol + line
+    const next = opening + eol + nextBlock + eol + '---' + markdown.slice(match[0].length)
+    if (backup) {
+      await safeCopyToExternal({ vaultPath, relPath, root: backup.root, destRelPath: backup.destRelPath })
+    }
     await atomicWrite({ vaultPath, relPath, content: next })
     return { ok: true, relPath }
   })

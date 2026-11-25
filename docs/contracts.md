@@ -390,7 +390,8 @@ export async function writeTranscriptNote({ vaultPath, noteRoot, noteName, conte
 export async function readTranscriptNote({ vaultPath, noteRoot, noteName, owner = '', allowUnowned = false }): Promise<string | null>
 // 无 owner 时只有 allowUnowned=true 才返回 base（无论 base 有无 owner）；有 owner 时先读 base 比对 frontmatter notePath，不匹配则扫描同目录 (字幕-hash) 副本，只有 notePath 精确匹配才返回；ENOENT/存档解析失败才继续扫描，VaultBlocked/EACCES 原样抛出
 export async function readVaultText({ vaultPath, relPath }): Promise<{ ok: boolean, relPath?: string, text?: string, code?: string, error?: string }>  // 读任意 vault 内文本（问笔记库用）；code 区分 not-found / vault-unavailable / vault-path-* / read-failed
-export async function updateNoteTags({ vaultPath, notePath, tags }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 tags 行
+// backup 可传 { root, destRelPath }；同一写入任务先备份原文，再更新标签。
+export async function updateNoteTags({ vaultPath, notePath, tags, backup? }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 tags 行
 export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 review 行
@@ -490,6 +491,7 @@ export function buildTopicPageMarkdown({ name, videos, concepts, noteRoot }): st
 ```js
 export function buildHistoryFromState(state): Array<VideoRecord>
 export function videosForManual(state, subject): Array<any>
+export async function writeKnowledgeIndexes({ vaultPath, noteRoot, history }): Promise<void>
 export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, log }): Promise<{ videos, concepts, topics, subjects }>
 // 顺序：视频索引 / 概念索引 / 标签索引 → 概念页 → 主题页 → 每学科手册 → 总览
 // 主题页的「相关概念」只保留真实存在的概念页，避免断链
