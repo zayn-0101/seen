@@ -91,8 +91,9 @@ async function main() {
 
   let state = null
   try {
-    state = loadState(stateFile)
+    state = loadState(stateFile, { strict: true })
   } catch (error) {
+    errors++
     console.log('状态文件读取失败：' + (error?.message || error))
   }
   const stateVideos = state

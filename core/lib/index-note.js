@@ -12,10 +12,10 @@ function escapeCell(text) {
     .trim()
 }
 
-function noteLink(row) {
+function noteLink(row, inTable = false) {
   const title = escapeCell(row.title || '未命名视频')
   const path = String(row.notePath || '').replace(/\.md$/i, '')
-  return path ? '[[' + path + '|' + title + ']]' : title
+  return path ? '[[' + path + (inTable ? '\\|' : '|') + title + ']]' : title
 }
 
 function formatDate(timestamp) {
@@ -54,7 +54,7 @@ export function buildIndexMarkdown(videos = [], { noteRoot = '视频笔记' } = 
     lines.push('|---|---|---|---|')
     for (const row of rows) {
       lines.push(
-        '| ' + formatDate(row.createdAt) + ' | ' + noteLink(row) + ' | ' +
+        '| ' + formatDate(row.createdAt) + ' | ' + noteLink(row, true) + ' | ' +
         escapeCell(row.subject || '未分类') + ' | ' + sourceLabel(row.source) + ' |'
       )
     }

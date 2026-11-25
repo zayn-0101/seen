@@ -11,6 +11,7 @@
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { resolveVaultPath, ensureVaultDirs } from '../core/lib/obsidian.js'
 import { buildHistoryFromState, rebuildKnowledgePages } from '../core/lib/rebuild.js'
+import { collectConceptPages, collectTopicPages } from '../core/lib/topic-pages.js'
 import { loadState } from '../core/lib/state.js'
 import { probeVaultAccess, VAULT_HINT } from '../core/lib/vault-access.js'
 
@@ -25,23 +26,13 @@ const config = resolveConfig({
 })
 
 const vaultPath = resolveVaultPath(config)
-const state = loadState(config.stateDir + '/state.json')
-const history = buildHistoryFromState(state)
+const state = loadState(config.stateDir + '/state.json', { strict: true })
 
 if (dryRun) {
-  const concepts = new Set()
-  const themes = new Map()
-  for (const video of history) {
-    for (const name of video.concepts || []) if (name) concepts.add(name)
-    for (const tag of video.tags || []) {
-      if (!tag || tag.includes('/') || tag === video.subject) continue
-      if (tag.length < 2 || tag.length > 12) continue
-      themes.set(tag, (themes.get(tag) || 0) + 1)
-    }
-  }
-  const conceptPages = [...concepts].length
-  const topicPages = [...themes.values()].filter((count) => count >= 3).length
-  console.log('预演：视频 ' + history.length + ' 篇，学科 ' + Object.keys(state.subjects || {}).length + ' 个，概念 ' + conceptPages + ' 个（其中出现 ≥2 篇的会建页），主题候选 ' + topicPages + ' 个')
+  const history = buildHistoryFromState(state)
+  const conceptPages = collectConceptPages(history).length
+  const topicPages = collectTopicPages(history).length
+  console.log('预演：视频 ' + history.length + ' 篇，学科 ' + Object.keys(state.subjects || {}).length + ' 个，概念页 ' + conceptPages + ' 个，主题页 ' + topicPages + ' 个')
   console.log('去掉 --dry-run 才会写入 ' + config.noteRoot + '/')
   process.exit(0)
 }

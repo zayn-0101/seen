@@ -3,7 +3,6 @@ const $ = (id) => document.getElementById(id)
 const state = {
   snapshot: null,
   history: [],
-  current: null,
   summary: null,
   events: [],
   lastPollAt: 0,
@@ -125,6 +124,9 @@ async function api(path, options = {}) {
 }
 
 function readOnlyDetail(status = {}) {
+  if (status.readOnlyReason === 'state-unreadable') {
+    return { label: '只读（状态文件无法读取）', title: '请检查 state.json 的权限或从备份恢复，然后重启拾影' }
+  }
   if (status.readOnlyReason === 'lock-write-failed') {
     return { label: '只读（实例锁写入失败）', title: '无法写入实例锁：请检查 ~/.seen 目录权限' }
   }
@@ -161,7 +163,6 @@ function renderToggle() {
 function renderForeground(fg) {
   const box = $('foreground')
   box.replaceChildren()
-  state.current = fg || null
   state.lastPollAt = fg?.at || state.lastPollAt || Date.now()
   $('lastPoll').textContent = formatClock(state.lastPollAt)
 
@@ -451,7 +452,11 @@ async function toggleConceptBrowse() {
   const next = box.hidden
   box.hidden = !next
   toggle?.setAttribute('aria-expanded', next ? 'true' : 'false')
-  if (!next) return
+  if (next) await loadConcepts()
+}
+
+async function loadConcepts() {
+  const box = $('conceptBrowse')
   if (conceptCache) {
     renderConcepts(conceptCache)
     return
@@ -885,6 +890,7 @@ async function checkForUpdates() {
       showToast('发现新版本 v' + data.latest + '，可在顶部查看', true)
       return
     }
+    renderUpdate(null)
     showToast('已是最新版本 v' + (data.current || ''), true)
   } catch (error) {
     showToast('检查更新失败：' + error.message, true)
@@ -1045,7 +1051,29 @@ async function retryFailure(key, button) {
   }
 }
 
+let libraryRevision = 0
+
+async function refreshSavedLibrary() {
+  const revision = ++libraryRevision
+  try {
+    const snap = await api('/api/status')
+    if (revision !== libraryRevision) return
+    renderHistory(snap.history || [])
+    renderReviews(snap.reviews || { due: [], stats: {} })
+    renderFailures(snap.status?.failures || [])
+    conceptCache = null
+    tagCache = null
+    if (!$('conceptBrowse').hidden) void loadConcepts()
+    if (!$('tagBrowse').hidden) void loadTags()
+  } catch (error) {
+    showToast('刷新知识库失败：' + error.message, true)
+  }
+}
+
 function renderSnapshot(snap) {
+  libraryRevision++
+  conceptCache = null
+  tagCache = null
   state.snapshot = snap
   stopStageClock()
   state.events = Array.isArray(snap.events) ? snap.events.slice() : state.events
@@ -1059,6 +1087,7 @@ function renderSnapshot(snap) {
   $('footerPath').textContent = vaultPath.replace(/^\/(Users|home)\/[^/]+/, '~')
   renderUpdate(snap.update || null)
   renderVaultBanner(snap.status?.vault || snap.vault || null)
+  setRefreshState(Boolean(snap.refreshingHistory))
   const layoutSelect = $('noteLayout')
   if (layoutSelect && snap.config?.noteLayout) layoutSelect.value = snap.config.noteLayout
   const editorPassToggle = $('settingsEditorPass')
@@ -1072,17 +1101,7 @@ function renderSnapshot(snap) {
   if (saved?.data) renderSummary(saved.data, '已生成')
   else if (snap.history?.length) {
     const latest = snap.history[0]
-    renderSummary({
-      title: latest.title,
-      subject: latest.subject,
-      source: latest.source,
-      summary: latest.summary,
-      keyPoints: [],
-      discussion: [],
-      fetchStats: null,
-      notePath: latest.notePath,
-      contentQuality: 'history',
-    }, '历史笔记')
+    renderSummary({ ...latest, contentQuality: 'history' }, '历史笔记')
   } else {
     state.stageLabel = '等待新视频'
     state.processingStarted = 0
@@ -1091,7 +1110,7 @@ function renderSnapshot(snap) {
     stage.className = 'stage idle'
   }
   if (snap.status?.readOnly) {
-    showToast('另一个 Seen 实例正在运行并持有状态锁；请停掉那个实例后重启本服务。', true)
+    showToast(readOnlyDetail(snap.status).title, true)
   }
 }
 
@@ -1144,10 +1163,21 @@ function handleEvent(event) {
     }
     renderToggle()
   }
-  if (event.type === 'refresh-done' && Array.isArray(event.data?.warnings) && event.data.warnings.length) {
-    showToast('重刷完成，但部分笔记有警告：' + event.data.warnings.join('；'), true)
+  if (event.type === 'refresh-start' || event.type === 'refresh') setRefreshState(true)
+  if (event.type === 'refresh-done') {
+    setRefreshState(false)
+    const result = event.data || {}
+    const warnings = result.warnings || []
+    const message = result.ok
+      ? '重刷完成 ' + result.done + ' 篇，失败 ' + result.failed + ' 篇'
+      : (result.message || '重刷中断') + (result.remaining ? '，剩余 ' + result.remaining + ' 篇' : '')
+    showToast([message, ...warnings].join('；'), true)
   }
-  if (event.type === 'saved' && event.data) renderSummary(event.data, '已生成')
+  if (event.type === 'update') renderUpdate(event.data)
+  if (event.type === 'saved' && event.data) {
+    renderSummary(event.data, '已生成')
+    void refreshSavedLibrary()
+  }
   if (event.type === 'summarized' && event.data && !state.summary) renderSummary({ ...event.data, chapters: [], fetchStats: null }, '总结完成')
   if (event.type === 'progress' && event.data?.stage === 'install') {
     const message = String(event.data.message || '')
@@ -1291,18 +1321,21 @@ async function scan(force) {
   button.disabled = false
 }
 
+function setRefreshState(active) {
+  const button = $('reprocess')
+  button.disabled = active || Boolean(state.snapshot?.status?.readOnly)
+  button.textContent = active ? '重刷中…' : '重刷历史'
+}
+
 async function reprocessHistory() {
   if (!window.confirm('用已缓存的内容重刷全部历史笔记？原笔记会先备份，「我的补充」会保留。')) return
-  const button = $('reprocess')
-  button.disabled = true
-  button.textContent = '重刷中…'
+  setRefreshState(true)
   try {
     const data = await api('/api/reprocess', { method: 'POST', body: '{}' })
     showToast(data.message || '已开始重刷历史笔记', true)
   } catch (error) {
     showToast(error.message)
-    button.disabled = false
-    button.textContent = '重刷历史'
+    setRefreshState(false)
   }
 }
 
@@ -1458,7 +1491,11 @@ $('historySubject').addEventListener('change', () => renderHistory())
 $('scanForce').addEventListener('click', () => scan(true))
 $('reprocess').addEventListener('click', reprocessHistory)
 $('manualUrl').addEventListener('input', fitManualUrl)
-$('manualUrl').addEventListener('keydown', (event) => { if (event.key === 'Enter') scan(false) })
+$('manualUrl').addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  if (!event.repeat && !$('scan').disabled && !$('scanForce').disabled) scan(false)
+})
 $('check').addEventListener('click', check)
 $('checkClose').addEventListener('click', () => { $('checkPanel').hidden = true })
 $('conceptToggle')?.addEventListener('click', toggleConceptBrowse)
@@ -1472,7 +1509,7 @@ connect()
 handleSettingsHash()
 
 // ---------------- 模型设置 ----------------
-const settingsState = { loaded: false, providers: [], groups: [] }
+const settingsState = { providers: [], groups: [] }
 
 function renderProviderOptions() {
   const select = $('providerSelect')
@@ -1536,7 +1573,7 @@ function applyPreset(id) {
   const keyInput = $('apiKeyInput')
   keyInput.disabled = isLocal
   keyInput.placeholder = isLocal ? '本地服务通常不需要 API Key' : '粘贴 API Key'
-  if (isLocal) keyInput.value = ''
+  keyInput.value = ''
 }
 
 function currentForm() {
@@ -1544,7 +1581,7 @@ function currentForm() {
   return {
     provider: $('providerSelect').value,
     baseURL: $('baseUrlInput').value.trim(),
-    model: ($('modelSelect').value || $('customModel').value || '').trim(),
+    model: $('customModel').value.trim() || $('modelSelect').value,
     apiKey: keyInput.disabled ? '' : keyInput.value.trim(),
   }
 }
@@ -1560,24 +1597,17 @@ async function openSettings() {
       ? '尚未配置模型，处理视频前请先设置'
       : '当前：' + (data.provider || '') + ' / ' + (data.model || '') + '（来源：' + data.source + '）'
 
-    if (data.saved) {
-      $('providerSelect').value = data.saved.provider || 'custom'
-      applyPreset(data.saved.provider || 'custom')
-      $('baseUrlInput').value = data.saved.baseURL || ''
-      setModelOptions([data.saved.model], data.saved.model)
-      $('apiKeyInput').value = ''
-      if (!$('apiKeyInput').disabled) {
-        $('apiKeyInput').placeholder = data.saved.maskedKey ? '已保存 ' + data.saved.maskedKey + '（留空不修改）' : '粘贴 API Key'
+    const current = data.saved || data
+    const preset = settingsState.providers.find(item => item.id === current.provider && item.baseURL === current.baseURL)
+    const id = data.source === 'none' ? 'deepseek' : preset?.id || 'custom'
+    $('providerSelect').value = id
+    applyPreset(id)
+    if (data.source !== 'none') {
+      $('baseUrlInput').value = current.baseURL || ''
+      setModelOptions([...(preset?.models || []), ...(data.health?.models || [])], current.model)
+      if (current.maskedKey && !$('apiKeyInput').disabled) {
+        $('apiKeyInput').placeholder = '已配置 ' + current.maskedKey + '（同一服务留空沿用）'
       }
-    } else if (data.source === 'magpie' && data.provider === 'magpie') {
-      $('providerSelect').value = 'magpie'
-      applyPreset('magpie')
-      if (data.baseURL) $('baseUrlInput').value = data.baseURL
-      const magpieModels = (data.health && Array.isArray(data.health.models)) ? data.health.models : []
-      setModelOptions(magpieModels, data.model || '')
-    } else {
-      $('providerSelect').value = 'deepseek'
-      applyPreset('deepseek')
     }
 
     const mnemon = $('mnemonToggle')
@@ -1596,11 +1626,13 @@ async function fetchModelList() {
   $('settingsResult').textContent = '正在获取模型列表…'
   try {
     const data = await api('/api/llm/models', { method: 'POST', body: JSON.stringify(form) })
+    const current = currentForm()
+    if (current.provider !== form.provider || current.baseURL !== form.baseURL) return
     if (!data.ok) {
       $('settingsResult').textContent = '获取失败：' + (data.detail || '未知错误')
       return
     }
-    setModelOptions(data.models, form.model)
+    setModelOptions(data.models, current.model)
     $('settingsResult').textContent = '获取到 ' + data.models.length + ' 个模型'
   } catch (error) {
     $('settingsResult').textContent = '获取失败：' + error.message
@@ -1677,5 +1709,6 @@ window.addEventListener('hashchange', updateNavigation)
 updateNavigation()
 $('settingsForm').addEventListener('submit', saveSettings)
 $('providerSelect').addEventListener('change', (event) => applyPreset(event.target.value))
+$('modelSelect').addEventListener('change', () => { $('customModel').value = '' })
 $('fetchModels').addEventListener('click', fetchModelList)
 $('testLlm').addEventListener('click', testCurrent)

@@ -18,13 +18,29 @@ export function compareVersions(a, b) {
   if (left.prerelease && !right.prerelease) return -1
   if (!left.prerelease && right.prerelease) return 1
   if (left.prerelease && right.prerelease) {
-    return left.prerelease.localeCompare(right.prerelease)
+    const aParts = left.prerelease.split('.')
+    const bParts = right.prerelease.split('.')
+    for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
+      const a = aParts[i]
+      const b = bParts[i]
+      if (a === b) continue
+      const numericA = /^\d+$/.test(a)
+      const numericB = /^\d+$/.test(b)
+      if (numericA && numericB) {
+        const difference = BigInt(a) - BigInt(b)
+        if (difference === 0n) continue
+        return difference < 0n ? -1 : 1
+      }
+      if (numericA !== numericB) return numericA ? -1 : 1
+      return a < b ? -1 : 1
+    }
+    return Math.sign(aParts.length - bParts.length)
   }
   return 0
 }
 
 function parse(value) {
-  const text = String(value ?? '').trim().replace(/^v/i, '')
+  const text = String(value ?? '').trim().replace(/^v/i, '').split('+', 1)[0]
   const [core, ...rest] = text.split('-')
   const numbers = core.split('.').slice(0, 3).map((part) => {
     const num = Number.parseInt(part, 10)

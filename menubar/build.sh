@@ -18,6 +18,7 @@ BUILD_DIR="${SEEN_BUILD_DIR:-build}"
 DIST_DIR="${SEEN_DIST_DIR:-dist}"
 APP="$DIST_DIR/Seen.app"
 NODE_VERSION="24.15.0"
+RUNTIME_CACHE="$BUILD_DIR/node-runtime/v$NODE_VERSION"
 
 BUNDLE=0
 INSTALL=0
@@ -66,7 +67,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD_DIR/Seen" "$APP/Contents/MacOS/Seen"
 
 VERSION="$(cd "$REPO" && node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")"
-sed -e "s|__REPO_PATH__|$REPO|g" -e "s|__VERSION__|$VERSION|g" Resources/Info.plist > "$APP/Contents/Info.plist"
+PLIST="$APP/Contents/Info.plist"
+cp Resources/Info.plist "$PLIST"
+plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
+if [ "$BUNDLE" = "1" ]; then
+  plutil -remove SeenRepoPath "$PLIST"
+else
+  plutil -replace SeenRepoPath -string "$REPO" "$PLIST"
+fi
 
 cp Resources/StatusIcon@1x.png Resources/StatusIcon@2x.png "$APP/Contents/Resources/"
 cp Resources/BrandIcon.png Resources/BrandIcon@2x.png "$APP/Contents/Resources/"
@@ -74,15 +82,15 @@ if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/
 
 fetch_node() {
   local node_arch="$1"
-  local dest="$BUILD_DIR/node-runtime/node-$node_arch"
+  local dest="$RUNTIME_CACHE/node-$node_arch"
   if [ -x "$dest" ]; then return 0; fi
-  mkdir -p "$BUILD_DIR/node-runtime"
+  mkdir -p "$RUNTIME_CACHE"
   local tarball="node-v${NODE_VERSION}-darwin-${node_arch}.tar.gz"
   local dirname="node-v${NODE_VERSION}-darwin-${node_arch}"
   local sums="$BUILD_DIR/SHASUMS256-${node_arch}.txt"
   echo "  下载 https://nodejs.org/dist/v${NODE_VERSION}/${tarball}"
-  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${tarball}" -o "$BUILD_DIR/$tarball"
-  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o "$sums"
+  curl -fsSL --retry 3 --retry-all-errors --connect-timeout 10 "https://nodejs.org/dist/v${NODE_VERSION}/${tarball}" -o "$BUILD_DIR/$tarball"
+  curl -fsSL --retry 3 --retry-all-errors --connect-timeout 10 "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o "$sums"
   local expected
   expected="$(awk -v file="$tarball" '$2 == file { print $1 }' "$sums" | head -n 1)"
   if [ -z "$expected" ]; then
@@ -93,8 +101,8 @@ fetch_node() {
   echo "$expected  $tarball" | (cd "$BUILD_DIR" && shasum -a 256 -c -)
   rm -f "$sums"
   tar -xzf "$BUILD_DIR/$tarball" -C "$BUILD_DIR"
-  cp "$BUILD_DIR/$dirname/bin/node" "$dest"
-  chmod 755 "$dest"
+  install -m 755 "$BUILD_DIR/$dirname/bin/node" "$dest.tmp.$$"
+  mv "$dest.tmp.$$" "$dest"
   rm -rf "$BUILD_DIR/$dirname" "$BUILD_DIR/$tarball"
   return 0
 }
@@ -105,17 +113,17 @@ if [ "$BUNDLE" = "1" ]; then
   case "$ARCH_MODE" in
     arm64)
       fetch_node arm64
-      cp "$BUILD_DIR/node-runtime/node-arm64" "$APP/Contents/Resources/runtime/node-arm64"
+      cp "$RUNTIME_CACHE/node-arm64" "$APP/Contents/Resources/runtime/node-arm64"
       ;;
     x64)
       fetch_node x64
-      cp "$BUILD_DIR/node-runtime/node-x64" "$APP/Contents/Resources/runtime/node-x64"
+      cp "$RUNTIME_CACHE/node-x64" "$APP/Contents/Resources/runtime/node-x64"
       ;;
     *)
       fetch_node arm64
       fetch_node x64
-      cp "$BUILD_DIR/node-runtime/node-arm64" "$APP/Contents/Resources/runtime/node-arm64"
-      cp "$BUILD_DIR/node-runtime/node-x64" "$APP/Contents/Resources/runtime/node-x64"
+      cp "$RUNTIME_CACHE/node-arm64" "$APP/Contents/Resources/runtime/node-arm64"
+      cp "$RUNTIME_CACHE/node-x64" "$APP/Contents/Resources/runtime/node-x64"
       ;;
   esac
   chmod 755 "$APP/Contents/Resources/runtime/"*
@@ -135,13 +143,15 @@ if security find-certificate -c "$SIGN_IDENTITY" >/dev/null 2>&1; then
     echo "已用固定证书签名：${SIGN_IDENTITY}（重装后系统权限可保留）"
   else
     echo "警告：固定证书 ${SIGN_IDENTITY} 签名失败，回退 ad-hoc"
-    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+    codesign --force --deep --sign - "$APP"
   fi
 else
   echo "未找到固定证书 ${SIGN_IDENTITY}，使用 ad-hoc 签名（每次重打包会重置系统权限）"
-  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+  codesign --force --deep --sign - "$APP"
 fi
-echo "构建完成：$(cd "$DIST_DIR" && pwd)/Seen.app（版本 ${VERSION}，${ARCH_MODE}$([ "$BUNDLE" = "1" ] && echo "，含运行时" || echo "，不含运行时")）"
+codesign --verify --deep --strict "$APP"
+BUILT_ARCHS="$(lipo -archs "$APP/Contents/MacOS/Seen")"
+echo "构建完成：$(cd "$DIST_DIR" && pwd)/Seen.app（版本 ${VERSION}，${BUILT_ARCHS}$([ "$BUNDLE" = "1" ] && echo "，含运行时" || echo "，不含运行时")）"
 
 if [ "$INSTALL" = "1" ]; then
   bash install-app.sh "$APP" "$HOME/Applications/Seen.app"

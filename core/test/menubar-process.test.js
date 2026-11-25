@@ -22,6 +22,9 @@ import Foundation
     static func main() {
         let repo = URL(fileURLWithPath: CommandLine.arguments[1])
         setenv("SEEN_REPO_PATH", repo.path, 1)
+        setenv("SEEN_HOST", "[::1]", 1)
+        setenv("SEEN_PORT", "8396", 1)
+        guard API.base.absoluteString == "http://[::1]:8396" else { exit(5) }
         let service = ServiceProcess(logDirectory: repo.appendingPathComponent("logs"))
         for _ in 0..<2 {
             guard service.startIfNeeded() else { exit(2) }

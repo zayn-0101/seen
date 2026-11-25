@@ -21,3 +21,10 @@ test('compareVersions ranks release above prerelease', () => {
   assert.equal(compareVersions('0.2.0-beta', '0.2.0'), -1)
   assert.equal(compareVersions('0.2.0-beta.2', '0.2.0-beta.1') > 0, true)
 })
+
+test('预发布数字按数值排序，构建标识不影响优先级', () => {
+  assert.equal(compareVersions('1.0.0-beta.10', '1.0.0-beta.2'), 1)
+  assert.equal(compareVersions('1.0.0-beta.1+mac', '1.0.0-beta.1+test'), 0)
+  assert.equal(compareVersions('1.0.0-2', '1.0.0-alpha'), -1)
+  assert.equal(compareVersions('1.0.0-beta', '1.0.0-beta.1'), -1)
+})

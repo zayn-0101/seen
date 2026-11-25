@@ -50,13 +50,11 @@ final class AppModel: ObservableObject {
     }
 
     func openPanel() {
-        if let url = URL(string: "http://127.0.0.1:4780") {
-            NSWorkspace.shared.open(url)
-        }
+        NSWorkspace.shared.open(API.base)
     }
 
     func openSettings() {
-        if let url = URL(string: "http://127.0.0.1:4780/#settings") {
+        if let url = URL(string: "/#settings", relativeTo: API.base)?.absoluteURL {
             NSWorkspace.shared.open(url)
         }
     }

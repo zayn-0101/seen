@@ -113,7 +113,7 @@ function syncStateOnly(config, vaultPath, noteRoot) {
     console.log('没有状态文件：' + statePath)
     return
   }
-  const state = loadState(statePath)
+  const state = loadState(statePath, { strict: true })
   let changed = normalizeStateAuxPaths(state, { vaultPath, noteRoot })
   for (const [subject, entry] of Object.entries(state.subjects || {})) {
     for (const video of entry?.videos || []) {
@@ -159,7 +159,7 @@ function syncStateOnly(config, vaultPath, noteRoot) {
 function rewriteState(config, pathMap) {
   const statePath = join(config.stateDir, 'state.json')
   if (!existsSync(statePath)) return 0
-  const state = loadState(statePath)
+  const state = loadState(statePath, { strict: true })
   const map = pathMap instanceof Map ? pathMap : new Map(Object.entries(pathMap))
   const changed = remapStateNotePaths(state, map)
   if (changed > 0) saveState(statePath, state)
@@ -293,6 +293,8 @@ function main() {
     return
   }
 
+  // 先确认状态可读，再备份并移动笔记。
+  loadState(join(config.stateDir, 'state.json'), { strict: true })
   const backupDirAbs = join(config.stateDir, '..', 'backups')
   const backup = backupRoot(rootAbs, backupDirAbs)
   console.log('已备份到：' + backup)

@@ -37,7 +37,7 @@ final class EventStream: NSObject, URLSessionDataDelegate {
 
     private func connect() {
         guard !stopped else { return }
-        guard let url = URL(string: "http://127.0.0.1:4780/api/events") else { return }
+        let url = API.base.appendingPathComponent("api/events")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 60 * 60 * 24

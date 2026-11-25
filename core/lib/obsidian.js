@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { detectObsidianVault, sanitizeFilename } from './config.js'
+import { videoIdentity } from './source.js'
 import { extractPage } from './bilibili.js'
 import { TRANSCRIPT_DIR, conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath, weeklyReviewRelPath } from './paths.js'
 import { transcriptNoteOwner } from './transcript-note.js'
@@ -268,12 +269,6 @@ async function readNoteIdentityUnsafe({ vaultPath, relPath } = {}) {
   }
 }
 
-function noteIdentity({ bvid, videoId, source, page } = {}) {
-  if (bvid) return 'bilibili:' + String(bvid).trim().toLowerCase() + ':p' + (Number(page) > 0 ? Number(page) : 1)
-  if (videoId && source) return String(source) + ':' + String(videoId)
-  return ''
-}
-
 function siblingNotePath(base, suffix) {
   const dir = dirname(base.absPath)
   const name = basename(base.absPath, '.md') + suffix + '.md'
@@ -315,7 +310,7 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
   const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout })
   const targetBvid = String(bvid ?? '').trim()
   const targetVideoId = String(videoId ?? '').trim()
-  const identity = noteIdentity({ bvid: targetBvid, page, videoId: targetVideoId, source })
+  const identity = videoIdentity({ bvid: targetBvid, page, videoId: targetVideoId, source })
   const previous = toPosix(previousNotePath)
 
   return runVault(async () => {
@@ -323,7 +318,7 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
     // 标题变化（例如平台标题多了栏目后缀）时，沿用状态记录的旧笔记路径，
     // 避免同一条视频因为 finalTitle 变化而生成第二篇笔记。只信任身份匹配的旧文件。
     if (previous && (await vaultPathExists(vaultPath, previous))) {
-      const previousIdentity = noteIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: previous }))
+      const previousIdentity = videoIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: previous }))
       if (identity && previousIdentity && identity === previousIdentity) {
         target = { relPath: previous, absPath: absoluteFromRel(vaultPath, previous) }
       }
@@ -333,7 +328,7 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
     for (let index = 0; index <= 100; index += 1) {
       if (index > 0) target = siblingNotePath(base, index === 1 ? ` (${tag})` : ` (${tag}-${index})`)
       if (!(await vaultPathExists(vaultPath, target.relPath))) break
-      const existing = noteIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: target.relPath }))
+      const existing = videoIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: target.relPath }))
       const matches = Boolean(identity && existing && identity === existing)
       // 只有目标视频身份明确时才信任旧的无身份笔记：仅凭同名/旧路径可能是另一条视频，
       // 覆盖会丢掉用户手写内容。
@@ -348,12 +343,8 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
 
     // force 重写时把旧笔记里的手写内容搬回来，避免整篇覆盖丢掉
     let finalContent = content
-    try {
-      if (await vaultPathExists(vaultPath, target.relPath)) {
-        finalContent = mergeManualSection(await safeReadFile({ vaultPath, relPath: target.relPath }), content)
-      }
-    } catch {
-      finalContent = content
+    if (await vaultPathExists(vaultPath, target.relPath)) {
+      finalContent = mergeManualSection(await safeReadFile({ vaultPath, relPath: target.relPath }), content)
     }
 
     await atomicWrite({ vaultPath, relPath: target.relPath, content: finalContent })

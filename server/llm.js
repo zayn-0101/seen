@@ -4,9 +4,10 @@
  * 配置优先级：用户保存的设置（~/.seen/llm.json）→ 环境变量 → 自动探测 Magpie → 未配置。
  * 环境变量：SEEN_LLM_BASE_URL / SEEN_LLM_API_KEY / SEEN_LLM_MODEL / SEEN_LLM_PROVIDER
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { atomicWrite } from '../core/lib/state.js'
 
 export const MAGPIE_BASE_URL = 'http://127.0.0.1:3425/v1'
 export const MAGPIE_MODEL = 'auto/deepseek-v4.1-flash'
@@ -74,7 +75,6 @@ function normalizeBaseURL(value) {
 
 /** 保存配置到 ~/.seen/llm.json（权限 0600）。 */
 export function saveLlmConfig({ provider, baseURL, apiKey, model } = {}) {
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
   const data = {
     provider: String(provider || 'custom'),
     baseURL: normalizeBaseURL(baseURL),
@@ -82,8 +82,7 @@ export function saveLlmConfig({ provider, baseURL, apiKey, model } = {}) {
     model: String(model || '').trim(),
     savedAt: new Date().toISOString(),
   }
-  writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
-  try { chmodSync(CONFIG_PATH, 0o600) } catch { /* 忽略 */ }
+  atomicWrite(CONFIG_PATH, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 })
   return data
 }
 
@@ -290,13 +289,14 @@ export function createLlmClient(config = loadLlmConfig()) {
   }
 
   async function health() {
-    if (!currentBaseURL()) return { ok: false, detail: '尚未配置模型' }
+    const baseURL = currentBaseURL()
+    if (!baseURL) return { ok: false, detail: '尚未配置模型' }
     try {
-      const res = await fetch(currentBaseURL() + '/models', { headers: headers(), signal: AbortSignal.timeout(5000) })
+      const res = await fetch(baseURL + '/models', { headers: headers(), signal: AbortSignal.timeout(5000) })
       if (!res.ok) return { ok: false, detail: 'HTTP ' + res.status }
       const data = await res.json().catch(() => null)
       const ids = Array.isArray(data?.data) ? data.data.map((item) => item && item.id).filter(Boolean) : []
-      return { ok: true, detail: '已连接 ' + currentBaseURL(), models: ids.slice(0, 30) }
+      return { ok: true, detail: '已连接 ' + baseURL, models: ids.slice(0, 30) }
     } catch (error) {
       return { ok: false, detail: String((error && error.message) || error) }
     }

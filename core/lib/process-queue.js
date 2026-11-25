@@ -16,7 +16,7 @@ export function createProcessQueue({ run, keyOf = () => '', onError = () => {}, 
   if (typeof run !== 'function') throw new Error('process queue 需要 run 函数')
   const limit = Math.max(1, Math.floor(Number(maxPending) || 8))
   const pending = []
-  const queuedKeys = new Set()
+  const idleWaiters = []
   let active = null
   let draining = false
 
@@ -30,42 +30,58 @@ export function createProcessQueue({ run, keyOf = () => '', onError = () => {}, 
 
   function push(item) {
     const key = keyFor(item)
-    if (key && (queuedKeys.has(key) || active?.key === key)) {
+    if (key && (active?.key === key || pending.some(entry => entry.key === key))) {
       return { ok: false, duplicate: true, key, size: size() }
     }
-    if (pending.length >= limit) {
-      return { ok: false, full: true, key, size: size() }
-    }
+    if (pending.length >= limit) return { ok: false, full: true, key, size: size() }
     pending.push({ item, key })
-    if (key) queuedKeys.add(key)
     void drain()
     return { ok: true, key, size: size() }
+  }
+
+  function submit(item) {
+    if (pending.length >= limit) {
+      return Promise.resolve({ ok: false, code: 'queue-full', message: '等待整理的视频已满，请稍后再试' })
+    }
+    return new Promise((resolve, reject) => {
+      pending.push({ item, key: keyFor(item), resolve, reject })
+      void drain()
+    })
   }
 
   async function drain() {
     if (draining) return
     draining = true
     try {
-      while (pending.length > 0) {
+      while (pending.length) {
         active = pending.shift()
+        // 先让调用方收到入队结果并发布发现事件，再开始处理。
+        await Promise.resolve()
         try {
-          await run(active.item)
+          const result = await run(active.item)
+          active.resolve?.(result)
         } catch (error) {
-          try { onError(error, active.item) } catch { /* 回调自身出错不能拖垮队列 */ }
+          active.reject?.(error)
+          try { onError(error, active.item) } catch { /* 日志回调失败时继续处理 */ }
         } finally {
-          if (active.key) queuedKeys.delete(active.key)
           active = null
         }
       }
     } finally {
       draining = false
+      for (const resolve of idleWaiters.splice(0)) resolve()
     }
   }
 
-  function clear() {
-    const cleared = pending.length
-    pending.length = 0
-    queuedKeys.clear()
+  function clear({ automaticOnly = false } = {}) {
+    let cleared = 0
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const entry = pending[i]
+      if (automaticOnly && entry.resolve) continue
+      pending.splice(i, 1)
+      entry.resolve?.({ ok: false, code: 'cancelled', message: '整理任务已取消' })
+      cleared++
+    }
     return cleared
   }
 
@@ -73,9 +89,9 @@ export function createProcessQueue({ run, keyOf = () => '', onError = () => {}, 
     return pending.length + (active ? 1 : 0)
   }
 
-  async function whenIdle() {
-    while (draining || active) await new Promise((resolve) => setTimeout(resolve, 0))
+  function whenIdle() {
+    return draining ? new Promise(resolve => idleWaiters.push(resolve)) : Promise.resolve()
   }
 
-  return { push, clear, size, whenIdle }
+  return { push, submit, clear, size, whenIdle }
 }

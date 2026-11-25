@@ -28,7 +28,14 @@ enum ServiceError: LocalizedError {
 }
 
 enum API {
-    static let base = URL(string: "http://127.0.0.1:4780")!
+    static let base: URL = {
+        let env = ProcessInfo.processInfo.environment
+        let host = (env["SEEN_HOST"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let loopback = ["::1", "[::1]"].contains(host) ? "[::1]" : host == "localhost" ? "localhost" : "127.0.0.1"
+        let port = Int(env["SEEN_PORT"] ?? "") ?? 4780
+        return URL(string: "http://\(loopback):\((1...65535).contains(port) ? port : 4780)")!
+    }()
+
 
     private static func request(path: String, method: String, body: Data?) -> URLRequest {
         var req = URLRequest(url: base.appendingPathComponent(path))
@@ -43,6 +50,7 @@ enum API {
 
     static func status(timeout: TimeInterval = 1.5) async throws -> ServiceStatus {
         var req = request(path: "/api/status", method: "GET", body: nil)
+        req.url = req.url?.appending(queryItems: [URLQueryItem(name: "view", value: "menubar")])
         req.timeoutInterval = timeout
         do {
             let (data, response) = try await URLSession.shared.data(for: req)

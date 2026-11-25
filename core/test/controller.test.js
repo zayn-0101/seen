@@ -78,7 +78,6 @@ test('状态保存失败时在写笔记前中止并带警告', async () => {
   const vault = mkdtempSync(join(tmpdir(), 'seen-controller-'))
   const state = mkdtempSync(join(tmpdir(), 'seen-controller-state-'))
   try {
-    mkdirSync(join(state, 'state.json'))
     const ctx = fakeCtx(new Map())
     ctx.llm.stream = async function* ({ system }) {
       const response = system.includes('分类助手')
@@ -91,6 +90,7 @@ test('状态保存失败时在写笔记前中止并带警告', async () => {
       provider: 'fake', model: 'fake-model', enableMnemon: false, fetchContent: false, fetchTranscript: false,
     })
     await api.ready
+    mkdirSync(join(state, 'state.json'))
     const result = await api.scan({ title: '测试视频', url: 'https://www.youtube.com/watch?v=ExampleId01' })
     assert.equal(result.ok, false, result.message)
     assert.equal(result.stateSaved, false)
@@ -743,4 +743,45 @@ test('重整理时状态指向别的笔记同名存档，改用属于本篇的�
     rmSync(vault, { recursive: true, force: true })
     rmSync(state, { recursive: true, force: true })
   }
+})
+
+test('繁忙时接受失败重试，排队期间保留记录，停止轮询后仍会实际执行', { timeout: 4000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'seen-queued-retry-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const vault = join(root, 'vault')
+  const stateDir = join(root, 'state')
+  mkdirSync(vault)
+  mkdirSync(stateDir)
+  const key = 'youtube:ExampleId02'
+  writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ failures: {
+    [key]: { count: 3, at: Date.now(), meta: { source: 'youtube', videoId: 'ExampleId02', title: '示例二' } },
+  } }))
+  let begin, resume
+  const entered = new Promise(resolve => { begin = resolve })
+  const firstCanFinish = new Promise(resolve => { resume = resolve })
+  t.after(resume)
+  let calls = 0
+  const tools = new Map()
+  const ctx = fakeCtx(tools)
+  ctx.llm.stream = async function* () {
+    if (++calls === 1) { begin(); await firstCanFinish }
+    yield { type: 'text-delta', text: '{"isCourse":false,"confidence":1}' }
+  }
+  const api = apply(ctx, { vaultPath: vault, stateDir, exposeController: true, autoStart: false,
+    fetchContent: false, fetchTranscript: false, openInObsidian: false, enableMnemon: false })
+  await api.ready
+  api.start()
+  const scan = tools.get('course_map_scan').execute({ title: '示例一', url: 'https://youtu.be/ExampleId01' })
+  await entered
+  const retry = api.retryFailure(key)
+  assert.equal(api.getFailures()[0]?.count, 3)
+  api.stop()
+  resume()
+  assert.equal((await scan).ok, true)
+  const result = await retry
+  assert.equal(result.ok, true)
+  assert.match(result.message, /非知识内容/)
+  assert.equal(calls, 2)
+  assert.deepEqual(api.getFailures(), [])
+  assert.deepEqual(JSON.parse(readFileSync(join(stateDir, 'state.json'), 'utf8')).failures, {})
 })

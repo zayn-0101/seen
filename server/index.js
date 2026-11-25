@@ -6,12 +6,13 @@
  * 后端：复用 Seen Core 的轮询与总结模块；LLM 默认连接本机 Magpie 网关。
  */
 import { createServer } from 'node:http'
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, dirname, extname, normalize, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
+import { atomicWrite } from '../core/lib/state.js'
 import { apply } from '../core/lib/index.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { createNotifier } from '../core/lib/notify.js'
@@ -83,9 +84,8 @@ async function readJson(file, fallback) {
   }
 }
 
-async function writeJson(file, value) {
-  await mkdir(dirname(file), { recursive: true })
-  await writeFile(file, JSON.stringify(value, null, 2) + '\n', 'utf8')
+function saveUi() {
+  atomicWrite(uiPath, JSON.stringify(ui, null, 2) + '\n', { mode: 0o600 })
 }
 
 /**
@@ -178,11 +178,8 @@ if (!engine || typeof engine.getStatus !== 'function') {
 await engine.ready
 
 const sseClients = new Set()
-const recentEvents = []
 
 function broadcast(event) {
-  recentEvents.push(event)
-  if (recentEvents.length > 100) recentEvents.shift()
   const payload = 'data: ' + JSON.stringify(event) + '\n\n'
   for (const client of sseClients) {
     try { client.write(payload) } catch { sseClients.delete(client) }
@@ -258,43 +255,43 @@ const UPDATE_REPO = 'zayn-0101/seen'
 const UPDATE_DISABLED = process.env.SEEN_DISABLE_UPDATE_CHECK === '1'
 let updateInfo = { checkedAt: 0, latest: '', url: '', available: false }
 
-async function checkUpdate({ force = false } = {}) {
-  if (UPDATE_DISABLED) return updateInfo
-  const now = Date.now()
-  if (!force && updateInfo.checkedAt > 0 && now - updateInfo.checkedAt < 24 * 3600 * 1000) return updateInfo
-  try {
-    const res = await fetch('https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest', {
-      headers: { 'User-Agent': 'seen/' + APP_VERSION, Accept: 'application/vnd.github+json' },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      updateInfo = { ...updateInfo, checkedAt: now }
-      return updateInfo
-    }
-    const data = await res.json()
-    const latest = String(data.tag_name || '').replace(/^v/i, '')
-    updateInfo = {
-      checkedAt: now,
-      latest,
-      url: String(data.html_url || ('https://github.com/' + UPDATE_REPO + '/releases')),
-      available: Boolean(latest) && compareVersions(latest, APP_VERSION) > 0,
-    }
-  } catch {
-    updateInfo = { ...updateInfo, checkedAt: now }
+let checkingUpdate = null
+
+async function fetchUpdate() {
+  const res = await fetch('https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest', {
+    headers: { 'User-Agent': 'seen/' + APP_VERSION, Accept: 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error('GitHub Releases 返回 HTTP ' + res.status)
+  const data = await res.json()
+  const latest = String(data?.tag_name || '').replace(/^v/i, '')
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(latest)) {
+    throw new Error('GitHub Releases 未返回有效的版本号')
+  }
+  updateInfo = {
+    checkedAt: Date.now(),
+    latest,
+    url: String(data.html_url || ('https://github.com/' + UPDATE_REPO + '/releases')),
+    available: compareVersions(latest, APP_VERSION) > 0,
   }
   return updateInfo
 }
 
+async function checkUpdate({ force = false } = {}) {
+  if (UPDATE_DISABLED) return updateInfo
+  if (checkingUpdate) return checkingUpdate
+  if (!force && updateInfo.checkedAt && Date.now() - updateInfo.checkedAt < 24 * 3600 * 1000) return updateInfo
+  checkingUpdate = fetchUpdate().finally(() => { checkingUpdate = null })
+  return checkingUpdate
+}
+
 async function snapshot() {
-  const status = await engine.getStatus()
-  const events = engine.getEvents()
-  const lastForeground = [...events].reverse().find((event) => event.type === 'foreground')?.data || engine.getLastForeground() || null
+  const data = await engine.getSnapshot()
+  const lastForeground = data.events.findLast(event => event.type === 'foreground')?.data || engine.getLastForeground()
   return {
-    status: { ...status, lastForeground },
-    config: engine.getConfig(),
-    history: engine.getHistory(),
-    reviews: engine.getReviews(),
-    events: engine.getEvents(),
+    ...data,
+    refreshingHistory,
+    status: { ...data.status, lastForeground },
     update: updateInfo.available ? { ...updateInfo, current: APP_VERSION } : null,
     llm: {
       ok: llmHealth.ok,
@@ -403,16 +400,24 @@ const server = createServer(async (req, res) => {
       const problem = validateApiRequest(req)
       if (problem) return json(res, problem.status, { ok: false, error: problem.error })
       if (req.method === 'POST' && engine.isReadOnly() && !READ_ONLY_POSTS.has(pathname)) {
-        return json(res, 409, { ok: false, error: '另一个实例持有锁，当前为只读模式' })
+        return json(res, 409, { ok: false, error: engine.getConfig().readOnlyMessage })
       }
     }
 
     if (pathname === '/api/status' && req.method === 'GET') {
+      if (url.searchParams.get('view') === 'menubar') {
+        return json(res, 200, { status: await engine.getStatus({ compact: true }), llm: { configured: llmSource !== 'none' } })
+      }
       return json(res, 200, await snapshot())
     }
 
     if (pathname === '/api/update' && req.method === 'GET') {
-      const info = await checkUpdate({ force: url.searchParams.get('force') === '1' })
+      let info
+      try {
+        info = await checkUpdate({ force: url.searchParams.get('force') === '1' })
+      } catch (error) {
+        return json(res, 502, { ok: false, error: String(error?.message || '无法连接 GitHub Releases') })
+      }
       return json(res, 200, {
         ok: true,
         current: APP_VERSION,
@@ -512,7 +517,7 @@ const server = createServer(async (req, res) => {
         ui.editorPass = result.editorPass
         message = result.message
       }
-      await writeJson(uiPath, ui)
+      saveUi()
       const data = await snapshot()
       return json(res, 200, { ok: true, message, ...data })
     }
@@ -522,6 +527,7 @@ const server = createServer(async (req, res) => {
       const result = await engine.scan({ title: body.title, url: body.url, force: Boolean(body.force) })
       const data = await snapshot()
       const status = result.ok ? 200
+        : result.code === 'queue-full' ? 429
         : (result.code === 'douyin-not-jingxuan' || result.code === 'unsupported-source') ? 400
         : 500
       return json(res, status, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
@@ -535,23 +541,24 @@ const server = createServer(async (req, res) => {
       log('重试失败任务：' + key)
       const result = await engine.retryFailure(key)
       const data = await snapshot()
-      return json(res, result.ok ? 200 : 500, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
+      return json(res, result.ok ? 200 : result.code === 'queue-full' ? 429 : 500, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
     }
 
     // 重刷历史笔记：只重做整理与版式，内容/字幕走已有缓存。
     if (pathname === '/api/reprocess' && req.method === 'POST') {
-      if (refreshingHistory) return json(res, 409, { ok: false, error: '正在重刷历史笔记，请稍候' })
       const body = await readBody(req)
+      if (refreshingHistory) return json(res, 409, { ok: false, error: '正在重刷历史笔记，请稍候' })
       const limit = Math.max(0, Math.floor(Number(body.limit) || 0))
       refreshingHistory = true
+      broadcast({ type: 'refresh-start', at: Date.now() })
       log('开始重刷历史笔记' + (limit ? '：前 ' + limit + ' 篇' : '：全部'))
       engine.refreshHistory({ limit })
-        .then((result) => {
-          log('重刷历史完成：' + result.done + '/' + result.total + '，失败 ' + result.failed)
+        .catch(error => ({ ok: false, message: String(error?.message || error) }))
+        .then(result => {
+          refreshingHistory = false
+          log(result.ok ? '重刷历史完成：' + result.done + '/' + result.total + '，失败 ' + result.failed : '重刷中断：' + result.message)
           broadcast({ type: 'refresh-done', data: result, at: Date.now() })
         })
-        .catch((error) => log('重刷历史失败：' + String(error?.message || error)))
-        .finally(() => { refreshingHistory = false })
       return json(res, 202, { ok: true, message: '已开始重刷历史笔记' })
     }
 
@@ -566,8 +573,8 @@ const server = createServer(async (req, res) => {
 
     // 用字幕存档重整理一篇历史笔记；只读存档，不重新抓取或转写。
     if (pathname === '/api/resummarize' && req.method === 'POST') {
-      if (resummarizing) return json(res, 409, { ok: false, error: '正在重整理笔记，请稍候' })
       const body = await readBody(req)
+      if (resummarizing) return json(res, 409, { ok: false, error: '正在重整理笔记，请稍候' })
       const notePath = String(body.notePath || '').trim()
       if (!notePath) return json(res, 400, { ok: false, error: '缺少 notePath' })
       resummarizing = true
@@ -575,7 +582,7 @@ const server = createServer(async (req, res) => {
       try {
         const result = await engine.resummarizeNote({ notePath })
         const data = await snapshot()
-        return json(res, result.ok ? 200 : 500, { ...data, result })
+        return json(res, result.ok ? 200 : result.code === 'queue-full' ? 429 : 500, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
       } finally {
         resummarizing = false
       }
@@ -706,7 +713,7 @@ const server = createServer(async (req, res) => {
         providers: PROVIDERS,
         groups: PROVIDER_GROUPS,
         mnemonAvailable,
-        enableMnemon: Boolean(baseConfig.enableMnemon),
+        enableMnemon: mnemonAvailable && process.env.SEEN_DISABLE_MNEMON !== '1' && ui.mnemonEnabled !== false,
       })
     }
 
@@ -726,25 +733,30 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/llm' && req.method === 'POST') {
       const body = await readBody(req)
-      const previous = readSavedConfig() || {}
-      const apiKey = keyForEndpoint(body.baseURL, body.apiKey, previous)
+      if (!URL.canParse(body.baseURL) || !['http:', 'https:'].includes(new URL(body.baseURL).protocol) || !String(body.model || '').trim()) {
+        return json(res, 400, { ok: false, error: '请填写有效的服务地址和模型 ID' })
+      }
+      const apiKey = keyForEndpoint(body.baseURL, body.apiKey, llmConfig)
       const saved = saveLlmConfig({ provider: body.provider, baseURL: body.baseURL, apiKey, model: body.model })
-      const tested = await testLlmConfig(saved)
       llmConfig = saved
       llmSource = 'settings'
       llm.updateConfig(saved)
-      llmHealth = await llm.health()
+      engine.setModel(saved)
+      llmHealth = { ok: false, detail: '正在检查模型连接' }
+      const checks = Promise.all([testLlmConfig(saved), llm.health()])
       let mnemonNote = ''
-      if (typeof body.enableMnemon === 'boolean' && mnemonAvailable) {
+      if (typeof body.enableMnemon === 'boolean' && mnemonAvailable && ui.mnemonEnabled !== body.enableMnemon) {
         ui.mnemonEnabled = body.enableMnemon
-        await writeJson(uiPath, ui)
+        saveUi()
         mnemonNote = '记忆库开关将在下次重启服务后生效'
       }
+      const [tested, health] = await checks
+      if (llmConfig === saved) llmHealth = health
       return json(res, 200, {
         ok: tested.ok,
         saved: { provider: saved.provider, baseURL: saved.baseURL, model: saved.model, maskedKey: maskKey(saved.apiKey) },
         test: tested,
-        health: llmHealth,
+        health,
         mnemonNote,
       })
     }
@@ -797,7 +809,8 @@ async function ensureLastWeekReview() {
     const status = await engine.getStatus()
     if (!status.vaultPath) return
     if (status.vault && status.vault.ok === false) return
-    const lastWeek = new Date(Date.now() - 7 * 86400000)
+    const lastWeek = new Date()
+    lastWeek.setDate(lastWeek.getDate() - 7)
     const review = buildWeeklyReview({ videos: engine.getHistory(), now: lastWeek })
     if (review.count === 0) return
     const written = await writeWeeklyReview({
@@ -813,11 +826,11 @@ async function ensureLastWeekReview() {
 }
 
 server.listen(PORT, HOST, () => {
-  const url = 'http://' + hostForUrl(HOST) + ':' + PORT
+  const url = 'http://' + hostForUrl(HOST) + ':' + server.address().port
   log('Seen 独立服务已启动：' + url)
   log('模型：' + (llmSource === 'none' ? '未配置，请在面板里设置' : llm.id + ' / ' + llm.model + '（来源：' + llmSource + '）'))
   log('状态目录：' + baseConfig.stateDir)
-  if (engine.isReadOnly()) log('注意：另一个 Seen 实例正在运行并持有状态锁，本服务为只读；停掉那个实例后重启本服务即可接管。')
+  if (engine.isReadOnly()) log(engine.getConfig().readOnlyMessage)
   if (OPEN_BROWSER && process.platform === 'darwin') {
     spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
   }

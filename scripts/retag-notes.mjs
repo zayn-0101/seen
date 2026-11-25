@@ -49,7 +49,7 @@ const config = resolveConfig({
 
 const vaultPath = resolveVaultPath(config)
 const stateFile = join(config.stateDir, 'state.json')
-const state = loadState(stateFile)
+const state = loadState(stateFile, { strict: true })
 
 const llmConfig = loadLlmConfig()
 const client = createLlmClient(llmConfig)

@@ -74,12 +74,12 @@ function mergeState(input) {
 }
 
 /** 原子写：先写同目录临时文件，再 rename 覆盖目标 */
-export function atomicWrite(file, content) {
+export function atomicWrite(file, content, { mode = 0o666 } = {}) {
   const dir = dirname(file)
   mkdirSync(dir, { recursive: true })
   const tmp = `${file}.tmp.${process.pid}.${randomBytes(6).toString('hex')}`
   try {
-    writeFileSync(tmp, content, 'utf8')
+    writeFileSync(tmp, content, { encoding: 'utf8', mode })
     renameSync(tmp, file)
   } catch (error) {
     try {
@@ -91,13 +91,19 @@ export function atomicWrite(file, content) {
   }
 }
 
-/** 读取状态；文件缺失/损坏时返回默认状态 */
-export function loadState(statePath) {
+/** 首次运行使用默认状态。strict 让写入方能区分已有文件损坏与首次运行。 */
+export function loadState(statePath, { strict = false } = {}) {
   try {
     const text = readFileSync(statePath, 'utf8')
     const parsed = JSON.parse(text)
+    if (strict && (!isPlainObject(parsed) || ('subjects' in parsed && !isPlainObject(parsed.subjects)))) {
+      throw new Error('状态结构无效')
+    }
     return mergeState(parsed)
-  } catch {
+  } catch (error) {
+    if (strict && error.code !== 'ENOENT') {
+      throw new Error('state.json 无法读取或格式无效，请检查权限或从备份恢复')
+    }
     return defaultState()
   }
 }

@@ -70,7 +70,6 @@ export function buildWeeklyReview({ videos = [], now = new Date() } = {}) {
       return Number.isFinite(at) && at >= start.getTime() && at <= end.getTime()
     })
     .sort((a, b) => Number(a.createdAt) - Number(b.createdAt))
-  const reviewInfo = collectReviews(allRows, { now, limit: 100 })
 
   const subjectCounts = new Map()
   const sourceCounts = new Map()
@@ -132,9 +131,8 @@ export function buildWeeklyReview({ videos = [], now = new Date() } = {}) {
       lines.push('## 关键词', '', '- ' + [...keywordSet].join('、'), '')
     }
 
-    const stats = reviewInfo.stats
-    const weekPaths = new Set(rows.map((row) => String(row.notePath || '')))
-    const dueThisWeek = reviewInfo.due.filter((row) => weekPaths.has(String(row.notePath || ''))).slice(0, 5)
+    const { stats } = collectReviews(allRows, { now, limit: 0 })
+    const { due: dueThisWeek } = collectReviews(rows, { now, limit: 5 })
     lines.push('## 复习情况', '', '- 已复习 ' + stats.reviewed + ' 篇 · 待复习 ' + stats.due + ' 篇')
     if (dueThisWeek.length > 0) {
       lines.push('- 本周优先：' + dueThisWeek.map((row) => noteLink(row)).join('、'))

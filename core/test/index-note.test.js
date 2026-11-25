@@ -8,7 +8,7 @@ test('buildIndexMarkdown renders table sorted by date', () => {
     { title: '新视频', subject: '人工智能', source: 'douyin', notePath: '视频笔记/人工智能/b.md', createdAt: new Date(2026, 10, 12).getTime() },
   ])
   assert.match(md, /\| 日期 \| 标题 \| 学科 \| 来源 \|/)
-  assert.match(md, /\[\[视频笔记\/人工智能\/b\|新视频\]\]/)
+  assert.match(md, /\[\[视频笔记\/人工智能\/b\\\|新视频\]\]/)
   const newIndex = md.indexOf('新视频')
   const oldIndex = md.indexOf('旧视频')
   assert.ok(newIndex > 0 && oldIndex > newIndex, 'newest first')

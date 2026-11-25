@@ -209,3 +209,15 @@ test('不同笔记的同名字幕及归属不明的旧存档不会被覆盖', as
     rmSync(vault, { recursive: true, force: true })
   }
 })
+
+test('同一标题且 BV 编号仅大小写不同也保留两份笔记，旧的小写 bv 前缀仍可匹配', async t => {
+  const vault = mkdtempSync(join(tmpdir(), 'seen-bv-identity-'))
+  t.after(() => rmSync(vault, { recursive: true, force: true }))
+  const common = { vaultPath: vault, noteRoot: '笔记', subject: '示例', title: '同名课程', source: 'bilibili' }
+  const first = await writeVideoNote({ ...common, bvid: 'BV1Aa0000000', content: '---\nbvid: "bv1Aa0000000"\n---\n第一篇内容' })
+  const same = await writeVideoNote({ ...common, bvid: 'BV1Aa0000000', content: '原视频' })
+  assert.equal(same.skipped, true)
+  const second = await writeVideoNote({ ...common, bvid: 'BV1aa0000000', force: true, content: '---\nbvid: "BV1aa0000000"\n---\n第二篇内容' })
+  assert.notEqual(first.relPath, second.relPath)
+  assert.match(readFileSync(first.absPath, 'utf8'), /第一篇内容/)
+})

@@ -97,3 +97,17 @@ test('seenKey separates later pages of a multi-part video', () => {
   assert.equal(seenKey({ bvid: 'BV1abc', title: 'x', page: 2 }), 'bvid:BV1abc:p2')
   assert.equal(seenKey({ bvid: 'BV1abc', title: 'x' }), 'bvid:BV1abc')
 })
+
+test('严格读取保留首次运行与旧状态，对已损坏的文件报错', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'seen-state-read-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'state.json')
+  assert.deepEqual(loadState(file, { strict: true }), defaultState())
+  writeFileSync(file, '{"lastTitle":"示例"}')
+  assert.equal(loadState(file, { strict: true }).lastTitle, '示例')
+  for (const value of ['{', '[]', '{"subjects":null}']) {
+    writeFileSync(file, value)
+    assert.throws(() => loadState(file, { strict: true }), /state\.json/)
+    assert.equal(readFileSync(file, 'utf8'), value)
+  }
+})

@@ -76,8 +76,9 @@ export function isDue(review, now = Date.now()) {
 /** 汇总待复习列表与学习统计。 */
 export function collectReviews(videos = [], { now = Date.now(), limit = 20 } = {}) {
   const rows = Array.isArray(videos) ? videos : []
-  const due = rows
-    .filter((row) => row && row.title && isDue(row.review, now))
+  const dueRows = rows.filter(row => row && isDue(row.review, now))
+  const due = limit > 0 ? dueRows
+    .filter(row => row.title)
     .map((row) => ({
       title: String(row.title || ''),
       subject: String(row.subject || ''),
@@ -86,7 +87,7 @@ export function collectReviews(videos = [], { now = Date.now(), limit = 20 } = {
       review: row.review && typeof row.review === 'object' ? row.review : initialReview(now),
     }))
     .sort((a, b) => String(a.review.due || '').localeCompare(String(b.review.due || '')) || b.quality - a.quality)
-    .slice(0, Math.max(0, Math.floor(limit)))
+    .slice(0, Math.floor(limit)) : []
 
   const reviewed = rows.filter((row) => row && row.review && Number(row.review.reps) > 0)
   const scores = rows.map((row) => Number(row && row.quality)).filter((value) => Number.isFinite(value) && value > 0)
@@ -96,7 +97,7 @@ export function collectReviews(videos = [], { now = Date.now(), limit = 20 } = {
     stats: {
       total: rows.length,
       reviewed: reviewed.length,
-      due: rows.filter((row) => row && isDue(row.review, now)).length,
+      due: dueRows.length,
       averageQuality,
       subjects: new Set(rows.map((row) => String(row && row.subject || '').trim()).filter(Boolean)).size,
     },

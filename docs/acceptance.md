@@ -355,7 +355,7 @@
 - [x] 供应链校验：ffmpeg-static 固定 `b6.1.1` 并内置各平台 SHA256；yt-dlp `SHA2-256SUMS` 只从官方取得，任何来源取不到校验值或校验不符都中止；yt-dlp 下载 asset 按平台和 CPU 架构选择（linux arm64 / win32 arm64 / ia32），官方没有可直接安装二进制的平台明确报错；`menubar/build.sh` 用 `SHASUMS256.txt` 校验 Node 运行时
 - [x] 搜索可见性：`searchVaultDetailed` 返回 `{results,scanned,skipped,truncated}`；中文用 `Intl.Segmenter('zh')` 分词；`/api/search` 和面板显示截断/跳过提示
 - [x] 学科上限：达到 12 个学科且无相似学科归入「未分类」；`resolveSubjectName` 支持 `maxSubjects`
-- [x] 本机 API 防护：所有 API 请求始终校验 Host / Origin / Sec-Fetch-Site / JSON Content-Type；服务只允许绑定本机回环地址，非回环 `SEEN_HOST` 直接拒绝启动；删除 `GET /api/llm/models`，只保留 POST
+- [x] 本机 API 防护：所有 API 请求始终校验 Host / Origin / Sec-Fetch-Site，POST 还要求 JSON Content-Type；服务只允许绑定本机回环地址，非回环 `SEEN_HOST` 直接拒绝启动；删除 `GET /api/llm/models`，只保留 POST
 - [x] `cd core && node --test`：283 tests / 283 pass / 0 fail；`npm run check` 通过
 - [x] 未迁移或改写真实笔记与历史字幕，未执行安装或发布
 
@@ -441,7 +441,7 @@
 
 - [x] 服务端新增 `GET /api/update`，支持 `?force=1` 绕过 24 小时缓存；返回当前版本、最新版本、是否有更新、发布页、检查时间与是否禁用
 - [x] 侧栏「设置」下新增「更新」按钮（带未读圆点），点击调用 `/api/update?force=1`，按钮显示「检查中」并禁用，结果用 toast 提示；发现新版本时强制重新打开被关闭的顶部提示条
-- [x] 临时服务验证：`SEEN_DISABLE_UPDATE_CHECK=1` 时返回 disabled 且 toast 明确提示；正常模式返回 current/latest 0.5.5 并提示「已是最新版本」
+- [x] 临时服务验证：`SEEN_DISABLE_UPDATE_CHECK=1` 时返回 disabled 且 toast 明确提示；正常模式返回 current/latest 0.5.5（当时最新）并提示「已是最新版本」
 - [x] 新增 `core/test/server-integration.test.js` 的更新接口测试
 - [x] `cd core && node --test`：370 tests / 370 pass / 0 fail；`npm run check` 113 个文件通过
 - [x] README / CLAUDE.md 同步手动检查入口

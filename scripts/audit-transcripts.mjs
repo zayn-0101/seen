@@ -30,7 +30,7 @@ const vaultPath = resolveVaultPath(config)
 const stateFile = config.stateDir + '/state.json'
 let state = null
 try {
-  state = loadState(stateFile)
+  state = loadState(stateFile, { strict: true })
 } catch (error) {
   console.error('状态文件读取失败：' + String(error?.message || error))
   process.exitCode = 1

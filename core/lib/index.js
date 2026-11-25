@@ -15,7 +15,7 @@ import {
   resolveConfig,
 } from './config.js'
 import {
-  loadState, saveState, seenKey, isSeen, markSeen, pruneSeen,
+  defaultState, loadState, saveState, seenKey, isSeen, markSeen, pruneSeen,
   resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure, listFailures,
 } from './state.js'
 import { observeForeground, isBrowserName } from './foreground.js'
@@ -25,14 +25,14 @@ import { classify, segmentTranscript, summarize, resolveModel } from './analyze.
 import { getBilibiliCookieHeader } from './session.js'
 import { fetchTranscript } from './transcript.js'
 import { findYtDlp } from './ytdlp.js'
-import { detectSource, extractDouyinId, extractYoutubeId, isDouyinJingxuanUrl, sourceLabel } from './source.js'
+import { videoIdentity, detectSource, extractDouyinId, extractYoutubeId, isDouyinJingxuanUrl, sourceLabel } from './source.js'
 import { fetchDouyinContent, findChrome, findFfmpeg } from './douyin.js'
 import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
 import { renderVideoNote } from './render.js'
 import { findRelatedVideos } from './concept.js'
 import { buildTagVocabulary, mergeTags, mergeTagInVideos, rememberTags } from './tags.js'
-import { rebuildKnowledgePages as rebuildPages } from './rebuild.js'
+import { buildHistoryFromState, videosForManual, rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { answerQuestion } from './ask.js'
 import { searchVault, listMarkdownFiles, listMarkdownFilesDetailed } from './vault-search.js'
 import { scoreNoteQuality } from './note-content.js'
@@ -246,21 +246,6 @@ function makeLogger(stateDir) {
   }
 }
 
-function summarizeVideosForManual(state, subject) {
-  return (state.subjects[subject]?.videos ?? []).map((v) => ({
-    title: v.title,
-    bvid: v.bvid || '',
-    notePath: v.notePath,
-    summary: v.summary || '',
-    concepts: Array.isArray(v.concepts) ? v.concepts : [],
-    terms: Array.isArray(v.terms) ? v.terms : [],
-    template: v.template && typeof v.template === 'object' ? v.template : {},
-    question: v.question || '',
-    answer: v.answer || '',
-    createdAt: v.createdAt || Date.now(),
-  }))
-}
-
 export function apply(ctx, rawConfig = {}) {
   const config = resolveConfig(rawConfig)
 
@@ -286,7 +271,22 @@ export function apply(ctx, rawConfig = {}) {
     readOnly = true
     readOnlyReason = lock.reason || 'locked-by-other'
   }
-  const state = loadState(statePath)
+  let state
+  try {
+    state = loadState(statePath, { strict: true })
+  } catch (error) {
+    logger.log('state.load.error ' + error.message)
+    state = defaultState()
+    readOnly = true
+    readOnlyReason = 'state-unreadable'
+  }
+  const reasonLabels = {
+    'state-unreadable': 'state.json 无法读取或格式无效',
+    'lock-write-failed': '实例锁写入失败',
+    'lock-stale-unlink-failed': '旧实例锁无法清理',
+  }
+  const readOnlyLabel = reasonLabels[readOnlyReason] || '另一个实例持有锁'
+  const readOnlyMessage = readOnly ? readOnlyLabel + '，当前为只读模式' : ''
   const normalizedAuxPaths = normalizeStateAuxPaths(state, { vaultPath, noteRoot: config.noteRoot })
   if (normalizedAuxPaths > 0) {
     logger.log('state.aux-path.normalized count=' + normalizedAuxPaths)
@@ -300,10 +300,10 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
 
-  let running = false
   let pending = null
   let started = false
   let pollTimer = null
+  let pollGeneration = 0
   const eventListeners = new Set()
   const recentEvents = []
 
@@ -410,18 +410,10 @@ export function apply(ctx, rawConfig = {}) {
     let changed = false
     let restored = false
     let listing = null
-    const sameText = (a, b) => Boolean(a) && Boolean(b) && String(a).trim().toLowerCase() === String(b).trim().toLowerCase()
     const hasIdentity = (item) => Boolean(item?.bvid || item?.videoId)
-    // 只认与待处理记录身份一致的笔记：bvid+page 或 videoId+source，避免把别人的笔记补成这篇。
     const identityMatches = (pending, candidate) => {
-      if (!candidate) return false
-      if (pending?.bvid) {
-        return sameText(pending.bvid, candidate.bvid) && (Number(pending.page) || 1) === (Number(candidate.page) || 1)
-      }
-      if (pending?.videoId) {
-        return String(candidate.videoId || '') === String(pending.videoId) && String(candidate.source || '') === String(pending.source || '')
-      }
-      return false
+      const id = videoIdentity(pending)
+      return Boolean(id && candidate && videoIdentity(candidate) === id)
     }
     const listNotes = async () => {
       if (!listing) {
@@ -624,46 +616,40 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
 
+  function identifyInput(input) {
+    const title = cleanTitle(input?.title || '')
+    const url = input?.url || ''
+    const declaredSource = ['bilibili', 'douyin', 'youtube'].includes(input?.source) ? input.source : ''
+    const source = detectSource({ url, title: input?.title || title }) || declaredSource || (input?.bvid ? 'bilibili' : '')
+    const bvid = input?.bvid || (source === 'bilibili' ? extractBvid(url) : null)
+    const videoId = input?.videoId || (source === 'douyin' ? extractDouyinId(url) : source === 'youtube' ? extractYoutubeId(url) : '')
+    const page = source === 'bilibili' ? Number(input?.page) || extractPage(url) : 1
+    const key = seenKey({ bvid, videoId, source, title, page })
+    return { title, source, bvid, videoId, page, key }
+  }
+
   async function processTitle(input) {
-    if (running) return { ok: false, message: '已有任务正在处理，请稍后再试' }
-    running = true
-    let key = ''
-    let activeKey = ''
-    let rawTitle = ''
+    const { title: rawTitle, source, bvid: inputBvid, videoId: inputVideoId, page: inputPage, key } = identifyInput(input)
+    let activeKey = key
     let displayTitle = ''
-    let source = ''
-    let inputBvid = null
-    let inputVideoId = null
     let noteWritten = false
     const warnings = []
     try {
-      rawTitle = cleanTitle(input?.title || '')
       // 重整理使用本地字幕存档时，不重新抓取平台内容，也不重新转写。
       const refresh = Boolean(input?.refresh)
       const archiveOnly = Boolean(input?.archiveOnly)
       const subjectLocked = Boolean(input?.subjectLocked)
       const prefetchedContent = input?.prefetchedContent && typeof input.prefetchedContent === 'object' ? input.prefetchedContent : null
-      const declaredSource = ['bilibili', 'douyin', 'youtube'].includes(input?.source) ? input.source : ''
-      source = detectSource({ url: input?.url, title: input?.title || rawTitle }) || declaredSource || (input?.bvid ? 'bilibili' : '')
       if (!source) {
         return { ok: false, code: 'unsupported-source', message: '无法识别视频来源：只支持 B站、抖音精选和 YouTube 视频链接' }
       }
       if (source === 'douyin' && !refresh && !isDouyinJingxuanUrl(input?.url || '')) {
         return { ok: false, code: 'douyin-not-jingxuan', message: '只处理抖音精选视频：请从精选页复制带 modal_id 的链接；普通 /video/ 视频不处理' }
       }
-      const bvidFromUrl = source === 'bilibili' ? (extractBvid(input?.url || '') || null) : null
-      inputBvid = input?.bvid || bvidFromUrl
-      inputVideoId = input?.videoId
-        || (source === 'douyin' ? extractDouyinId(input?.url || '') : '')
-        || (source === 'youtube' ? extractYoutubeId(input?.url || '') : '')
-      const inputPage = source === 'bilibili' ? (Number(input?.page) || extractPage(input?.url || '')) : 1
-      key = seenKey({ bvid: inputBvid, videoId: inputVideoId, source, title: rawTitle, page: inputPage })
-      activeKey = key
-
       if (!refresh && !input?.force && isSeen(state, key)) {
         return { ok: true, skipped: true, message: '已处理过该视频，保持静默' }
       }
-      if (!refresh && !input?.force && shouldSkipFailure(state, key)) {
+      if (!refresh && !input?.force && !input?.retryKey && shouldSkipFailure(state, key)) {
         return { ok: true, skipped: true, message: '该视频最近失败次数过多，已冷却；可稍后手动重试' }
       }
       if (!rawTitle && !input?.url && !input?.bvid && !input?.videoId) {
@@ -872,18 +858,17 @@ export function apply(ctx, rawConfig = {}) {
       const noteBvid = content?.bvid || inputBvid || ''
       const noteVideoId = content?.videoId || inputVideoId || ''
       const notePage = content?.page || inputPage || 1
-      const previousRecord = historyVideos.find((item) =>
-        (input?.previousNotePath && toPosix(item.notePath || '') === toPosix(input.previousNotePath)) ||
-        (noteBvid && String(item.bvid || '').toLowerCase() === String(noteBvid).toLowerCase() && (Number(item.page) || 1) === notePage) ||
-        (noteVideoId && item.videoId === noteVideoId && (!item.source || item.source === source)) ||
-        (!noteBvid && !noteVideoId && item.title === finalTitle))
-      const previousIdentityMatched = Boolean(previousRecord && (
-        (noteBvid && String(previousRecord.bvid || '').toLowerCase() === String(noteBvid).toLowerCase() && (Number(previousRecord.page) || 1) === notePage) ||
-        (noteVideoId && previousRecord.videoId === noteVideoId && (!previousRecord.source || previousRecord.source === source))
-      ))
-      const trustedPreviousNotePath = input?.previousNotePath
-        ? input.previousNotePath
-        : (previousIdentityMatched && previousRecord?.subject === subject ? previousRecord.notePath : '')
+      const identity = videoIdentity({ bvid: noteBvid, videoId: noteVideoId, source, page: notePage })
+      const matchesVideo = (item) => {
+        if (!item) return false
+        const stored = videoIdentity({ ...item, source: item.source || source })
+        if (identity && stored) return identity === stored
+        if (input?.previousNotePath && toPosix(item.notePath || '') === toPosix(input.previousNotePath)) return true
+        return !identity && !stored && item.title === finalTitle
+      }
+      const previousRecord = historyVideos.find(matchesVideo)
+      const previousIdentityMatched = Boolean(identity && previousRecord && videoIdentity({ ...previousRecord, source: previousRecord.source || source }) === identity)
+      const trustedPreviousNotePath = input?.previousNotePath || (previousIdentityMatched && previousRecord.subject === subject ? previousRecord.notePath : '')
       const previousCreatedAt = Number(previousRecord?.createdAt)
       const createdAt = Number.isFinite(previousCreatedAt) && previousCreatedAt > 0 ? previousCreatedAt : processedAt
       const noteReview = previousRecord?.review && previousRecord.review.due ? previousRecord.review : initialReview(createdAt)
@@ -1035,20 +1020,13 @@ export function apply(ctx, rawConfig = {}) {
         createdAt,
       }
       const videos = state.subjects[subject].videos
-      // 多 P 视频同一个 bvid 会有多条记录，必须带上分 P 号一起比较。
-      const videoPage = Number(videoRecord.page) || 1
-      const existed = videos.findIndex((v) =>
-        (input?.previousNotePath && toPosix(v.notePath || '') === toPosix(input.previousNotePath)) ||
-        (videoRecord.bvid && String(v.bvid || '').toLowerCase() === String(videoRecord.bvid).toLowerCase() && (Number(v.page) || 1) === videoPage) ||
-        (videoRecord.videoId && v.videoId === videoRecord.videoId) ||
-        (!videoRecord.bvid && !videoRecord.videoId && v.title === videoRecord.title)
-      )
+      const existed = videos.findIndex(matchesVideo)
       if (existed >= 0) videos[existed] = { ...videos[existed], ...videoRecord }
       else videos.push(videoRecord)
       state.subjects[subject].updatedAt = processedAt
 
       try {
-        await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: summarizeVideosForManual(state, subject), layout: config.noteLayout })
+        await updateSubjectManual({ vaultPath, noteRoot: config.noteRoot, subject, videos: videosForManual(state, subject), layout: config.noteLayout })
       } catch (error) {
         const msg = '学习手册更新失败：' + String(error?.message || error)
         warnings.push(msg)
@@ -1115,6 +1093,7 @@ export function apply(ctx, rawConfig = {}) {
         source,
         platform: source,
         notePath: writeResult.relPath,
+        transcriptPath,
         bvid: content?.bvid || inputBvid || '',
         videoId: content?.videoId || inputVideoId || '',
         author: content?.owner || content?.author || '',
@@ -1125,7 +1104,7 @@ export function apply(ctx, rawConfig = {}) {
         contentSource: transcriptSource || 'metadata',
         contentQuality,
         fetchStats: content?.fetchStats || null,
-        chapters: content?.chapters || [],
+        chapters: noteChapters,
         warnings: warnings.slice(),
         stateSaved,
       })
@@ -1165,35 +1144,37 @@ export function apply(ctx, rawConfig = {}) {
       emit('error', { message: msg, title: displayTitle || rawTitle, source })
       console.error('[seen-core] 处理失败（不影响后续轮询）：', error)
       return { ok: false, message: '处理失败：' + msg, stateSaved: errorStateSaved, warnings }
-    } finally {
-      running = false
     }
   }
 
-  // 前台轮询与视频处理解耦：第一条还在转写时，第二条只入队等待，
-  // 轮询继续观察，避免第二条因为「running」被漏掉。
+  // 轮询候选与显式操作按提交顺序共享处理器。
   const processQueue = createProcessQueue({
     run: (item) => processTitle(item),
-    keyOf: (item) => item?.key || '',
+    keyOf: item => item?.key || identifyInput(item).key,
     maxPending: 8,
     onError: (error, item) => {
       logger.log('process.queue.error key=' + JSON.stringify(item?.key || '') + ' msg=' + (error?.message || error))
     },
   })
 
-  async function observeOnce() {
+  async function observeOnce(generation) {
     if (!config.enabled || !started) return
     let fg
     try {
       fg = await observeForeground(config)
     } catch (error) {
+      if (generation !== pollGeneration) return
+      pending = null
       logger.log('foreground.error msg=' + (error?.message || error))
       return
     }
+    if (generation !== pollGeneration) return
+    const previous = pending
+    pending = null
     state.lastForeground = { at: Date.now(), app: fg?.app || '', title: fg?.title || '', url: fg?.url || '', source: fg?.source || 'none', error: fg?.error || '' }
     if (fg?.error) logger.logOnce('fg|' + fg.source + '|' + fg.error, 'foreground.degraded app=' + JSON.stringify(fg.app || '') + ' source=' + fg.source + ' msg=' + fg.error)
     emit('foreground', { app: fg?.app || '', title: fg?.title || '', url: fg?.url || '', source: fg?.source || 'none', permission: fg?.permission || 'unknown', error: fg?.error || '', isBrowser: isBrowserName(fg?.app, config), at: Date.now() })
-    if (!isBrowserName(fg?.app, config)) return
+    if (generation !== pollGeneration || !isBrowserName(fg?.app, config)) return
 
     const rawTitle = fg?.title || ''
     const rawUrl = fg?.url || ''
@@ -1203,7 +1184,6 @@ export function apply(ctx, rawConfig = {}) {
     if (!source) return
     if (source === 'douyin' && !isDouyinJingxuanUrl(rawUrl)) {
       logger.logOnce('douyin-skip|' + rawUrl, 'foreground.skip source=douyin reason=not-jingxuan app=' + JSON.stringify(fg.app) + ' url=' + JSON.stringify(rawUrl))
-      pending = null
       return
     }
     const bvid = source === 'bilibili' ? (extractBvid(rawUrl) || null) : null
@@ -1225,42 +1205,25 @@ export function apply(ctx, rawConfig = {}) {
     // 多 P 视频的前台 URL 带 ?p=n，去重键也要带分 P 号，否则看完 P1 后 P2 会被当成已看过
     const page = source === 'bilibili' ? extractPage(rawUrl) : 1
     const key = seenKey({ bvid, videoId, source, title, page })
-    if (isSeen(state, key)) { pending = null; return }
+    if (isSeen(state, key)) return
     logger.logOnce('obs|' + key, 'foreground.browser app=' + JSON.stringify(fg.app) + ' title=' + JSON.stringify(title) + ' source=' + source + ' id=' + (bvid || videoId || 'none'))
-    if (!pending || pending.key !== key) pending = { key, title, url: fg?.url || '', bvid, videoId, source, count: 1 }
-    else pending.count += 1
+    const count = previous?.key === key ? previous.count + 1 : 1
+    pending = { key, title, url: rawUrl, bvid, videoId, source, page, count }
     if (pending.count >= config.stablePolls) {
       const p = pending
       pending = null
-      emit('stable', { title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
-      // 不在这里 await：第一条视频转写期间仍要继续轮询，
-      // 第二条识别到后排队，等前一条结束再处理。
       const queued = processQueue.push(p)
-      if (!queued.ok && queued.full) {
+      if (queued.ok) {
+        emit('stable', { title: p.title, url: p.url, bvid: p.bvid, videoId: p.videoId, source: p.source })
+      } else if (queued.full) {
         logger.log('process.queue.full key=' + JSON.stringify(p.key) + ' size=' + queued.size)
       }
     }
   }
 
-  async function buildStatus() {
-    let mnemonReady = false
-    try { mnemonReady = Boolean(await findMnemon(config)) } catch { mnemonReady = false }
-    const subjects = Object.entries(state.subjects).map(([subject, d]) => ({ subject, videos: d.videos?.length ?? 0 }))
-    const lastError = state.lastForeground?.error || ''
-    const message = [
-      '拾影 状态：',
-      '- 轮询：' + (readOnly ? '只读（' + (readOnlyReason === 'lock-write-failed' ? '实例锁写入失败' : readOnlyReason === 'lock-stale-unlink-failed' ? '旧实例锁无法清理' : '另一个实例持有锁') + '）' : started ? '运行中' : '已停止'),
-      '- 轮询间隔：' + config.pollIntervalMs + 'ms',
-      '- 启用：' + config.enabled,
-      '- 笔记库权限：' + (vaultGuard.status().ok ? '正常' : vaultGuard.status().code + '（' + VAULT_HINT + '）'),
-      '- Obsidian：' + outputDir,
-      '- 学科数：' + subjects.length,
-      ...subjects.map((s) => '  · ' + s.subject + '（' + s.videos + ' 个视频）'),
-      '- 最近观察：' + (state.lastTitle || '（无）'),
-      '- 前台检测：' + (state.lastForeground ? (state.lastForeground.app || '未知') + ' / ' + (state.lastForeground.error || '正常') : '（尚未运行）'),
-      '- mnemon：' + (mnemonReady ? '可用' : '未找到 CLI'),
-    ].join('\n')
-    return {
+  async function buildStatus({ compact = false } = {}) {
+    const subjects = Object.entries(state.subjects).map(([subject, data]) => ({ subject, videos: data?.videos?.length ?? 0 }))
+    const status = {
       ok: true,
       enabled: config.enabled,
       polling: started,
@@ -1273,9 +1236,29 @@ export function apply(ctx, rawConfig = {}) {
       noteRoot: config.noteRoot,
       lastTitle: state.lastTitle,
       lastRunAt: state.lastRunAt,
+      subjects,
+    }
+    if (compact) return status
+    let mnemonReady = false
+    try { mnemonReady = Boolean(await findMnemon(config)) } catch { mnemonReady = false }
+    const lastError = state.lastForeground?.error || ''
+    const message = [
+      '拾影 状态：',
+      '- 轮询：' + (readOnly ? '只读（' + readOnlyLabel + '）' : started ? '运行中' : '已停止'),
+      '- 轮询间隔：' + config.pollIntervalMs + 'ms',
+      '- 启用：' + config.enabled,
+      '- 笔记库权限：' + (vaultGuard.status().ok ? '正常' : vaultGuard.status().code + '（' + VAULT_HINT + '）'),
+      '- Obsidian：' + outputDir,
+      '- 学科数：' + subjects.length,
+      ...subjects.map((s) => '  · ' + s.subject + '（' + s.videos + ' 个视频）'),
+      '- 最近观察：' + (state.lastTitle || '（无）'),
+      '- 前台检测：' + (state.lastForeground ? (state.lastForeground.app || '未知') + ' / ' + (state.lastForeground.error || '正常') : '（尚未运行）'),
+      '- mnemon：' + (mnemonReady ? '可用' : '未找到 CLI'),
+    ].join('\n')
+    return {
+      ...status,
       lastError,
       mnemonReady,
-      subjects,
       failures: listFailures(state, 10),
       message,
     }
@@ -1288,6 +1271,7 @@ export function apply(ctx, rawConfig = {}) {
       polling: started,
       readOnly,
       readOnlyReason,
+      readOnlyMessage,
       vaultPath,
       noteRoot: config.noteRoot,
       noteLayout: config.noteLayout,
@@ -1302,37 +1286,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function getHistory() {
-    const rows = []
-    for (const [subject, data] of Object.entries(state.subjects)) {
-      for (const video of data.videos || []) {
-        rows.push({
-          subject,
-          title: video.title,
-          source: video.source || 'bilibili',
-          bvid: video.bvid || '',
-          videoId: video.videoId || '',
-          url: video.url || '',
-          author: video.author || '',
-          notePath: video.notePath || '',
-          transcriptPath: video.transcriptPath || '',
-          summary: video.summary || '',
-          question: video.question || '',
-          answer: video.answer || '',
-          keywords: video.keywords || [],
-          concepts: Array.isArray(video.concepts) ? video.concepts : [],
-          conceptDetails: Array.isArray(video.conceptDetails) ? video.conceptDetails : [],
-          terms: Array.isArray(video.terms) ? video.terms : [],
-          template: video.template && typeof video.template === 'object' ? video.template : {},
-          tags: Array.isArray(video.tags) ? video.tags : [],
-          contentType: video.contentType || '',
-          quality: Number(video.quality) || 0,
-          review: video.review && typeof video.review === 'object' ? video.review : null,
-          createdAt: video.createdAt || 0,
-        })
-      }
-    }
-    rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    return rows
+    return buildHistoryFromState(state)
   }
 
   function clearPollTimer() {
@@ -1342,20 +1296,21 @@ export function apply(ctx, rawConfig = {}) {
   function schedulePoll() {
     if (!started || readOnly || !config.enabled) return
     clearPollTimer()
+    const generation = ++pollGeneration
     pollTimer = setTimeout(async () => {
       pollTimer = null
       try {
-        await observeOnce()
+        await observeOnce(generation)
       } catch (error) {
         logger.log('observe.error msg=' + (error?.message || error))
         emit('error', { message: String(error?.message || error) })
       }
-      if (started) schedulePoll()
+      if (started && generation === pollGeneration) schedulePoll()
     }, Math.max(1000, Number(config.pollIntervalMs) || 15000))
   }
 
   function start() {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     if (!config.enabled) return { ok: false, message: 'Agent 未启用（config.enabled=false）' }
     if (started) return { ok: true, message: '轮询已在运行' }
     started = true
@@ -1366,10 +1321,11 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function stop() {
-    const cleared = processQueue.clear()
+    const cleared = processQueue.clear({ automaticOnly: true })
     if (cleared > 0) logger.log('process.queue.cleared count=' + cleared)
     if (!started) return { ok: true, message: '轮询已停止' }
     started = false
+    pollGeneration++
     clearPollTimer()
     pending = null
     logger.log('polling.stopped')
@@ -1378,7 +1334,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setPollInterval(ms) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const value = Math.floor(Number(ms))
     if (!Number.isFinite(value) || value < 2000 || value > 600000) {
       return { ok: false, message: '轮询间隔需在 2 秒到 10 分钟之间' }
@@ -1391,7 +1347,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setNoteLayout(layout) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const next = normalizeNoteLayout(layout)
     if (next === config.noteLayout) {
       return { ok: true, message: '目录布局没有变化', noteLayout: next }
@@ -1407,7 +1363,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function setEditorPass(value) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const next = Boolean(value)
     if (next === Boolean(config.editorPass)) {
       return { ok: true, message: '润色没有变化', editorPass: next }
@@ -1418,15 +1374,13 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   async function scan(input) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
-    let waited = 0
-    while (running && waited < 90000) { await new Promise((r) => setTimeout(r, 500)); waited += 500 }
-    return await processTitle(input)
+    if (readOnly) return { ok: false, message: readOnlyMessage }
+    return processQueue.submit(input)
   }
 
-  /** 重试一条失败记录：先清掉失败计数，再用保存的链接重新处理。 */
+  /** 重试一条失败记录：用保存的链接重新处理，成功后清理失败记录。 */
   async function retryFailure(key) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const failures = state.failures && typeof state.failures === 'object' ? state.failures : {}
     const record = failures[key]
     if (!record || typeof record !== 'object') return { ok: false, message: '这条失败记录已经不存在了' }
@@ -1441,10 +1395,11 @@ export function apply(ctx, rawConfig = {}) {
     if (!input.url && !input.title) {
       return { ok: false, message: '这条记录是旧版本产生的，没有保存视频链接，请手动粘贴链接重试' }
     }
+    const result = await processQueue.submit({ ...input, retryKey: key })
+    if (!result.ok || result.stateSaved === false || !state.failures[key]) return result
+    // 已处理过、非知识视频或识别到了更准确的 ID 时，也要结清原失败记录。
     clearFailure(state, key)
-    const stateSaved = save()
-    const result = await processTitle(input)
-    if (!stateSaved && result && typeof result === 'object') {
+    if (!save()) {
       const warnings = Array.isArray(result.warnings) ? result.warnings.slice() : []
       warnings.push('状态保存失败：重启后可能重复处理这条视频')
       return { ...result, stateSaved: false, warnings }
@@ -1454,7 +1409,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 重刷历史笔记，内容缓存失效时可能重新抓取或转写。 */
   async function refreshHistory({ limit = 0, onProgress = null } = {}) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const rows = []
     for (const [subject, data] of Object.entries(state.subjects || {})) {
       for (const video of data?.videos || []) {
@@ -1472,9 +1427,12 @@ export function apply(ctx, rawConfig = {}) {
       const input = { title: video.title || '', url: video.url || '', source: video.source || '', bvid: video.bvid || '', videoId: video.videoId || '', page: video.page || 1, refresh: true, previousNotePath: video.notePath || '' }
       let result = null
       try {
-        result = await processTitle(input)
+        result = await processQueue.submit(input)
       } catch (error) {
         result = { ok: false, message: error?.message || String(error) }
+      }
+      if (result?.code === 'queue-full') {
+        return { ...result, total: targets.length, done, failed, remaining: targets.length - done, stateSaved: allStateSaved, warnings }
       }
       done += 1
       if (!result?.ok) failed += 1
@@ -1494,7 +1452,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 用字幕存档重新整理一篇历史笔记；只读存档，不重新抓取或转写。 */
   async function resummarizeNote({ notePath } = {}) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const targetPath = toPosix(String(notePath || '').trim())
     if (!targetPath) return { ok: false, message: '缺少笔记路径' }
     let found = null
@@ -1570,7 +1528,7 @@ export function apply(ctx, rawConfig = {}) {
       fetchStats: { transcript: archiveTranscript.length },
     }
     logger.log('resummarize.note=' + JSON.stringify(archiveTitle) + ' chars=' + archiveTranscript.length + ' origin=' + (archiveOrigin || 'unknown') + ' archiveOnly=true')
-    return await processTitle({
+    return processQueue.submit({
       title: archiveTitle,
       url: archiveUrl,
       source: archiveSource,
@@ -1591,13 +1549,13 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   /** 今日复习队列与学习统计（只读）。 */
-  function getReviews() {
-    return collectReviews(getHistory(), { limit: 20 })
+  function getReviews(history = getHistory()) {
+    return collectReviews(history, { limit: 20 })
   }
 
   /** 记录一次复习反馈：更新 state、frontmatter，并按 SM-2 排下一次。 */
   async function recordReview({ notePath, rating } = {}) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const relPath = String(notePath || '').trim()
     if (!relPath) return { ok: false, message: '缺少 notePath' }
     const normalized = normalizeRating(rating)
@@ -1702,7 +1660,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 把一个主题标签合并到另一个主题（同时改 state 与笔记 frontmatter）。 */
   async function renameTag({ from, to } = {}) {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const source = String(from || '').trim()
     const target = String(to || '').trim()
     if (!source || !target) return { ok: false, message: '缺少源标签或目标标签' }
@@ -1778,7 +1736,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** 全量重建知识库页面：索引、概念页、主题综述、学科手册与总览。 */
   async function rebuildKnowledgePages() {
-    if (readOnly) return { ok: false, message: '另一个实例持有 instance.lock，当前为只读模式' }
+    if (readOnly) return { ok: false, message: readOnlyMessage }
     const vault = vaultGuard.status()
     if (vault.ok === false) return { ok: false, message: VAULT_HINT }
     await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
@@ -1792,11 +1750,13 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   async function getSnapshot() {
+    const status = await buildStatus()
+    const history = getHistory()
     return {
-      status: await buildStatus(),
+      status,
       config: getSafeConfig(),
-      history: getHistory(),
-      reviews: getReviews(),
+      history,
+      reviews: getReviews(history),
       events: recentEvents.slice(-40),
     }
   }
@@ -1850,7 +1810,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     async execute(args) {
       if (!config.enabled) return { ok: false, message: 'Agent 未启用（config.enabled=false）' }
-      if (readOnly) return { ok: false, message: '另一个实例正在运行（instance.lock），当前实例为只读模式' }
+      if (readOnly) return { ok: false, message: readOnlyMessage }
       let title = typeof args?.title === 'string' ? args.title.trim() : ''
       let url = typeof args?.url === 'string' ? args.url.trim() : ''
       if (!title && !url) {
@@ -1859,9 +1819,7 @@ export function apply(ctx, rawConfig = {}) {
         title = cleanTitle(fg.title)
         url = fg.url || ''
       }
-      let waited = 0
-      while (running && waited < 90000) { await new Promise((r) => setTimeout(r, 500)); waited += 500 }
-      return await processTitle({ title, url, force: Boolean(args?.force) })
+      return scan({ title, url, force: Boolean(args?.force) })
     },
   }), 'seen-core: scan tool')
 
@@ -1952,14 +1910,14 @@ export function apply(ctx, rawConfig = {}) {
   // ---- 轮询定时器 ----
   ctx.effect(() => {
     if (readOnly) {
-      logger.log('readonly mode: another instance holds ' + lockPath)
-      emit('status', { polling: false, pollIntervalMs: config.pollIntervalMs, readOnly: true })
-      return () => {}
+      logger.log('readonly reason=' + readOnlyReason)
+      emit('status', { polling: false, pollIntervalMs: config.pollIntervalMs, readOnly: true, readOnlyReason })
+    } else if (config.autoStart) {
+      start()
     }
-    if (config.autoStart) start()
     return () => {
       stop()
-      releaseInstanceLock(lockPath)
+      if (lock.ok) releaseInstanceLock(lockPath)
     }
   }, 'seen-core: poll timer')
 
@@ -2010,6 +1968,10 @@ export function apply(ctx, rawConfig = {}) {
     setPollInterval,
     setNoteLayout,
     setEditorPass,
+    setModel({ provider, model }) {
+      config.provider = provider
+      config.model = model
+    },
     getVaultStatus,
     setVaultAccess,
     reprobeVault,

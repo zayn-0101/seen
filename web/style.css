@@ -417,10 +417,13 @@ textarea.url-input { display: block; resize: none; font: inherit; line-height: 1
 
 
 /* 知识库搜索 */
-.history-tools { display: flex; gap: 10px; margin: 14px 0 4px; align-items: center; }
-.history-search { flex: 1; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; }
+.history-tools { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; align-items: center; }
+.history-search { flex: 1 1 12rem; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; }
+@media (max-width: 560px) {
+  .history-search { flex-basis: 100%; }
+}
 .history-search:focus { outline: none; border-color: var(--focus); }
-.history-subject { min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; }
+.history-subject { max-width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; }
 .history-subject:focus { outline: none; border-color: var(--focus); }
 
 

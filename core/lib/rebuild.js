@@ -23,7 +23,9 @@ import { buildConceptPageMarkdown, buildTopicPageMarkdown, collectConceptPages, 
 export function buildHistoryFromState(state) {
   const rows = []
   for (const [subject, data] of Object.entries(state?.subjects || {})) {
-    for (const video of data?.videos || []) {
+    if (!Array.isArray(data?.videos)) continue
+    for (const video of data.videos) {
+      if (!video || typeof video !== 'object') continue
       rows.push({
         subject,
         title: video.title,
@@ -45,6 +47,7 @@ export function buildHistoryFromState(state) {
         tags: Array.isArray(video.tags) ? video.tags : [],
         contentType: video.contentType || '',
         quality: Number(video.quality) || 0,
+        review: video.review && typeof video.review === 'object' ? video.review : null,
         createdAt: video.createdAt || 0,
       })
     }
@@ -55,7 +58,9 @@ export function buildHistoryFromState(state) {
 
 /** 学科手册需要的精简字段。 */
 export function videosForManual(state, subject) {
-  return (state?.subjects?.[subject]?.videos || []).map((video) => ({
+  const videos = state?.subjects?.[subject]?.videos
+  if (!Array.isArray(videos)) return []
+  return videos.filter(video => video && typeof video === 'object').map((video) => ({
     title: video.title,
     bvid: video.bvid || '',
     notePath: video.notePath,

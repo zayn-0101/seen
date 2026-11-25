@@ -83,3 +83,14 @@ test('buildWeeklyReview survives malformed rows', () => {
   const review = buildWeeklyReview({ videos: [null, { title: 'x' }, { createdAt: 'bad' }], now: new Date(2026, 10, 18) })
   assert.equal(review.count, 0)
 })
+
+test('库里积压超过 100 篇旧笔记时本周仍能列出到期笔记', () => {
+  const now = new Date(2026, 10, 18, 12)
+  const old = Array.from({ length: 110 }, (_, n) => ({
+    title: '历史' + n, notePath: '历史/' + n + '.md', createdAt: new Date(2026, 9, 1).getTime(), review: { due: '2026-10-02' },
+  }))
+  const current = { title: '本周新笔记', notePath: '本周/新笔记.md', createdAt: now.getTime(), review: { due: '2026-11-18' } }
+  const result = buildWeeklyReview({ now, videos: [...old, current] })
+  assert.match(result.markdown, /本周优先：.*本周新笔记/)
+  assert.match(result.markdown, /待复习 111 篇/)
+})
