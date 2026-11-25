@@ -85,7 +85,7 @@
 - `failures`：失败计数与冷却
 - `stats`：processed / skipped / failed / lastMnemon
 - `lastForeground`：最近一次前台检测结果（供 status/check 展示）
-- 启动时严格读取：`state.json` 无法读取或结构无效时进入只读（`readOnlyReason: state-unreadable`），保留原文件和知识库索引；维护脚本也先确认状态可读再写入。
+- 启动时严格读取：`state.json` 无法读取或结构无效时进入只读（`readOnlyReason: state-unreadable`），保留原文件和知识库索引；维护脚本取得相同目录的实例锁后再读取状态。保存已提交的状态时保留最近两份不同快照，待写入记录单独落盘。
 
 ## Obsidian 文件
 
@@ -124,7 +124,7 @@
 
 ## mnemon 集成（可选，默认关闭）
 
-- 设置页开关跟随探测：检测到 mnemon CLI 才启用，缺失时禁用；
+- 设置页检测本机 mnemon CLI。用户明确开启并保存后才写入记忆库，`SEEN_DISABLE_MNEMON=1` 可强制关闭。
 - 使用 `mnemon remember --store default` 写入本地 mnemon 记忆库。
 - 内容为精简版（标题/学科/摘要/前 5 条知识点/笔记路径/B站链接），≤800 字。
 - 其它使用 mnemon 的工具调用同一 CLI 与 `~/.mnemon/data/default/mnemon.db`，可以检索到同一批记录。

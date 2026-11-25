@@ -98,7 +98,7 @@ test('崩溃恢复合并同一路径的旧状态记录', async () => {
   }
 })
 
-test('恢复时标题或路径变化只保留一条同身份记录', async () => {
+test('恢复时保留同一视频仍在磁盘上的两篇笔记', async () => {
   const vault = mkdtempSync(join(tmpdir(), 'seen-reconcile-'))
   const state = mkdtempSync(join(tmpdir(), 'seen-reconcile-state-'))
   try {
@@ -132,10 +132,11 @@ test('恢复时标题或路径变化只保留一条同身份记录', async () =>
     const api = controller(vault, state)
     await api.ready
     const history = api.getHistory()
-    assert.equal(history.length, 1)
-    assert.equal(history[0].notePath, newNote.relPath)
-    assert.equal(history[0].title, '新标题')
-    assert.equal(history[0].summary, '迁移后的摘要')
+    assert.equal(history.length, 2)
+    const restored = history.find(video => video.notePath === newNote.relPath)
+    assert.equal(restored.title, '新标题')
+    assert.equal(restored.summary, '迁移后的摘要')
+    assert.equal((await api.getSnapshot()).duplicateVideos.length, 1)
     assert.equal(readFileSync(join(vault, oldNote.relPath), 'utf8').includes('旧正文'), true)
     assert.deepEqual(JSON.parse(readFileSync(join(state, 'state.json'), 'utf8')).pendingVideos, {})
   } finally {

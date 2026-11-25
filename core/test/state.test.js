@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  defaultState, loadState, saveState, seenKey, isSeen, markSeen, pruneSeen,
+  defaultState, loadState, saveState, seedStateBackup, listStateBackups, restoreStateBackup, seenKey, isSeen, markSeen, pruneSeen,
   resolveSubjectName, recordFailure, shouldSkipFailure, clearFailure, listFailures,
 } from '../lib/state.js'
 
@@ -110,4 +110,31 @@ test('严格读取保留首次运行与旧状态，对已损坏的文件报错',
     assert.throws(() => loadState(file, { strict: true }), /state\.json/)
     assert.equal(readFileSync(file, 'utf8'), value)
   }
+})
+
+test('状态备份轮换两份已提交的内容，恢复时原样留存损坏文件', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'seen-state-backup-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'state.json')
+  const state = { ...defaultState(), lastTitle: '旧版有效状态' }
+  writeFileSync(file, JSON.stringify(state))
+  seedStateBackup(file)
+
+  state.lastTitle = '第一份已提交状态'
+  assert.deepEqual(saveState(file, state), {})
+  saveState(file, state)
+  state.lastTitle = '第二份已提交状态'
+  saveState(file, state)
+  state.pendingVideos.waiting = { title: '还在处理' }
+  saveState(file, state, { checkpoint: false })
+  assert.deepEqual(listStateBackups(file).map(backup => backup.valid), [true, true])
+  assert.equal(loadState(file + '.backup.previous', { strict: true }).lastTitle, '第一份已提交状态')
+  assert.deepEqual(loadState(file + '.backup.latest', { strict: true }).pendingVideos, {})
+
+  const broken = Buffer.from('{"lastTitle":')
+  writeFileSync(file, broken)
+  assert.throws(() => loadState(file, { strict: true }), /无法读取/)
+  const restored = restoreStateBackup(file, 'latest')
+  assert.deepEqual(readFileSync(restored.preservedPath), broken)
+  assert.equal(loadState(file, { strict: true }).lastTitle, '第二份已提交状态')
 })

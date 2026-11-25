@@ -84,8 +84,8 @@ async function readJson(file, fallback) {
   }
 }
 
-function saveUi() {
-  atomicWrite(uiPath, JSON.stringify(ui, null, 2) + '\n', { mode: 0o600 })
+function saveUi(settings = ui) {
+  atomicWrite(uiPath, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 })
 }
 
 /**
@@ -119,6 +119,12 @@ const llm = createLlmClient(llmConfig)
 let llmHealth = await llm.health()
 const mnemonBin = await findMnemon({})
 const mnemonAvailable = Boolean(mnemonBin)
+const mnemonDisabled = process.env.SEEN_DISABLE_MNEMON === '1'
+const canUseMnemon = mnemonAvailable && !mnemonDisabled
+
+function mnemonEnabled() {
+  return canUseMnemon && ui.mnemonEnabled === true
+}
 
 const baseConfig = resolveConfig({
   pollIntervalMs: Number(ui.pollIntervalMs) || 15000,
@@ -126,7 +132,7 @@ const baseConfig = resolveConfig({
   exposeController: true,
   provider: llmConfig.model && llmConfig.provider && llmConfig.provider !== 'none' ? llmConfig.provider : null,
   model: llmConfig.model || null,
-  enableMnemon: mnemonAvailable && process.env.SEEN_DISABLE_MNEMON !== '1' && ui.mnemonEnabled !== false,
+  enableMnemon: mnemonEnabled(),
   ...(process.env.SEEN_VAULT ? { vaultPath: process.env.SEEN_VAULT } : {}),
   ...(process.env.SEEN_STATE_DIR ? { stateDir: process.env.SEEN_STATE_DIR } : {}),
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
@@ -232,7 +238,6 @@ engine.onEvent((event) => {
   if (event.type === 'saved') {
     log('笔记已生成：' + event.data?.notePath)
     notifySaved(event.data)
-    rebuildIndexNote().catch(() => {})
   }
   if (event.type === 'error') {
     log('处理失败：' + event.data?.message)
@@ -303,7 +308,7 @@ async function snapshot() {
       configured: llmSource !== 'none',
       maskedKey: maskKey(llmConfig.apiKey),
       mnemonAvailable,
-      enableMnemon: Boolean(baseConfig.enableMnemon),
+      enableMnemon: mnemonEnabled(),
     },
   }
 }
@@ -524,10 +529,18 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/scan' && req.method === 'POST') {
       const body = await readBody(req)
+      if (body.urls !== undefined) {
+        if (!Array.isArray(body.urls) || !body.urls.length || body.urls.some(url => typeof url !== 'string' || !url.trim())) {
+          return json(res, 400, { error: '请提供至少一个视频链接' })
+        }
+        const result = await engine.scanBatch(body.urls.map(url => ({ url: url.trim(), force: Boolean(body.force) })))
+        return json(res, result.ok ? 200 : 409, { ...await snapshot(), result })
+      }
       const result = await engine.scan({ title: body.title, url: body.url, force: Boolean(body.force) })
       const data = await snapshot()
       const status = result.ok ? 200
         : result.code === 'queue-full' ? 429
+        : ['duplicate-video', 'note-identity-mismatch'].includes(result.code) ? 409
         : (result.code === 'douyin-not-jingxuan' || result.code === 'unsupported-source') ? 400
         : 500
       return json(res, status, { ...data, result, ...(result.ok ? {} : { error: result.message }) })
@@ -713,7 +726,8 @@ const server = createServer(async (req, res) => {
         providers: PROVIDERS,
         groups: PROVIDER_GROUPS,
         mnemonAvailable,
-        enableMnemon: mnemonAvailable && process.env.SEEN_DISABLE_MNEMON !== '1' && ui.mnemonEnabled !== false,
+        mnemonDisabled,
+        enableMnemon: mnemonEnabled(),
       })
     }
 
@@ -745,10 +759,11 @@ const server = createServer(async (req, res) => {
       llmHealth = { ok: false, detail: '正在检查模型连接' }
       const checks = Promise.all([testLlmConfig(saved), llm.health()])
       let mnemonNote = ''
-      if (typeof body.enableMnemon === 'boolean' && mnemonAvailable && ui.mnemonEnabled !== body.enableMnemon) {
+      if (typeof body.enableMnemon === 'boolean' && canUseMnemon && ui.mnemonEnabled !== body.enableMnemon) {
+        saveUi({ ...ui, mnemonEnabled: body.enableMnemon })
         ui.mnemonEnabled = body.enableMnemon
-        saveUi()
-        mnemonNote = '记忆库开关将在下次重启服务后生效'
+        engine.setMnemonEnabled(mnemonEnabled())
+        mnemonNote = ui.mnemonEnabled ? '今后生成的摘要会写入本机记忆库' : '已关闭写入本机记忆库'
       }
       const [tested, health] = await checks
       if (llmConfig === saved) llmHealth = health
@@ -845,15 +860,19 @@ server.listen(PORT, HOST, () => {
 
 function shutdown(code = 0) {
   try { engine.stop() } catch { /* 忽略 */ }
-  for (const dispose of disposers) {
-    try { dispose() } catch { /* 忽略 */ }
-  }
   for (const client of sseClients) {
     try { client.end() } catch { /* 忽略 */ }
   }
   server.close(() => process.exit(code))
   setTimeout(() => process.exit(code), 1000).unref()
 }
+
+// 关闭 HTTP 时可能还有正在整理的视频，实例锁保留到进程退出。
+process.once('exit', () => {
+  for (const dispose of disposers) {
+    try { dispose() } catch { /* 忽略 */ }
+  }
+})
 
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))

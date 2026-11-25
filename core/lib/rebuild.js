@@ -7,6 +7,7 @@
 
 import {
   updateOverview,
+  markInactiveKnowledgePages,
   updateSubjectManual,
   writeConceptIndexNote,
   writeConceptPage,
@@ -17,6 +18,7 @@ import {
 import { buildConceptIndexMarkdown, buildIndexMarkdown, buildTagIndexMarkdown } from './index-note.js'
 import { buildConceptIndex } from './concept.js'
 import { buildTagIndex } from './tags.js'
+import { detectSource, videoIdentity } from './source.js'
 import { buildConceptPageMarkdown, buildTopicPageMarkdown, collectConceptPages, collectTopicPages } from './topic-pages.js'
 
 /** 把 state.subjects 摊平成 history 行；字段与 engine.getHistory() 保持一致。 */
@@ -29,7 +31,8 @@ export function buildHistoryFromState(state) {
       rows.push({
         subject,
         title: video.title,
-        source: video.source || 'bilibili',
+        source: video.source || detectSource({ url: video.url }) || (video.bvid ? 'bilibili' : ''),
+        page: Number(video.page) || undefined,
         bvid: video.bvid || '',
         videoId: video.videoId || '',
         url: video.url || '',
@@ -54,6 +57,20 @@ export function buildHistoryFromState(state) {
   }
   rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
   return rows
+}
+
+/** 历史重复项仅列出同一平台身份下的不同文件。 */
+export function findDuplicateVideos(history) {
+  const groups = new Map()
+  for (const row of history) {
+    const identity = videoIdentity(row)
+    const notePath = String(row.notePath || '').trim().replaceAll('\\', '/').replace(/^\.\//, '')
+    if (!identity || !notePath) continue
+    if (!groups.has(identity)) groups.set(identity, new Map())
+    groups.get(identity).set(notePath, { subject: row.subject, title: row.title, notePath })
+  }
+  return [...groups].filter(([, notes]) => notes.size > 1)
+    .map(([identity, notes]) => ({ identity, notes: [...notes.values()] }))
 }
 
 /** 学科手册需要的精简字段。 */
@@ -85,25 +102,29 @@ export async function writeKnowledgeIndexes({ vaultPath, noteRoot, history }) {
  * 重建全部知识库页面。
  * @returns {Promise<{videos:number, concepts:number, topics:number, subjects:number}>}
  */
-export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, log = () => {} } = {}) {
+export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, manualSubjects, log = () => {} } = {}) {
   const history = buildHistoryFromState(state)
-  await writeKnowledgeIndexes({ vaultPath, noteRoot, history })
+  const subjects = Object.keys(state?.subjects || {})
+  const selected = manualSubjects && new Set(manualSubjects)
+  const manuals = subjects.filter(subject => !selected || selected.has(subject))
+    .map(subject => ({ subject, videos: videosForManual(state, subject) }))
   const conceptPages = collectConceptPages(history)
+  const topicPages = collectTopicPages(history)
+  await writeKnowledgeIndexes({ vaultPath, noteRoot, history })
   for (const page of conceptPages) {
     await writeConceptPage({ vaultPath, noteRoot, name: page.name, markdown: buildConceptPageMarkdown({ ...page, noteRoot }) })
   }
-  const topicPages = collectTopicPages(history)
   const conceptPageNames = new Set(conceptPages.map((page) => page.name))
   for (const page of topicPages) {
     // 只链接真实存在的概念页，避免主题页里出现断链
     const concepts = page.concepts.filter((item) => conceptPageNames.has(item.name))
     await writeTopicPage({ vaultPath, noteRoot, name: page.name, markdown: buildTopicPageMarkdown({ ...page, concepts, noteRoot }) })
   }
-  const subjects = Object.keys(state?.subjects || {})
-  for (const subject of subjects) {
-    await updateSubjectManual({ vaultPath, noteRoot, subject, videos: videosForManual(state, subject), layout })
+  await markInactiveKnowledgePages({ vaultPath, noteRoot, concepts: conceptPages, topics: topicPages })
+  for (const { subject, videos } of manuals) {
+    await updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout })
   }
   await updateOverview({ vaultPath, noteRoot, subjects, videos: history, layout })
-  log('rebuild.pages videos=' + history.length + ' concepts=' + conceptPages.length + ' topics=' + topicPages.length)
+  log('rebuild.pages videos=' + history.length + ' concepts=' + conceptPages.length + ' topics=' + topicPages.length + ' manuals=' + manuals.length)
   return { videos: history.length, concepts: conceptPages.length, topics: topicPages.length, subjects: subjects.length }
 }

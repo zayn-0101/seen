@@ -37,6 +37,7 @@ seen/
 │   ├── maintain-vault.mjs        按 state 重建索引、概念页、主题页、手册与总览
 │   ├── migrate-vault.mjs         笔记目录迁移（含备份与路径重写）
 │   ├── retag-notes.mjs           重打历史笔记的标签
+│   ├── restore-state.mjs        核验或恢复最近两份状态备份
 │   ├── strip-cover.mjs           清掉旧笔记里的封面
 │   └── uninstall-launchd.mjs
 ├── seen.command              双击启动服务
@@ -84,7 +85,9 @@ node server/index.js            # 独立服务，默认 http://127.0.0.1:4780
 - 服务启动时 Magpie 可能还没就绪：模型解析会重试几次；仍没有模型就先用 null 启动（面板提示「模型未配置」），不能让空字符串让 resolveConfig 抛错退出。
 - macOS 通知分四个节点（开始整理 / 本地转写含预计耗时 / 笔记已生成 / 处理失败），中间步骤只在面板显示。通知标题固定是视频标题，副标题是「拾影 · 平台 · 阶段」，平台不再单独占一行；抖音标签页标题是站点口号，所以「开始整理」等 `onProgress` 的 metadata 事件拿到真实标题后再发。菜单栏应用运行时由 app 自己的 `UNUserNotificationCenter` 投递（服务端通过 SSE `notification` 事件转发，并设 `SEEN_DISABLE_NOTIFY=1` 关闭 osascript 兜底）；独立运行服务时仍用 osascript，`SEEN_DISABLE_NOTIFY=1` 可关。
 - 自动识别、手动扫描、失败重试、历史重刷与字幕重整共用串行队列，最多等待 8 条。自动识别按视频去重。停止轮询会清空等待中的自动任务，已提交的手动操作继续执行。
-- 每次生成笔记后重建「视频索引.md」「概念索引.md」「标签索引.md」（都是 AUTO 区块）；每周回顾由 review.js 生成、obsidian.js 写入 `资料/回顾/`，已存在不覆盖。
+- 写入型维护命令复用与服务相同的 `instance.lock`。取得锁后再读状态或笔记，预演可以在服务运行时执行。状态保存保留最近两份已确认的快照，恢复命令默认预览。
+- 重生成、历史重刷与字幕重整沿用已有笔记的学科和路径。历史重复项可以按视频身份查看，链接处理由用户决定。
+- 自动整理结束时更新派生页面。待处理队列与批次合并重建，学科手册只更新受影响的学科。降出建页范围的概念页和主题页只替换 AUTO 区，原文件与手写内容继续保留。每周回顾由 review.js 生成。
 - 视频笔记版式（format 4，不抓封面、不画思维导图）：内容来源标注 → `[!abstract]` 一句话总结 → `[!question]` 想回答 → `[!success]` 答案 → 视频信息表 → 关键数字 → 章节 → 类型模板（按 `contentType`：教程=前置条件+操作步骤，课程=再加练习，观点=论证结构+可质疑之处，科普=机制与证据+常见误解，评测=对比表，访谈=人物观点表，纪录=事件时间线）→ 核心知识点（主题和每条要点都可带 `t=` 时间链接）→ 核心概念（带 `^concept-xxx` 块引用）→ 原话摘录（≤3 条、每条 ≤80 字、带时间）→ 术语表（3~8 个）→ 提到的资源（≤6 个）→ 相关笔记双链 → 讨论焦点 → 我的补充 → 折叠的抓取统计。frontmatter 记 `contentType` 与 `quality`（1 = 仅元数据，2~5 按完整度和信息密度由 scoreNoteQuality 打分）。关键数字只收能支撑结论或可直接行动的量化信息，normalizeNumbers 会过滤时长、体积、播放/点赞数、弹幕评论条数这类视频自身元数据；仅元数据（没有字幕）的视频不写关键数字、核心概念、模板、原话、术语与资源。重写笔记时 mergeManualSection 保留「我的补充」。
 - 内容类型与结构化字段由 note-content.js 负责：CONTENT_TYPES 8 类（tutorial/opinion/science/review/interview/documentary/course/other），normalizeTemplate 按类型只保留对应字段并卡 TEMPLATE_LIMITS（steps 8、quotes 3、terms 8、resources 6 等），normalizeQuotes 只接受数组且每条 ≤80 字，normalizeTerms 名称 2~12 字（超长直接丢，不截断），scoreNoteQuality 算 1~5 分（仅元数据固定 1）。
 - 发布前润色（editorPass）默认关闭，开启后 summarize 末尾调 editSummary 多跑一次模型只顺摘要/问答的表达、不新增事实，失败保留原文；面板「重刷历史」走 POST /api/reprocess → engine.refreshHistory，processTitle 的 refresh:true 会覆盖笔记但内容与字幕抓取仍 force=false，复用缓存不重转写。

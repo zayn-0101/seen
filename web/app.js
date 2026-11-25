@@ -733,6 +733,30 @@ function renderQualityHint(history) {
   hint.textContent = '有 ' + low.length + ' 篇笔记内容偏弱（质量 ≤2 分），可以点开用「存档字幕重新整理」或「重刷历史」再加工一次。'
 }
 
+function renderDuplicateNotes(groups = []) {
+  const details = $('duplicateNotes')
+  details.hidden = groups.length === 0
+  $('duplicateNotesTitle').textContent = groups.length + ' 个视频有重复笔记'
+  const list = $('duplicateNotesList')
+  list.replaceChildren()
+  for (const { notes } of groups) {
+    const group = el('li', '', notes[0].title)
+    const paths = el('ul')
+    for (const note of notes) {
+      const item = el('li')
+      const link = el('a', '', note.subject + ' · ' + note.title)
+      link.href = obsidianUrl(note.notePath)
+      link.target = '_blank'
+      link.rel = 'noreferrer'
+      link.title = note.notePath
+      item.append(link)
+      paths.append(item)
+    }
+    group.append(paths)
+    list.append(group)
+  }
+}
+
 function renderHistory(history) {
   const box = $('history')
   const all = Array.isArray(history) ? history : state.history || []
@@ -1059,6 +1083,7 @@ async function refreshSavedLibrary() {
     const snap = await api('/api/status')
     if (revision !== libraryRevision) return
     renderHistory(snap.history || [])
+    renderDuplicateNotes(snap.duplicateVideos || [])
     renderReviews(snap.reviews || { due: [], stats: {} })
     renderFailures(snap.status?.failures || [])
     conceptCache = null
@@ -1093,6 +1118,7 @@ function renderSnapshot(snap) {
   const editorPassToggle = $('settingsEditorPass')
   if (editorPassToggle) editorPassToggle.checked = Boolean(snap.config?.editorPass)
   renderHistory(snap.history || [])
+  renderDuplicateNotes(snap.duplicateVideos || [])
   renderReviews(snap.reviews || { due: [], stats: {} })
   renderFailures(snap.status?.failures || [])
   renderEvents(state.events)
@@ -1174,6 +1200,7 @@ function handleEvent(event) {
     showToast([message, ...warnings].join('；'), true)
   }
   if (event.type === 'update') renderUpdate(event.data)
+  if (event.type === 'pages-warning') showToast(event.data?.message || '知识库页面更新失败', true)
   if (event.type === 'saved' && event.data) {
     renderSummary(event.data, '已生成')
     void refreshSavedLibrary()
@@ -1192,6 +1219,11 @@ function handleEvent(event) {
   if (event.type === 'snapshot') {
     renderSnapshot(event.data)
     return
+  }
+  if (event.type === 'scan-batch-progress') {
+    state.stageLabel = '批量处理 ' + event.data.done + ' / ' + event.data.total
+    $('summaryStage').className = 'stage working'
+    updateStageClock()
   }
   stageForEvent(event)
   renderEvents(state.events.slice(-20))
@@ -1282,43 +1314,37 @@ async function scan(force) {
   if (!items.length) { showToast('先粘贴视频链接或 BV 号'); return }
   const button = force ? $('scanForce') : $('scan')
   button.disabled = true
-  $('summaryStage').className = 'stage working'
-
-  if (items.length === 1) {
-    $('summaryStage').textContent = '处理中'
-    try {
-      const data = await api('/api/scan', { method: 'POST', body: JSON.stringify({ url: items[0], force }) })
-      if (data.result?.message) showToast(data.result.message)
-      if (data.history) renderHistory(data.history)
-    } catch (error) {
-      showToast(error.message)
-      $('summaryStage').textContent = '处理失败'
-      $('summaryStage').className = 'stage error'
-    } finally {
-      button.disabled = false
+  const stage = $('summaryStage')
+  stage.className = 'stage working'
+  stage.textContent = '处理中'
+  try {
+    const payload = items.length === 1 ? { url: items[0], force } : { urls: items, force }
+    const data = await api('/api/scan', { method: 'POST', body: JSON.stringify(payload) })
+    const result = data.result || {}
+    if (data.history) renderHistory(data.history)
+    if (data.duplicateVideos) renderDuplicateNotes(data.duplicateVideos)
+    if (items.length === 1) {
+      if (result.message) {
+        const warnings = result.warnings || []
+        showToast([result.message, ...warnings].join(' · '), warnings.length > 0)
+      }
+    } else {
+      stopStageClock()
+      state.stageLabel = '批量完成 ' + result.succeeded + ' / ' + result.total
+      stage.className = 'stage ' + (result.failed ? 'error' : 'done')
+      updateStageClock()
+      const issues = [...(result.failures || []).map(item => item.message), ...(result.warnings || [])]
+      showToast([state.stageLabel, ...new Set(issues)].join(' · '), issues.length > 0)
     }
-    return
+  } catch (error) {
+    stopStageClock()
+    state.stageLabel = '处理失败'
+    stage.textContent = state.stageLabel
+    stage.className = 'stage error'
+    showToast(error.message)
+  } finally {
+    button.disabled = false
   }
-
-  // 多个链接：串行处理，避免同时跑多个转写/总结把机器拖死
-  let done = 0
-  let failed = 0
-  for (const url of items) {
-    done += 1
-    $('summaryStage').textContent = '批量处理 ' + done + ' / ' + items.length
-    try {
-      const data = await api('/api/scan', { method: 'POST', body: JSON.stringify({ url, force }) })
-      if (data.history) renderHistory(data.history)
-      if (!data.result?.ok) failed += 1
-    } catch {
-      failed += 1
-    }
-  }
-  const ok = items.length - failed
-  $('summaryStage').textContent = failed > 0 ? '批量完成 ' + ok + '/' + items.length : '批量完成'
-  $('summaryStage').className = 'stage ' + (failed > 0 ? 'error' : 'done')
-  showToast('批量处理完成：成功 ' + ok + ' 个' + (failed > 0 ? '，失败 ' + failed + ' 个（见失败记录）' : ''))
-  button.disabled = false
 }
 
 function setRefreshState(active) {
@@ -1611,9 +1637,10 @@ async function openSettings() {
     }
 
     const mnemon = $('mnemonToggle')
-    mnemon.disabled = !data.mnemonAvailable
-    mnemon.checked = Boolean(data.mnemonAvailable && data.enableMnemon)
-    $('mnemonHint').textContent = data.mnemonAvailable ? '检测到本机 mnemon' : '未检测到 mnemon CLI，此开关不可用'
+    mnemon.disabled = !data.mnemonAvailable || Boolean(data.mnemonDisabled)
+    mnemon.checked = Boolean(data.enableMnemon)
+    $('mnemonHint').textContent = data.mnemonDisabled ? '已由环境变量停用'
+      : data.mnemonAvailable ? '开启后将新摘要写入本机 mnemon' : '未检测到 mnemon CLI'
 
     $('settingsDialog').showModal()
   } catch (error) {

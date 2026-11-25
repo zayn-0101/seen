@@ -7,7 +7,7 @@
  *  - youtube：watch?v= / youtu.be / shorts / embed / live，以及标题后缀「 - YouTube」
  */
 
-import { extractPage } from './bilibili.js'
+import { extractBvid, extractPage } from './bilibili.js'
 
 const DOUYIN_ID_RE = /(?:[?&](?:modal_id|aweme_id)=|\/video\/)(\d{10,})/i
 // YouTube 视频 ID 固定 11 位；短链、短裤、嵌入、直播页都在这里取。
@@ -110,13 +110,16 @@ export function sourceDisplayName(source) {
   return '视频'
 }
 
-/** 用持久化的平台编号辨认笔记；旧记录可从 URL 补充分 P。 */
+/** 用平台和编号辨认笔记。旧记录可从来源 URL 补全编号或分 P。 */
 export function videoIdentity(video) {
   if (!video) return ''
-  const { bvid, page, url, source, videoId } = video
+  const { page, url } = video
+  const source = video.source || detectSource({ url })
+  const bvid = video.bvid || (source === 'bilibili' ? extractBvid(url) : '')
   if (bvid) {
     const id = String(bvid).trim().replace(/^bv/i, 'BV')
     return 'bilibili:' + id + ':p' + (Number(page) || extractPage(url))
   }
-  return source && videoId ? String(source) + ':' + String(videoId).trim() : ''
+  const videoId = video.videoId || (source === 'youtube' ? extractYoutubeId(url) : source === 'douyin' ? extractDouyinId(url) : '')
+  return source && videoId ? source + ':' + String(videoId).trim() : ''
 }

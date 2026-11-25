@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync, appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildHistoryFromState, rebuildKnowledgePages } from '../lib/rebuild.js'
@@ -81,5 +81,36 @@ test('rebuildKnowledgePages writes indexes, concept/topic pages, manuals and ove
     assert.ok(existsSync(join(vault, '视频笔记', '标签索引.md')))
   } finally {
     rmSync(vault, { recursive: true, force: true })
+  }
+})
+
+test('概念和主题退出建页范围时只更新自动区，重新达标后恢复收录', async t => {
+  const vaultPath = mkdtempSync(join(tmpdir(), 'seen-old-pages-'))
+  t.after(() => rmSync(vaultPath, { recursive: true, force: true }))
+  const state = makeState(Date.now())
+  const config = { vaultPath, noteRoot: '视频笔记', layout: 'structured' }
+  await rebuildKnowledgePages({ ...config, state })
+  const dir = join(vaultPath, '视频笔记', '资料')
+  const concept = join(dir, '概念', '双向链接.md')
+  const topic = join(dir, '主题', '笔记工具.md')
+  const handWritten = join(dir, '概念', '自行写的笔记.md')
+  const manual = '\n手写思考和外部链接\n'
+  for (const path of [concept, topic]) appendFileSync(path, manual)
+  writeFileSync(handWritten, '自写内容，不参与自动收录。')
+
+  await rebuildKnowledgePages({ ...config, state: { subjects: {} } })
+  for (const path of [concept, topic]) {
+    const text = readFileSync(path, 'utf8')
+    assert.match(text, /不在知识库的自动收录范围/)
+    assert.ok(text.endsWith(manual))
+    assert.doesNotMatch(text, /\[\[.*第一篇/)
+  }
+  assert.equal(readFileSync(handWritten, 'utf8'), '自写内容，不参与自动收录。')
+
+  await rebuildKnowledgePages({ ...config, state })
+  for (const path of [concept, topic]) {
+    const text = readFileSync(path, 'utf8')
+    assert.match(text, /\[\[.*第一篇/)
+    assert.ok(text.endsWith(manual))
   }
 })

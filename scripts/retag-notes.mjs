@@ -9,6 +9,7 @@
  *
  * 只读笔记正文前 3000 字做判断，不重跑转写和总结。
  */
+import { withInstanceLock } from '../core/lib/instance-lock.js'
 import { randomUUID } from 'node:crypto'
 import { join, relative } from 'node:path'
 
@@ -45,15 +46,6 @@ const config = resolveConfig({
   ...(process.env.SEEN_NOTE_ROOT ? { noteRoot: process.env.SEEN_NOTE_ROOT } : {}),
   noteLayout: process.env.SEEN_NOTE_LAYOUT || DEFAULTS.noteLayout,
 })
-
-const vaultPath = resolveVaultPath(config)
-const stateFile = join(config.stateDir, 'state.json')
-const state = loadState(stateFile, { strict: true })
-
-const llmConfig = loadLlmConfig()
-const client = createLlmClient(llmConfig)
-const ctx = { llm: client }
-const llmOptions = { provider: llmConfig.provider, model: llmConfig.model }
 
 /** 读 frontmatter 里现有的 tags 数组。 */
 function readTags(frontmatter) {
@@ -114,130 +106,149 @@ function buildPrompt({ title, subject, summary, concepts, body, vocabulary, need
   return parts.join('\n')
 }
 
-const targets = []
-for (const [subject, data] of Object.entries(state.subjects || {})) {
-  for (const video of (data && data.videos) || []) {
-    if (!video || !video.notePath) continue
-    targets.push({ subject, video })
-  }
-}
-targets.sort((a, b) => (b.video.createdAt || 0) - (a.video.createdAt || 0))
-const picked = limit > 0 ? targets.slice(0, limit) : targets
+async function retagNotes() {
+  const vaultPath = resolveVaultPath(config)
+  const stateFile = join(config.stateDir, 'state.json')
+  const state = loadState(stateFile, { strict: true })
 
-console.log('vault：' + vaultPath)
-console.log('状态：' + stateFile)
-console.log('模型：' + (llmConfig.model || '（未配置）') + ' · ' + (llmConfig.baseURL || ''))
-console.log((apply ? '【写入模式】' : '【预演模式】不会改任何文件，加 --apply 才写') + ' 共 ' + picked.length + ' 篇')
-console.log('')
+  const llmConfig = loadLlmConfig()
+  const client = createLlmClient(llmConfig)
+  const ctx = { llm: client }
+  const llmOptions = { provider: llmConfig.provider, model: llmConfig.model }
 
-const stamp = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)
-const backupRoot = join(config.stateDir, '..', 'backups', '重打标签-' + stamp)
-
-let changed = 0
-let failed = 0
-let backedUp = false
-for (const [index, item] of picked.entries()) {
-  const { subject, video } = item
-  const absPath = join(vaultPath, video.notePath)
-  const label = '[' + (index + 1) + '/' + picked.length + '] ' + video.title
-  const note = await readVaultText({ vaultPath, relPath: video.notePath })
-  if (!note.ok) {
-    console.log(label + ' → ' + note.error)
-    failed += 1
-    continue
-  }
-  const { frontmatter, body } = splitFrontmatter(note.text)
-  if (!frontmatter) {
-    console.log(label + ' → 缺少笔记属性区，已跳过')
-    failed += 1
-    continue
-  }
-  const oldTags = readTags(frontmatter)
-  const storedConcepts = Array.isArray(video.concepts) ? video.concepts : []
-  // 早期笔记的状态里没有 concepts 字段，但旧标签可能留着「概念/xxx」，用它兜底
-  let concepts = storedConcepts.length ? storedConcepts : conceptsFromTags(oldTags)
-  // 仍然没有概念的，就让模型顺手从正文里抽一批，补上概念索引的数据缺口
-  const needConcepts = concepts.length === 0
-  let parsed = null
-  try {
-    const raw = await callLlm(ctx, llmOptions, {
-      system: '你是笔记标签整理助手，只输出 JSON。',
-      messages: [{ role: 'user', content: [{ type: 'text', text: buildPrompt({
-        title: video.title || '',
-        subject: subject,
-        summary: video.summary || '',
-        concepts,
-        body: body.slice(0, BODY_CHARS),
-        vocabulary: buildTagVocabulary(state),
-        needConcepts,
-      }) }] }],
-      maxTokens: needConcepts ? 1200 : 800,
-    })
-    parsed = parseJson(raw)
-    const themes = parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes
-    const types = parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types
-    if (![themes, types].some(value => Array.isArray(value) || typeof value === 'string')) {
-      throw new Error('模型未返回可用的主题词或类型')
+  const targets = []
+  for (const [subject, data] of Object.entries(state.subjects || {})) {
+    for (const video of (data && data.videos) || []) {
+      if (!video || !video.notePath) continue
+      targets.push({ subject, video })
     }
-  } catch (error) {
-    console.log(label + ' → 失败：' + String((error && error.message) || error))
-    failed += 1
-    continue
   }
+  targets.sort((a, b) => (b.video.createdAt || 0) - (a.video.createdAt || 0))
+  const picked = limit > 0 ? targets.slice(0, limit) : targets
 
-  if (needConcepts) {
-    concepts = normalizeConcepts(parsed?.concepts ?? []).map((item) => item.name)
-  }
-  const themes = normalizeThemes(parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes ?? [])
-  const types = normalizeTagTypes(parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types ?? [])
-  const tags = mergeTags({ subject, themes, types, concepts })
+  console.log('vault：' + vaultPath)
+  console.log('状态：' + stateFile)
+  console.log('模型：' + (llmConfig.model || '（未配置）') + ' · ' + (llmConfig.baseURL || ''))
+  console.log((apply ? '【写入模式】' : '【预演模式】不会改任何文件，加 --apply 才写') + ' 共 ' + picked.length + ' 篇')
+  console.log('')
 
-  console.log(label)
-  console.log('  旧：' + (oldTags.length ? oldTags.join(' · ') : '（无）'))
-  console.log('  新：' + tags.join(' · '))
-  const noteChanged = JSON.stringify(tags) !== JSON.stringify(oldTags)
-  const stateTagsChanged = JSON.stringify(tags) !== JSON.stringify(video.tags || [])
-  const addConcepts = !storedConcepts.length && concepts.length > 0
-  if (!tags.length || (!noteChanged && !stateTagsChanged && !addConcepts)) {
-    console.log('  → 无变化')
-    continue
-  }
-  if (!apply) {
-    changed += 1
-    // 预演也把新词累加进内存词表，让后面的篇目复用同一套写法（不落盘）
-    if (stateTagsChanged) rememberTags(state, tags)
-    continue
-  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)
+  const backupRoot = join(config.stateDir, '..', 'backups', '重打标签-' + stamp)
 
-  if (noteChanged) {
-    const result = await updateNoteTags({
-      vaultPath, notePath: video.notePath, tags,
-      backup: { root: backupRoot, destRelPath: relative(join(vaultPath, config.noteRoot), absPath) },
-    })
-    if (!result.ok) {
-      console.log(label + ' → ' + result.error)
+  let changed = 0
+  let failed = 0
+  let backedUp = false
+  for (const [index, item] of picked.entries()) {
+    const { subject, video } = item
+    const absPath = join(vaultPath, video.notePath)
+    const label = '[' + (index + 1) + '/' + picked.length + '] ' + video.title
+    const note = await readVaultText({ vaultPath, relPath: video.notePath })
+    if (!note.ok) {
+      console.log(label + ' → ' + note.error)
       failed += 1
       continue
     }
-    backedUp = true
+    const { frontmatter, body } = splitFrontmatter(note.text)
+    if (!frontmatter) {
+      console.log(label + ' → 缺少笔记属性区，已跳过')
+      failed += 1
+      continue
+    }
+    const oldTags = readTags(frontmatter)
+    const storedConcepts = Array.isArray(video.concepts) ? video.concepts : []
+    // 早期笔记的状态里没有 concepts 字段，但旧标签可能留着「概念/xxx」，用它兜底
+    let concepts = storedConcepts.length ? storedConcepts : conceptsFromTags(oldTags)
+    // 仍然没有概念的，就让模型顺手从正文里抽一批，补上概念索引的数据缺口
+    const needConcepts = concepts.length === 0
+    let parsed = null
+    try {
+      const raw = await callLlm(ctx, llmOptions, {
+        system: '你是笔记标签整理助手，只输出 JSON。',
+        messages: [{ role: 'user', content: [{ type: 'text', text: buildPrompt({
+          title: video.title || '',
+          subject: subject,
+          summary: video.summary || '',
+          concepts,
+          body: body.slice(0, BODY_CHARS),
+          vocabulary: buildTagVocabulary(state),
+          needConcepts,
+        }) }] }],
+        maxTokens: needConcepts ? 1200 : 800,
+      })
+      parsed = parseJson(raw)
+      const themes = parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes
+      const types = parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types
+      if (![themes, types].some(value => Array.isArray(value) || typeof value === 'string')) {
+        throw new Error('模型未返回可用的主题词或类型')
+      }
+    } catch (error) {
+      console.log(label + ' → 失败：' + String((error && error.message) || error))
+      failed += 1
+      continue
+    }
+
+    if (needConcepts) {
+      concepts = normalizeConcepts(parsed?.concepts ?? []).map((item) => item.name)
+    }
+    const themes = normalizeThemes(parsed?.themes ?? parsed?.tags?.themes ?? parsed?.tagSet?.themes ?? [])
+    const types = normalizeTagTypes(parsed?.types ?? parsed?.tags?.types ?? parsed?.tagSet?.types ?? [])
+    const tags = mergeTags({ subject, themes, types, concepts })
+
+    console.log(label)
+    console.log('  旧：' + (oldTags.length ? oldTags.join(' · ') : '（无）'))
+    console.log('  新：' + tags.join(' · '))
+    const noteChanged = JSON.stringify(tags) !== JSON.stringify(oldTags)
+    const stateTagsChanged = JSON.stringify(tags) !== JSON.stringify(video.tags || [])
+    const addConcepts = !storedConcepts.length && concepts.length > 0
+    if (!tags.length || (!noteChanged && !stateTagsChanged && !addConcepts)) {
+      console.log('  → 无变化')
+      continue
+    }
+    if (!apply) {
+      changed += 1
+      // 预演也把新词累加进内存词表，让后面的篇目复用同一套写法（不落盘）
+      if (stateTagsChanged) rememberTags(state, tags)
+      continue
+    }
+
+    if (noteChanged) {
+      const result = await updateNoteTags({
+        vaultPath, notePath: video.notePath, tags,
+        backup: { root: backupRoot, destRelPath: relative(join(vaultPath, config.noteRoot), absPath) },
+      })
+      if (!result.ok) {
+        console.log(label + ' → ' + result.error)
+        failed += 1
+        continue
+      }
+      backedUp = true
+    }
+    changed += 1
+    video.tags = tags
+    // 从旧标签还原出来的概念要落回状态，否则概念索引还是缺这几篇
+    if (addConcepts) video.concepts = concepts
+    if (stateTagsChanged) rememberTags(state, tags)
+    const { backupError } = saveState(stateFile, state)
+    if (backupError) console.warn('状态已保存，更新备份失败：' + backupError)
   }
-  changed += 1
-  video.tags = tags
-  // 从旧标签还原出来的概念要落回状态，否则概念索引还是缺这几篇
-  if (addConcepts) video.concepts = concepts
-  if (stateTagsChanged) rememberTags(state, tags)
-  saveState(stateFile, state)
-}
 
-// 即使笔记已在上次写完，重试也要补齐随后未成功的索引。
-if (apply && picked.length > failed) {
-  await writeKnowledgeIndexes({ vaultPath, noteRoot: config.noteRoot, history: buildHistoryFromState(state) })
+  // 即使笔记已在上次写完，重试也要补齐随后未成功的索引。
+  if (apply && picked.length > failed) {
+    await writeKnowledgeIndexes({ vaultPath, noteRoot: config.noteRoot, history: buildHistoryFromState(state) })
+    console.log('')
+    if (backedUp) console.log('备份：' + backupRoot)
+    console.log('索引已重建：视频索引.md / 概念索引.md / 标签索引.md')
+  }
+
   console.log('')
-  if (backedUp) console.log('备份：' + backupRoot)
-  console.log('索引已重建：视频索引.md / 概念索引.md / 标签索引.md')
+  console.log('完成：处理 ' + picked.length + ' 篇，需改动 ' + changed + ' 篇，失败 ' + failed + ' 篇')
+  if (failed) process.exitCode = 1
+  if (!apply && changed > 0) console.log('加 --apply 写入时，每篇原文会备份到 ' + join(config.stateDir, '..', 'backups') + ' 下独立的重打标签目录')
 }
 
-console.log('')
-console.log('完成：处理 ' + picked.length + ' 篇，需改动 ' + changed + ' 篇，失败 ' + failed + ' 篇')
-if (failed) process.exitCode = 1
-if (!apply && changed > 0) console.log('加 --apply 写入时，每篇原文会备份到 ' + join(config.stateDir, '..', 'backups') + ' 下独立的重打标签目录')
+try {
+  await (apply ? withInstanceLock(config.stateDir, retagNotes) : retagNotes())
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = 1
+}

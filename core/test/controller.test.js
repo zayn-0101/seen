@@ -785,3 +785,79 @@ test('繁忙时接受失败重试，排队期间保留记录，停止轮询后�
   assert.deepEqual(api.getFailures(), [])
   assert.deepEqual(JSON.parse(readFileSync(join(stateDir, 'state.json'), 'utf8')).failures, {})
 })
+
+test('强制重生成沿用原学科和路径，保留手写补充、复习和字幕存档', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'seen-regenerate-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const vaultPath = join(root, 'vault')
+  let classification = { subject: '物理学', title: '偏振的原始标题' }
+  const ctx = fakeCtx(new Map())
+  ctx.llm.stream = async function* ({ system }) {
+    const reply = system.includes('分类助手')
+      ? { isCourse: true, ...classification }
+      : { summary: '摘要 · ' + classification.title, keyPoints: ['知识点'] }
+    yield { type: 'text-delta', text: JSON.stringify(reply) }
+  }
+  const api = apply(ctx, { vaultPath, stateDir: join(root, 'state'), autoStart: false, exposeController: true,
+    fetchContent: false, fetchTranscript: false, openInObsidian: false, enableMnemon: false })
+  const input = { title: '偏振的原始标题', url: 'https://youtu.be/ExampleId08' }
+  await api.ready
+  const first = await api.scan({ ...input, transcript: '本地原声字幕存档。' })
+  assert.equal(first.ok, true, first.message)
+  const note = join(vaultPath, first.notePath)
+  writeFileSync(note, readFileSync(note, 'utf8').replace('<!-- MANUAL:END -->', '自写实验记录\n<!-- MANUAL:END -->'))
+  assert.equal((await api.recordReview({ notePath: first.notePath, rating: 'easy' })).ok, true)
+  const before = api.getHistory()[0]
+  assert.ok(before.transcriptPath)
+
+  const classifications = []
+  api.onEvent(event => {
+    if (event.type === 'classified') classifications.push(event.data.subject)
+  })
+  classification = { subject: '实验方法', title: '新标题：偏振实验' }
+  const result = await api.scan({ ...input, force: true })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.subject, '物理学')
+  assert.deepEqual(classifications, ['物理学'])
+  assert.equal(result.notePath, first.notePath)
+  const [after, duplicate] = api.getHistory()
+  assert.equal(duplicate, undefined)
+  assert.equal(after.createdAt, before.createdAt)
+  assert.deepEqual(after.review, before.review)
+  assert.equal(after.transcriptPath, before.transcriptPath)
+  assert.match(readFileSync(note, 'utf8'), /自写实验记录/)
+  assert.match(readFileSync(note, 'utf8'), /新标题：偏振实验/)
+})
+
+test('批量视频与历史重刷每批各重建一次索引，只更新受影响的学科手册', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'seen-batched-pages-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const stateDir = join(root, 'state')
+  const vaultPath = join(root, 'vault')
+  mkdirSync(stateDir)
+  writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ subjects: { 其他学科: { videos: [] } } }))
+  const ctx = fakeCtx(new Map())
+  let title = ''
+  ctx.llm.stream = async function* ({ system }) {
+    const response = system.includes('分类助手')
+      ? { isCourse: true, subject: '课程示例', title: '视频 ' + ++title }
+      : { summary: '学习摘要' }
+    yield { type: 'text-delta', text: JSON.stringify(response) }
+  }
+  const api = apply(ctx, { vaultPath, stateDir, autoStart: false, exposeController: true, fetchContent: false,
+    fetchTranscript: false, openInObsidian: false, enableMnemon: false })
+  await api.ready
+  const result = await api.scanBatch([
+    { title: '示例课程一', url: 'https://youtu.be/ExampleId01' },
+    { title: '示例课程二', url: 'https://youtu.be/ExampleId02' },
+  ])
+  assert.equal(result.succeeded, 2)
+  const log = () => readFileSync(join(stateDir, 'poll.log'), 'utf8').match(/rebuild\.pages .* manuals=\d+/g)
+  assert.deepEqual(log(), ['rebuild.pages videos=2 concepts=0 topics=0 manuals=1'])
+  assert.match(readFileSync(join(vaultPath, '视频笔记', '视频索引.md'), 'utf8'), /视频 1[\s\S]*视频 2|视频 2[\s\S]*视频 1/)
+  const refreshed = await api.refreshHistory()
+  assert.equal(refreshed.failed, 0, JSON.stringify(refreshed.warnings))
+  assert.equal(refreshed.done, 2)
+  assert.equal(log().length, 2)
+  assert.equal(api.getHistory().length, 2)
+})

@@ -30,6 +30,7 @@
  *   node scripts/migrate-vault.mjs --state-only  # 只修正 state.json 里的路径
  *   node scripts/migrate-vault.mjs --state-only --apply
  */
+import { withInstanceLock } from '../core/lib/instance-lock.js'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { resolveConfig } from '../core/lib/config.js'
@@ -151,7 +152,8 @@ function syncStateOnly(config, vaultPath, noteRoot) {
     console.log('状态备份失败，未写回：' + String(error?.message || error))
     return
   }
-  saveState(statePath, state)
+  const { backupError } = saveState(statePath, state)
+  if (backupError) console.warn('状态已保存，更新备份失败：' + backupError)
   console.log('已写回：' + statePath)
 }
 
@@ -162,16 +164,19 @@ function rewriteState(config, pathMap) {
   const state = loadState(statePath, { strict: true })
   const map = pathMap instanceof Map ? pathMap : new Map(Object.entries(pathMap))
   const changed = remapStateNotePaths(state, map)
-  if (changed > 0) saveState(statePath, state)
+  if (changed > 0) {
+    const { backupError } = saveState(statePath, state)
+    if (backupError) console.warn('状态已保存，更新备份失败：' + backupError)
+  }
   return changed
 }
 
-function main() {
-  const config = readConfig()
+function main(config) {
   const vaultPath = resolveVaultPath(config)
   if (!vaultPath) {
     console.error('没有找到 Obsidian vault，可用 SEEN_VAULT 指定。')
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
   const noteRoot = String(config.noteRoot || '视频笔记').trim()
   const newRootAbs = resolve(vaultPath, noteRoot)
@@ -193,7 +198,7 @@ function main() {
   }
   if (!existsSync(rootAbs)) {
     console.log('笔记根目录不存在：' + newRootAbs)
-    process.exit(0)
+    return
   }
 
   const relToVault = (abs) => toPosix(abs).slice(toPosix(vaultPath).length + 1)
@@ -370,4 +375,10 @@ function main() {
   console.log('迁移完成。重启服务后新笔记会写入新结构。')
 }
 
-main()
+const config = readConfig()
+try {
+  await (apply ? withInstanceLock(config.stateDir, () => main(config)) : main(config))
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = 1
+}

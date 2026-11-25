@@ -2,10 +2,10 @@
  * seen-core · 状态持久化
  *
  * 纯 ESM、零依赖。状态文件采用「临时文件 + rename」原子写；
- * 损坏或缺失的 JSON 一律回退到默认状态并做默认值合并。
+ * 严格读取区分初次运行和损坏的状态；另外保留最近两份已确认的状态。
  */
 
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname } from 'node:path'
 import { alignSubject } from './subject.js'
@@ -91,15 +91,19 @@ export function atomicWrite(file, content, { mode = 0o666 } = {}) {
   }
 }
 
-/** 首次运行使用默认状态。strict 让写入方能区分已有文件损坏与首次运行。 */
+function readStateDocument(file, strict) {
+  const text = readFileSync(file, 'utf8')
+  const parsed = JSON.parse(text)
+  if (strict && (!isPlainObject(parsed) || ('subjects' in parsed && !isPlainObject(parsed.subjects)))) {
+    throw new Error('状态结构无效')
+  }
+  return { text, state: mergeState(parsed) }
+}
+
+/** 首次运行使用默认状态。strict 让写入方区分已有文件损坏与首次运行。 */
 export function loadState(statePath, { strict = false } = {}) {
   try {
-    const text = readFileSync(statePath, 'utf8')
-    const parsed = JSON.parse(text)
-    if (strict && (!isPlainObject(parsed) || ('subjects' in parsed && !isPlainObject(parsed.subjects)))) {
-      throw new Error('状态结构无效')
-    }
-    return mergeState(parsed)
+    return readStateDocument(statePath, strict).state
   } catch (error) {
     if (strict && error.code !== 'ENOENT') {
       throw new Error('state.json 无法读取或格式无效，请检查权限或从备份恢复')
@@ -108,9 +112,76 @@ export function loadState(statePath, { strict = false } = {}) {
   }
 }
 
-/** 保存状态（自动补齐默认值，UTF-8 末尾换行） */
-export function saveState(statePath, state) {
-  atomicWrite(statePath, JSON.stringify(mergeState(state), null, 2) + '\n')
+const BACKUP_SLOTS = ['latest', 'previous']
+
+function stateBackupPath(statePath, slot) {
+  if (!BACKUP_SLOTS.includes(slot)) throw new Error('备份只能选择 latest 或 previous')
+  return statePath + '.backup.' + slot
+}
+
+function writeCheckpoint(statePath, text) {
+  const latest = stateBackupPath(statePath, 'latest')
+  let previous
+  try { previous = readStateDocument(latest, true).text } catch { /* 保留另一个有效备份 */ }
+  if (previous === text) return
+  if (previous) atomicWrite(stateBackupPath(statePath, 'previous'), previous, { mode: 0o600 })
+  atomicWrite(latest, text, { mode: 0o600 })
+}
+
+export function saveState(statePath, state, { checkpoint = true } = {}) {
+  const text = JSON.stringify(mergeState(state), null, 2) + '\n'
+  atomicWrite(statePath, text, { mode: 0o600 })
+  if (checkpoint) {
+    try {
+      writeCheckpoint(statePath, text)
+    } catch (error) {
+      return { backupError: error.code || error.message }
+    }
+  }
+  return {}
+}
+
+/** 为升级前已有的有效状态生成第一份备份。调用方须持有实例锁。 */
+export function seedStateBackup(statePath) {
+  if (listStateBackups(statePath).some(backup => backup.valid)) return
+  try {
+    writeCheckpoint(statePath, readStateDocument(statePath, true).text)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+}
+
+export function listStateBackups(statePath) {
+  return BACKUP_SLOTS.map(slot => {
+    const path = stateBackupPath(statePath, slot)
+    try {
+      const { state } = readStateDocument(path, true)
+      return { slot, path, valid: true, lastRunAt: state.lastRunAt, updatedAt: statSync(path).mtimeMs }
+    } catch (error) {
+      return { slot, path, valid: false, missing: error.code === 'ENOENT' }
+    }
+  })
+}
+
+/** 从已存在的快照恢复。先保存当前文件原样，调用方须持有实例锁。 */
+export function restoreStateBackup(statePath, slot) {
+  const path = stateBackupPath(statePath, slot)
+  let snapshot
+  try { snapshot = readStateDocument(path, true) } catch { throw new Error('所选状态备份不存在或无法读取') }
+
+  let preservedPath = ''
+  let original
+  try {
+    original = readFileSync(statePath)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  if (original) {
+    preservedPath = statePath + '.before-restore.' + new Date().toISOString().replace(/[:.]/g, '-') + '.' + randomBytes(6).toString('hex')
+    atomicWrite(preservedPath, original, { mode: 0o600 })
+  }
+  atomicWrite(statePath, snapshot.text, { mode: 0o600 })
+  return { path, preservedPath }
 }
 
 /** 生成去重键：优先 bvid / 平台视频 ID，否则标题小写去空白/标点 */

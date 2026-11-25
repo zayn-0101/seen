@@ -46,6 +46,10 @@ export function normalizeSubjectName(name: string): string
 // NFC、trim、压缩空白；空则 '未分类'
 ```
 
+## lib/instance-lock.js
+
+`withInstanceLock(stateDir, task)` 使用服务的 `stateDir/instance.lock` 执行写入型维护任务。锁覆盖读取、异步计算和最终写盘，任务结束或抛错时释放。
+
 ## lib/state.js
 
 ```js
@@ -55,7 +59,12 @@ export function defaultState(): State
 
 // 默认兼容旧调用，strict 模式仅在首次运行缺少文件时返回初始状态。
 export function loadState(statePath: string, options?: { strict?: boolean }): State
-export function saveState(statePath: string, state: State): void
+export function saveState(statePath: string, state: State, options?: { checkpoint?: boolean }): { backupError?: string }
+// 最近两份不同的已提交状态保存在 state.json.backup.latest 与 state.json.backup.previous。
+// pending 意图写入传 checkpoint:false；备份失败单独返回 backupError，主状态已落盘。
+export function seedStateBackup(statePath: string): void
+export function listStateBackups(statePath: string): Array<{ slot, path, valid, lastRunAt?, updatedAt? }>
+export function restoreStateBackup(statePath: string, slot: 'latest'|'previous'): { path, preservedPath }
 export function atomicWrite(file: string, content: string, options?: { mode?: number }): void
 
 export function seenKey({ bvid, videoId, source, title, page }: { bvid?: string|null, videoId?: string|null, source?: string, title?: string, page?: number }): string
@@ -379,7 +388,7 @@ export function manualNotePath({ vaultPath, noteRoot, subject, layout }): { absP
 export function toPosix(p: string): string
 
 export async function ensureVaultDirs({ vaultPath, noteRoot, stateDir }): Promise<void>
-export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page = 1, videoId, source, previousNotePath, content, force = false, layout, backupDir = '' }): Promise<{ relPath, absPath, skipped: boolean }>
+export async function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page = 1, videoId, source, previousNotePath, preservePreviousPath = false, content, force = false, layout, backupDir = '' }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateSubjectManual({ vaultPath, noteRoot, subject, videos, layout }): Promise<{ relPath, absPath, skipped: boolean }>
 export async function updateOverview({ vaultPath, noteRoot, subjects, layout }): Promise<{ relPath, absPath }>
 export async function writeIndexNote({ vaultPath, noteRoot, markdown }): Promise<{ relPath, absPath }>
@@ -409,7 +418,7 @@ export async function runVaultTask(task: () => Promise<T>): Promise<T>  // 供 v
 写入规则：
 - 原子写（tmp + rename）。
 - vault 内相对路径不得通过 `..` 越过 vault 根目录；所有 vault 读写必须经 `core/lib/vault-path.js` 的 `resolveVaultPath` / `safe*` 校验（对最深已存在祖先做 realpath，写拒绝最终符号链接，读允许指向 vault 内部的符号链接）。只处理符号链接，不处理硬链接，不宣称完全隔离。
-- 视频笔记同名时按 B 站 BV + 分 P，或其他平台来源 + 视频 ID 判断是否为同一条视频。已确认同一条且 `force=false` 返回 `{ skipped: true }`；`force=true` 时备份并更新对应文件。身份不同或无法确认时使用带标识的同名副本，不能覆盖原笔记；已由状态记录确认的旧笔记路径可作为身份缺失时的依据。
+- 视频笔记同名时按 B 站 BV + 分 P，或其他平台来源 + 视频 ID 判断是否为同一条视频。已确认同一条且 `force=false` 返回 `{ skipped: true }`；`force=true` 时备份并更新对应文件。身份不同或无法确认时使用带标识的同名副本，不能覆盖原笔记；引擎指定 `preservePreviousPath` 时，沿用已登记路径。旧笔记的编号相符或是无编号的兼容视频笔记才可覆盖，路径身份冲突时报错。
 - 字幕存档按所属笔记路径确认身份；同名且属于不同笔记或身份不明的旧文件不得覆盖，使用新副本并在状态中记录实际 `transcriptPath`。重整理优先读取状态中的路径，再校验所属笔记；缺少所属路径且有同名历史笔记时，拒绝推测归属。
 - 学习手册/总览只替换 AUTO 区；文件不存在则创建（含 frontmatter、H1、AUTO 区、用户区）。
 - 返回的 `relPath` 是相对 vault 的 POSIX 路径，不含 `.md` 以外的变化。
@@ -491,10 +500,11 @@ export function buildTopicPageMarkdown({ name, videos, concepts, noteRoot }): st
 ```js
 export function buildHistoryFromState(state): Array<VideoRecord>
 export function videosForManual(state, subject): Array<any>
+export function findDuplicateVideos(history): Array<{ identity, notes }>
 export async function writeKnowledgeIndexes({ vaultPath, noteRoot, history }): Promise<void>
-export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, log }): Promise<{ videos, concepts, topics, subjects }>
+export async function rebuildKnowledgePages({ vaultPath, noteRoot, state, layout, manualSubjects?, log }): Promise<{ videos, concepts, topics, subjects }>
 // 顺序：视频索引 / 概念索引 / 标签索引 → 概念页 → 主题页 → 每学科手册 → 总览
-// 主题页的「相关概念」只保留真实存在的概念页，避免断链
+// 主题页的「相关概念」只保留当前建成的概念页。退出建页范围的旧页保留手写内容与路径，并更新 AUTO 区。
 ```
 
 ## lib/vault-access.js
@@ -684,14 +694,18 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 
 - 独立服务默认 `autoStart: false`，由服务自己控制轮询；`apply` 返回控制器。
 - 独立服务传 `autoStart: false, exposeController: true`，`apply` 返回控制器：
-  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, setModel, scan, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
+  `{ start, stop, setPollInterval, setNoteLayout, setEditorPass, setModel, setMnemonEnabled, scan, scanBatch, refreshHistory, retryFailure, rebuildKnowledgePages, resummarizeNote, getReviews, recordReview, askLibrary, renameTag, getStatus, getSnapshot, getHistory, getConfig, getEvents, getLastForeground, onEvent, isReadOnly, isStarted }`。
 - 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。`getStatus()` 与 `getConfig()` 都返回 `readOnly` / `readOnlyReason`（`locked-by-other` / `lock-write-failed` / `lock-stale-unlink-failed` / `state-unreadable`），`getConfig()` 还返回 `readOnlyMessage`，状态消息里同步说明只读原因。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条通过共享队列调用 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。返回 `{ ok, total, done, failed, stateSaved, warnings }`，状态保存失败或单篇警告会汇总到 `warnings`；队满时返回 `code:"queue-full"`、实际完成数 `done` 与 `remaining`。
-- 写笔记前先把 `{ key, activeKey, title, subject, source, bvid, videoId, page, url, author, notePath, transcriptPath, createdAt, at }` 写入 `state.pendingVideos` 并落盘；首次落盘失败立即中止，不写笔记。启动后 `reconcilePendingState` 跨学科按 bvid+page / videoId+source 精确匹配（notePath 完全一致优先），唯一命中则从笔记回填 summary/question/answer/tags/concepts/quality/contentType/review，合并同身份旧记录、迁移到新学科并删除重复，再重建索引；扫描不完整或身份有歧义时保留 pending。`ready` 与 `reprobeVault()` 共用同一个恢复任务，首次权限不足时会在重新探测成功后补跑。
+- 写笔记前先把 `{ key, activeKey, title, subject, source, bvid, videoId, page, url, author, notePath, transcriptPath, createdAt, at }` 写入 `state.pendingVideos` 并落盘；首次落盘失败立即中止，不写笔记。启动后 `reconcilePendingState` 跨学科按 bvid+page / videoId+source 精确匹配（notePath 完全一致优先），唯一命中则从笔记回填 summary/question/answer/tags/concepts/quality/contentType/review，合并同一路径的旧记录。其他路径只在确认文件缺失且身份唯一时重新关联，有原文件的各条记录继续保留。恢复后重建索引；扫描不完整或身份有歧义时保留 pending。`ready` 与 `reprobeVault()` 共用同一个恢复任务，首次权限不足时会在重新探测成功后补跑。
 - `state.pendingReviews[notePath] = { review, at }` 用于复习进度崩溃恢复；写入笔记前先落盘 pending，恢复时只有笔记 frontmatter 的 `review` 与 pending 完全一致才写回 state。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。新笔记写 `contentSource: 'archive'`，并从原笔记的 `transcriptOrigin`（没有该字段时回退 `contentSource`）取原始来源写入 `transcriptOrigin`；质量分按它计算，来源统计用存档字数。已经是 `archive` 且没有记录原始来源的旧笔记无法还原，只标为「更早的字幕存档」。
 - 启动时严格读取状态。已有 `state.json` 无法读取或结构无效时，控制器返回 `readOnlyReason:"state-unreadable"`，保留原文件和知识库索引。维护命令严格读取状态后才允许写入。
+- 视频重生成沿用已登记的笔记路径和学科。多个不同路径对应同一视频时，按视频强制重生成请求返回 `duplicate-video`，指定笔记的存档重整与历史重刷仍可逐篇执行。
+- `scanBatch(inputs)` 和 `refreshHistory({ limit, onProgress })` 在批次结束后合并更新知识库。连续队列任务在空闲前合并重建。`POST /api/scan` 可传 `{ urls, force }`，返回每个失败项目，单条 `{ url, force }` 保留。
+- `getSnapshot()` 的 `duplicateVideos` 列出同一平台身份下的多个笔记路径。
+- 服务的 mnemon 默认关闭，保存明确的开启偏好且本机可用时生效。`SEEN_DISABLE_MNEMON=1` 优先。
 - 服务保存模型设置后同步调用 `setModel({ provider, model })`，后续模型请求和状态快照立即采用新选择。模型和界面设置通过同目录临时文件原子替换，模型配置权限为 `0600`。
 - 自动识别、扫描、重试、重刷和字幕重整共用队列。失败重试跳过冷却，成功后才清理失败记录。批量重刷遇到队满时返回实际完成数和剩余数。
 - `GET /api/status?view=menubar` 返回菜单栏所需的状态和模型配置标志。默认状态接口提供完整快照。

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fork } from 'node:child_process'
+import { fork, spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -11,11 +11,20 @@ import { fileURLToPath } from 'node:url'
 const serverEntry = resolve(dirname(fileURLToPath(import.meta.url)), '../../server/index.js')
 const fixtureKey = 'fixture-key-do-not-use'
 
-async function startFixture({ video = true, videoCount = 1, locked = false, release, envModel = false, damaged = false } = {}) {
+async function startFixture({ video = true, videoCount = 1, locked = false, release, envModel = false, damaged = false, mnemon = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'seen-server-test-'))
   const vault = join(root, 'vault')
   const stateDir = join(root, 'state')
   await Promise.all([mkdir(vault), mkdir(stateDir), mkdir(join(root, '.seen'))])
+
+  const bin = join(root, 'bin')
+  if (mnemon) {
+    await mkdir(bin)
+    await writeFile(join(bin, 'mnemon'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
+    if (mnemon.enabled !== undefined) {
+      await writeFile(join(stateDir, 'ui.json'), JSON.stringify({ mnemonEnabled: mnemon.enabled }))
+    }
+  }
 
   const modelRequests = []
   const modelServer = createServer(async (req, res) => {
@@ -76,7 +85,8 @@ syncBuiltinESMExports()
       SEEN_STATE_DIR: stateDir, SEEN_VAULT: vault,
       ...(envModel ? { SEEN_LLM_BASE_URL: modelBase + '/v1', SEEN_LLM_MODEL: 'fixture-model', SEEN_LLM_API_KEY: fixtureKey } : {}),
       ...(release ? { SEEN_TEST_RELEASE: modelBase + '/releases/latest' } : { SEEN_DISABLE_UPDATE_CHECK: '1' }),
-      SEEN_DISABLE_NOTIFY: '1', SEEN_DISABLE_MNEMON: '1',
+      SEEN_DISABLE_NOTIFY: '1', SEEN_DISABLE_MNEMON: !mnemon || mnemon.disabled ? '1' : '0',
+      ...(mnemon ? { PATH: bin + ':' + process.env.PATH } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   })
@@ -93,7 +103,7 @@ syncBuiltinESMExports()
   ]).finally(() => clearTimeout(timer))
   const base = 'http://127.0.0.1:' + port
   return {
-    root, vault, modelBase, modelRequests, child, base,
+    root, stateDir, vault, modelBase, modelRequests, child, base,
     async stop() {
       if (child.exitCode === null) {
         child.kill('SIGTERM')
@@ -264,4 +274,77 @@ test('状态 JSON 损坏时服务进入只读，保留原文件和已有索引',
   assert.match((await scan.json()).error, /state\.json/)
   assert.equal(await readFile(join(f.root, 'state/state.json'), 'utf8'), '{"subjects":')
   assert.equal(await readFile(join(f.vault, '视频笔记/视频索引.md'), 'utf8'), '已有索引示例')
+})
+
+test('服务运行时写入型维护遇到同一锁会退出，预演可用', async t => {
+  const fixture = await startFixture()
+  t.after(() => fixture.stop())
+  const stateFile = join(fixture.stateDir, 'state.json')
+  const before = await readFile(stateFile, 'utf8')
+  const run = (script, ...args) => spawnSync(process.execPath, [
+    resolve(dirname(serverEntry), '../scripts', script + '.mjs'), ...args,
+  ], {
+    encoding: 'utf8', timeout: 5000,
+    env: { ...process.env, SEEN_STATE_DIR: fixture.stateDir, SEEN_VAULT: fixture.vault, SEEN_NOTE_ROOT: '视频笔记' },
+  })
+  for (const [script, ...args] of [
+    ['maintain-vault'],
+    ['migrate-vault', '--apply'],
+    ['migrate-vault', '--state-only', '--apply'],
+    ['strip-cover', '--apply'],
+    ['retag-notes', '--apply'],
+    ['restore-state', '--apply'],
+  ]) {
+    const result = run(script, ...args)
+    assert.equal(result.status, 1, script + ': ' + result.stderr)
+    assert.match(result.stderr, /Seen 服务或其他维护命令正在使用/)
+  }
+  assert.equal(run('maintain-vault', '--dry-run').status, 0)
+  assert.equal(run('restore-state').status, 0)
+  assert.equal(await readFile(stateFile, 'utf8'), before)
+
+  const stopped = once(fixture.child, 'exit')
+  fixture.child.kill('SIGTERM')
+  await stopped
+  assert.equal(run('maintain-vault').status, 0)
+  await writeFile(stateFile, '损坏内容')
+  assert.equal(run('restore-state', '--apply').status, 0)
+  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).subjects, JSON.parse(before).subjects)
+})
+
+test('mnemon 默认关闭，明确开启即生效，环境变量有优先权', async t => {
+  const fresh = await startFixture({ mnemon: {} })
+  t.after(() => fresh.stop())
+  const settings = async f => (await (await fetch(f.base + '/api/llm')).json())
+  assert.equal((await settings(fresh)).mnemonAvailable, true)
+  assert.equal((await settings(fresh)).enableMnemon, false)
+  const saved = await post(fresh.base, '/api/llm', {
+    provider: 'custom', baseURL: fresh.modelBase + '/v1', model: 'fixture-model', enableMnemon: true,
+  })
+  assert.equal((await saved.json()).ok, true)
+  assert.equal((await settings(fresh)).enableMnemon, true)
+  assert.equal((await (await fetch(fresh.base + '/api/status')).json()).llm.enableMnemon, true)
+  assert.equal(JSON.parse(await readFile(join(fresh.stateDir, 'ui.json'), 'utf8')).mnemonEnabled, true)
+
+  const enabled = await startFixture({ mnemon: { enabled: true } })
+  t.after(() => enabled.stop())
+  assert.equal((await settings(enabled)).enableMnemon, true)
+  const blocked = await startFixture({ mnemon: { enabled: true, disabled: true } })
+  t.after(() => blocked.stop())
+  const blockedSettings = await settings(blocked)
+  assert.equal(blockedSettings.mnemonDisabled, true)
+  assert.equal(blockedSettings.enableMnemon, false)
+})
+
+test('批量链接接口返回每条失败原因，兼容原有单条扫描', async t => {
+  const fixture = await startFixture()
+  t.after(() => fixture.stop())
+  const batch = await post(fixture.base, '/api/scan', { urls: ['示例一', '示例二'] })
+  assert.equal(batch.status, 200)
+  const data = await batch.json()
+  assert.equal(data.result.total, 2)
+  assert.equal(data.result.failed, 2)
+  assert.deepEqual(data.result.failures.map(item => item.code), ['unsupported-source', 'unsupported-source'])
+  assert.equal((await post(fixture.base, '/api/scan', { url: '示例' })).status, 400)
+  assert.equal((await post(fixture.base, '/api/scan', { urls: [] })).status, 400)
 })

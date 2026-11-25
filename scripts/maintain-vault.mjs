@@ -8,6 +8,7 @@
  *
  * 不重新转写、不重新调用模型；内容来自 state.json 里已有的视频记录。
  */
+import { withInstanceLock } from '../core/lib/instance-lock.js'
 import { DEFAULTS, resolveConfig } from '../core/lib/config.js'
 import { resolveVaultPath, ensureVaultDirs } from '../core/lib/obsidian.js'
 import { buildHistoryFromState, rebuildKnowledgePages } from '../core/lib/rebuild.js'
@@ -25,31 +26,41 @@ const config = resolveConfig({
   noteLayout: process.env.SEEN_NOTE_LAYOUT || DEFAULTS.noteLayout,
 })
 
-const vaultPath = resolveVaultPath(config)
-const state = loadState(config.stateDir + '/state.json', { strict: true })
+async function maintainVault() {
+  const vaultPath = resolveVaultPath(config)
+  const state = loadState(config.stateDir + '/state.json', { strict: true })
 
-if (dryRun) {
-  const history = buildHistoryFromState(state)
-  const conceptPages = collectConceptPages(history).length
-  const topicPages = collectTopicPages(history).length
-  console.log('预演：视频 ' + history.length + ' 篇，学科 ' + Object.keys(state.subjects || {}).length + ' 个，概念页 ' + conceptPages + ' 个，主题页 ' + topicPages + ' 个')
-  console.log('去掉 --dry-run 才会写入 ' + config.noteRoot + '/')
-  process.exit(0)
+  if (dryRun) {
+    const history = buildHistoryFromState(state)
+    const conceptPages = collectConceptPages(history).length
+    const topicPages = collectTopicPages(history).length
+    console.log('预演：视频 ' + history.length + ' 篇，学科 ' + Object.keys(state.subjects || {}).length + ' 个，概念页 ' + conceptPages + ' 个，主题页 ' + topicPages + ' 个')
+    console.log('去掉 --dry-run 才会写入 ' + config.noteRoot + '/')
+    return
+  }
+
+  const probe = await probeVaultAccess(vaultPath)
+  if (!probe.ok) {
+    console.error(VAULT_HINT)
+    console.error('当前状态：' + probe.code + (probe.detail ? '（' + probe.detail + '）' : ''))
+    process.exitCode = 1
+    return
+  }
+
+  await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
+  const result = await rebuildKnowledgePages({
+    vaultPath,
+    noteRoot: config.noteRoot,
+    state,
+    layout: config.noteLayout,
+    log: (line) => console.log(line),
+  })
+  console.log('重建完成：视频 ' + result.videos + ' 篇，学科 ' + result.subjects + ' 个，概念页 ' + result.concepts + ' 个，主题页 ' + result.topics + ' 个')
 }
 
-const probe = await probeVaultAccess(vaultPath)
-if (!probe.ok) {
-  console.error(VAULT_HINT)
-  console.error('当前状态：' + probe.code + (probe.detail ? '（' + probe.detail + '）' : ''))
-  process.exit(1)
+try {
+  await (dryRun ? maintainVault() : withInstanceLock(config.stateDir, maintainVault))
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = 1
 }
-
-await ensureVaultDirs({ vaultPath, noteRoot: config.noteRoot, stateDir: config.stateDir })
-const result = await rebuildKnowledgePages({
-  vaultPath,
-  noteRoot: config.noteRoot,
-  state,
-  layout: config.noteLayout,
-  log: (line) => console.log(line),
-})
-console.log('重建完成：视频 ' + result.videos + ' 篇，学科 ' + result.subjects + ' 个，概念页 ' + result.concepts + ' 个，主题页 ' + result.topics + ' 个')

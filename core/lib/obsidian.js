@@ -22,6 +22,7 @@ import { detectObsidianVault, sanitizeFilename } from './config.js'
 import { videoIdentity } from './source.js'
 import { extractPage } from './bilibili.js'
 import { TRANSCRIPT_DIR, conceptPageRelPath, manualNoteRelPath, normalizeNoteLayout, topicPageRelPath, transcriptNoteRelPath, videoNoteRelPath, weeklyReviewRelPath } from './paths.js'
+import { splitFrontmatter } from './note-check.js'
 import { transcriptNoteOwner } from './transcript-note.js'
 import { VAULT_IO_TIMEOUT_MS, createVaultQueue, withVaultTimeout } from './vault-access.js'
 import {
@@ -38,6 +39,7 @@ import {
   resolveExternalPath,
 } from './vault-path.js'
 import {
+  AUTO_START, AUTO_END,
   autoBlock,
   mergeManualSection,
   overviewAutoBody,
@@ -262,7 +264,8 @@ async function readNoteIdentityUnsafe({ vaultPath, relPath } = {}) {
       }
       return String(value || '').trim()
     }
-    return { bvid: field('bvid'), videoId: field('videoId'), source: field('source'), page: extractPage(field('url')) }
+    const url = field('url')
+    return { bvid: field('bvid'), videoId: field('videoId'), source: field('source'), type: field('type'), url, page: Number(field('page')) || extractPage(url) }
   } catch (error) {
     if (error?.code === 'ENOENT') return {}
     throw error
@@ -306,7 +309,7 @@ async function backupFile(vaultPath, relPath, backupDir = '') {
  *  - 同名但身份不同或未知：选择带视频标识的副本
  *  - force 仅覆盖已确认同一视频的笔记，并先备份
  */
-export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page = 1, videoId, source, previousNotePath = '', content, force = false, layout, backupDir = '' } = {}) {
+export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page = 1, videoId, source, previousNotePath = '', preservePreviousPath = false, content, force = false, layout, backupDir = '' } = {}) {
   const base = videoNotePath({ vaultPath, noteRoot, subject, title, bvid, layout })
   const targetBvid = String(bvid ?? '').trim()
   const targetVideoId = String(videoId ?? '').trim()
@@ -314,10 +317,11 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
   const previous = toPosix(previousNotePath)
 
   return runVault(async () => {
-    let target = base
+    const pinned = Boolean(previous && preservePreviousPath)
+    let target = pinned ? { relPath: previous, absPath: absoluteFromRel(vaultPath, previous) } : base
     // 标题变化（例如平台标题多了栏目后缀）时，沿用状态记录的旧笔记路径，
     // 避免同一条视频因为 finalTitle 变化而生成第二篇笔记。只信任身份匹配的旧文件。
-    if (previous && (await vaultPathExists(vaultPath, previous))) {
+    if (!pinned && previous && (await vaultPathExists(vaultPath, previous))) {
       const previousIdentity = videoIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: previous }))
       if (identity && previousIdentity && identity === previousIdentity) {
         target = { relPath: previous, absPath: absoluteFromRel(vaultPath, previous) }
@@ -328,16 +332,20 @@ export function writeVideoNote({ vaultPath, noteRoot, subject, title, bvid, page
     for (let index = 0; index <= 100; index += 1) {
       if (index > 0) target = siblingNotePath(base, index === 1 ? ` (${tag})` : ` (${tag}-${index})`)
       if (!(await vaultPathExists(vaultPath, target.relPath))) break
-      const existing = videoIdentity(await readNoteIdentityUnsafe({ vaultPath, relPath: target.relPath }))
-      const matches = Boolean(identity && existing && identity === existing)
+      const stored = await readNoteIdentityUnsafe({ vaultPath, relPath: target.relPath })
+      const existing = videoIdentity(stored)
+      const isVideo = stored.type === 'video-note' || stored.type === 'video'
+      const matches = Boolean(identity && identity === existing && (!stored.type || isVideo))
       // 只有目标视频身份明确时才信任旧的无身份笔记：仅凭同名/旧路径可能是另一条视频，
       // 覆盖会丢掉用户手写内容。
-      const trustedLegacy = Boolean(identity && !existing && previous && previous === target.relPath)
+      const compatibleLegacy = !existing && isVideo && (!stored.source || stored.source === source)
+      const trustedLegacy = pinned ? compatibleLegacy : Boolean(identity && !existing && previous && previous === target.relPath)
       if (matches || trustedLegacy) {
         if (!force) return { relPath: target.relPath, absPath: target.absPath, skipped: true }
         await backupFile(vaultPath, target.relPath, backupDir)
         break
       }
+      if (pinned) throw Object.assign(new Error('原笔记与视频身份不一致，已保留原文件'), { code: 'note-identity-mismatch' })
       if (index === 100) target = siblingNotePath(base, ` (${tag}-${Date.now()})`)
     }
 
@@ -735,4 +743,43 @@ export function writeTopicPage({ vaultPath, noteRoot, name, markdown } = {}) {
   const label = safeFilename(name || '未命名主题', 80)
   const relPath = topicPageRelPath({ noteRoot: root, name: label })
   return writeAutoNote({ vaultPath, noteRoot: root, filename: relPath.slice(root.length + 1), title: label, type: 'topic', markdown })
+}
+
+/** 旧页仍能通过双链打开，只有确认归属的 AUTO 区会被更新。 */
+export async function markInactiveKnowledgePages({ vaultPath, noteRoot, concepts, topics }) {
+  const pageKinds = [
+    { type: 'concept', pathFor: conceptPageRelPath, pages: concepts },
+    { type: 'topic', pathFor: topicPageRelPath, pages: topics },
+  ]
+  const fileKey = name => name.normalize('NFC').toLowerCase()
+  const notice = autoBlock('此页对应的内容目前不在知识库的自动收录范围。')
+  for (const { type, pathFor, pages } of pageKinds) {
+    const dir = toPosix(dirname(pathFor({ noteRoot, name: '占位' })))
+    const current = new Set(pages.map(page => fileKey(basename(pathFor({ noteRoot, name: safeFilename(page.name, 80) })))))
+    const entries = await runVault(async () => {
+      try {
+        return await safeReaddir({ vaultPath, relPath: dir })
+      } catch (error) {
+        if (error.code === 'ENOENT') return []
+        throw error
+      }
+    })
+    for (const entry of entries) {
+      if (!entry.isFile() || !/\.md$/i.test(entry.name) || current.has(fileKey(entry.name))) continue
+      const relPath = toPosix(join(dir, entry.name))
+      await runVault(async () => {
+        let text
+        try { text = await safeReadFile({ vaultPath, relPath }) } catch (error) {
+          if (error.code === 'ENOENT') return
+          throw error
+        }
+        const { frontmatter, body } = splitFrontmatter(text)
+        const noteType = frontmatter.match(/^type:\s*(["']?)([\w-]+)\1[ \t]*$/m)?.[2]
+        const start = body.indexOf(AUTO_START)
+        if (noteType !== type || start < 0 || body.indexOf(AUTO_END, start + AUTO_START.length) < 0) return
+        const next = text.slice(0, text.length - body.length) + upsertAutoBlock(body, notice)
+        if (next !== text) await atomicWrite({ vaultPath, relPath, content: next })
+      })
+    }
+  }
 }
