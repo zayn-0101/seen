@@ -466,3 +466,11 @@
 - [x] 批量粘贴限制为最多 20 个链接，避免单请求长时间占用
 - [x] `cd core && node --test`：391 tests / 391 pass / 0 fail；`npm run check`：117 个文件通过
 - [x] `npm run self-check`：14 篇笔记、错误 0、警告 0
+
+## 2026-11-25 v0.5.6 发布
+
+- [x] `cd core && node --test`：391 tests / 391 pass / 0 fail；`npm run check`：117 个文件通过；`npm run self-check`：14 篇笔记、错误 0、警告 0
+- [x] 0.5.6 universal app 构建、固定证书签名并安装到 `~/Applications/Seen.app`
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.6.dmg`（86M，universal）：挂载校验版本 0.5.6、签名通过、lipo 为 x86_64 + arm64
+- [x] DMG SHA256：`521cdf0c5c309bde68038b273857985b2c6d641a9ae1f66223f61a27314a7304`
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.6
