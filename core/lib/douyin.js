@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDouyinId, sourceLabel } from './source.js'
+import { normalizePublishedAt } from './dates.js'
 import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, findFfmpeg, findWhisperCli, findWhisperModel, transcribeAudio } from './whisper.js'
 
 const execFileP = promisify(execFile)
@@ -197,6 +198,7 @@ function buildContent(detail, { url, id, transcript, timedTranscript = '', trans
     desc,
     tags,
     duration,
+    publishedAt: normalizePublishedAt(detail?.createTime ?? detail?.create_time ?? detail?.publishTime),
     chapters: [],
     transcript: text,
     timedTranscript: String(timedTranscript || ''),

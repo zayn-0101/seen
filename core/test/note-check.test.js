@@ -247,6 +247,12 @@ test('checkIndexLinks finds broken wiki links', () => {
   assert.deepEqual(codes(bad), ['index-broken'])
 })
 
+test('checkIndexLinks ignores the escaped pipe used in tables', () => {
+  const markdown = '| 2026-11-26 | [[视频笔记/笔记/知识管理/另一篇\\|另一篇]] | 知识管理 |'
+  const findings = checkIndexLinks(markdown, { exists })
+  assert.deepEqual(findings, [])
+})
+
 test('checkSummaryShape enforces the whole summary contract', () => {
   const valid = {
     summary: '这一期讲了知识管理的三条核心原则，并演示了具体做法。',
@@ -336,4 +342,44 @@ test('format 3 rejects decorative leftovers from earlier layouts', () => {
   // 旧格式笔记里的封面只当历史遗留，不报当前格式的错误
   const legacy = noteMarkdown({ format: 2 }).replace('type: "video-note"', 'type: "video-note"\ncover: "https://example.com/c.jpg"')
   assert.ok(!codes(checkNoteShape(parseNoteMarkdown(legacy))).includes('legacy-cover'))
+})
+
+test('v5 notes parse Chinese properties, seen-meta and concept table', async () => {
+  const { renderVideoNoteV5 } = await import('../lib/render.js')
+  const md = renderVideoNoteV5({
+    originalTitle: '原题 #话题',
+    displayTitle: '原题',
+    subject: '游戏产业',
+    source: 'bilibili',
+    url: 'https://www.bilibili.com/video/BV1check',
+    bvid: 'BV1check',
+    author: '作者',
+    createdAt: '2026-11-18',
+    updatedAt: '2026-11-26',
+    duration: 2414,
+    contentType: 'opinion',
+    contentQuality: 'full',
+    quality: 5,
+    summary: '概述',
+    question: '问题？',
+    answer: '答案。',
+    keyPoints: [{ title: '主题', points: ['要点'] }],
+    numbers: [{ value: '1 个', meaning: '测试数字', time: 60 }],
+    concepts: [{ name: '3A 游戏', brief: '营销标签', aliases: ['AAA'] }],
+    terms: [{ name: '买断制', definition: '一次性付费' }],
+    tags: ['游戏产业', '主机游戏', '行业趋势', '公司治理', '玩家体验'],
+    noteRoot: '视频笔记',
+  })
+  const note = parseNoteMarkdown(md)
+  assert.equal(note.format, 5)
+  assert.equal(note.isV5, true)
+  assert.equal(note.title, '原题 #话题')
+  assert.equal(note.displayTitle, '原题')
+  assert.equal(note.subject, '游戏产业')
+  assert.equal(note.source, 'bilibili')
+  assert.equal(note.duration, 2414)
+  assert.deepEqual(note.sectionTitles, ['02 速览', '03 核心知识点', '04 核心概念与术语', '05 复习卡片', '06 我的补充'].map((item) => item.replace(/^\d+\s+/, '')))
+  assert.ok(note.subsectionMap.has('关键数字'))
+  assert.deepEqual(note.conceptEntries.map((item) => item.name), ['3A 游戏', '买断制'])
+  assert.deepEqual(checkNoteShape(note), [])
 })

@@ -139,7 +139,7 @@ export function cleanBiliTitle(raw: string): string
 export function titleSimilarity(a: string, b: string): number
 export function buildBiliDisplayTitle({ seriesTitle, part, page = 1 }): string
 export async function searchVideo(title: string): Promise<{ bvid, aid, title, desc, tags } | null>
-export async function fetchView(bvid: string, p = 1): Promise<ViewInfo>
+export async function fetchView(bvid: string, p = 1): Promise<ViewInfo>  // 含 publishedAt（由 pubdate 归一为 YYYY-MM-DD）
 export async function fetchDanmaku(cid: number|string): Promise<string[]>
 export async function fetchComments(aid: number|string): Promise<string[]>
 export async function fetchPlayerInfo(bvid: string, cid: number|string, { cookieHeader = '' } = {}): Promise<{ needLoginSubtitle: boolean, subtitles: any[], viewPoints: any[] }>
@@ -164,6 +164,7 @@ export interface ContentResult {
   title: string
   desc: string
   tags: string[]
+  publishedAt: string  // YYYY-MM-DD；平台未提供时为空字符串
   owner: string
   stat: object
   transcript: string
@@ -264,7 +265,9 @@ export function normalizeKeyPointPoints(value: any): Array<{ text: string, time?
 export function normalizeTemplate(value: any, contentType: string): Record<string, any[]>
 // 按类型只保留对应字段并套上限；steps 支持 { text, time? }
 export function normalizeQuotes(value: any): Array<{ text: string, time?: number }>
-// 只接受数组；每条 ≤80 字，最多 3 条
+// 只接受数组；每条 ≤80 字，最多 3 条；time 为 0 时视为占位并省略
+export function normalizeReviewCards(value: any): Array<{ question: string, answer: string }>
+// 接受 {question, answer} 对象或 "问题::答案" 字符串；问题 ≤80 字且自动补问号，答案 ≤60 字，按问题去重，最多 5 张
 export function normalizeTerms(value: any): Array<{ name: string, definition: string }>
 // 名称 2~12 字（超长直接丢，不截断），解释 ≤80 字，最多 8 条
 export function normalizeResources(value: any): Array<{ name: string, note?: string }>
@@ -274,6 +277,31 @@ export function scoreNoteQuality({ contentQuality, transcriptSource, transcriptL
 // 仅元数据固定 1；完整内容基础 3，人工字幕或长转写 +1，知识点与概念都丰富 +1，知识点太少 -1，夹到 1~5
 export function normalizeQuality(value: any, fallback: number): number
 ```
+
+## lib/text.js
+
+```js
+export const TITLE_SUFFIXES: string[]        // 浏览器/平台标题后缀
+export const TITLE_BRACKET_NOISE: string[]   // 【游戏之外】【全网最全】【4K】等栏目/促销/画质词
+
+export function spaceCjk(value: string): string
+// 在中日韩文字与拉丁字母/数字/% 之间补空格，压缩连续空白；只处理纯文本，不保护 Markdown 或 URL
+export function cleanDisplayTitle(raw: string, { maxLength = 40 } = {}): string
+// 去平台后缀、#话题、栏目/促销/画质方括号；把文件名非法字符转成全角（/ → ／、: → ：）；按标点截到 maxLength 字左右；结果为空时回退原文
+export function pickOriginalTitle(inputTitle: string, classifiedTitle: string): string
+// 优先保留抓取/输入的真实标题；分类模型把简介拼在标题后面时回退真实标题，分类标题仅在真实标题缺失或为空时兜底
+```
+
+`pickOriginalTitle` 决定标题来源：抓取/输入的真实标题优先，分类模型只在真实标题缺失或为「未命名视频」时兜底；分类结果把简介拼在原题后面时回退原题。`cleanDisplayTitle` 再生成用于文件名、索引和通知的展示标题；原始标题另存 state 的 `originalTitle`，完整原题仍进笔记文末 `seen-meta.title`。
+
+## lib/dates.js
+
+```js
+export function normalizePublishedAt(value: any): string
+// Date、YYYYMMDD、unix 秒/毫秒、YYYY-MM-DD 前缀或可解析日期 → 本地 YYYY-MM-DD；空值/纯 0 返回空串
+```
+
+平台抓取层负责把 B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime` 等交给本函数；渲染层只接收归一后的日期。
 
 ## lib/review-schedule.js
 
@@ -363,10 +391,20 @@ export function renderVideoNote(input: {
   duration, relatedNotes, tags, noteRoot,
   contentType, template, quotes, terms, resources, quality, transcriptLength, review
 }): string
-// format 4：不输出封面、封面字段与思维导图；关键数字、核心概念、类型模板、原话、术语与资源只在 contentQuality === 'full' 时渲染
+// format 4：保留旧版渲染，不输出封面、封面字段与思维导图；关键数字、核心概念、类型模板、原话、术语与资源只在 contentQuality === 'full' 时渲染
 // 重整理写 contentSource: 'archive'，并用 transcriptOrigin 保留原始字幕来源；quality 评分与来源统计标签都按 transcriptOrigin 计算
 // review = { due, interval, ease, reps } 会写进 frontmatter，并在「相关笔记」后生成「## 复习卡片」（问题::答案，最多 5 条）
 // 类型模板按 contentType 展开（教程=前置条件+操作步骤、课程=再加练习、观点=论证结构+可质疑之处、科普=机制与证据+常见误解、评测=对比、访谈=人物观点、纪录=事件时间线）；要点与步骤带时间戳，B站/YouTube 生成 t= 链接
+export function renderVideoNoteV5(input: {
+  title, originalTitle, displayTitle, subject, source, platform, bvid, videoId, url, author, createdAt, updatedAt,
+  summary, question, answer, keyPoints, concepts, numbers, discussion, fetchStats, chapters, transcriptOrigin,
+  contentSource, contentQuality, duration, publishedAt, relatedNotes, tags, noteRoot, layout,
+  contentType, template, quotes, terms, resources, quality, transcriptLength, review, reviewCards
+}): string
+// format 5：中文可见属性 + 文末 seen-meta；正文无 H1；摘要 callout；动态编号；概念与术语表（无 ^concept-）；多行复习卡 callout；附录 callout；我的补充固定在最后
+// reviewCards 优先于 question/answer：最多 5 张，问题自动补问号，答案 ≤60 字；没有复习卡时不造假卡
+// contentQuality !== 'full' 时只写摘要、章节和附录，不输出核心知识点、复习卡片、关键数字、概念和模板；没有真实评论/弹幕时讨论区标题用「延伸思考」
+// 旧 renderVideoNote 仍输出 format 4；旧笔记不自动改写
 export function buildTimeLink(url: string, platform: 'bilibili'|'youtube', seconds: number): string
 export function renderSubjectManual(input: { subject, videos, noteRoot, updatedAt }): string
 export function renderOverview(input: { subjects: string[], noteRoot, updatedAt }): string
@@ -585,15 +623,17 @@ issue 类型与级别：
 纯函数、不访问文件系统、不调模型；文件存在性由调用方注入 `exists(relPath)`。
 
 ```js
-export const NOTE_FORMAT = 4      // frontmatter 的 format；低于 4 的旧笔记只告警
+export const NOTE_FORMAT = 4      // format 4 的判定基准；旧笔记只告警
+export const NOTE_FORMAT_V5 = 5   // format 5：中文属性 + seen-meta + 编号 H2 + callout
 export const MANUAL_START = '<!-- MANUAL:START -->'
 export const MANUAL_END = '<!-- MANUAL:END -->'
 
 export function splitFrontmatter(markdown: string): { frontmatter: string, body: string }
 export function clockSeconds(value: string): number     // mm:ss / hh:mm:ss → 秒，非法返回 0
 export function parseNoteMarkdown(markdown: string): {
-  frontmatter, body, meta, format, tags, title, subject, source, url, type,
+  frontmatter, body, meta, format, isV5, tags, title, displayTitle, subject, source, url, type,
   contentType, quality, contentQuality, duration, sections, sectionTitles, sectionMap,
+  subsections, subsectionTitles, subsectionMap,
   conceptEntries, conceptBlockCount, relatedLinks, manualLinkTarget,
   manualMarkersOk, detailsOk, statsUrl,
 }
@@ -607,7 +647,7 @@ export function summarizeFindings(findings): { total, errors, warnings, errorGro
 type Finding = { code: string, level: 'error' | 'warn', message: string }
 ```
 
-严重度：旧格式笔记（`format < NOTE_FORMAT`）的结构缺失与概念漂移降级为 warn，当前格式为 error；标签规则（学科首个、无脏值、主题 2–6 字上限 4、类型枚举、概念 2–8 字上限 6 且与「核心概念」同名）对两种格式都生效。当前格式（format 4）还会检查 `contentType`（缺失 warn、未知 error）与 `quality`（缺失或不在 1–5 warn），并反查装饰回潮：出现 `cover` 字段或封面图报 `legacy-cover`、出现「## 思维导图」报 `legacy-mindmap`、出现「所属章节：」报 `legacy-chapter-tag`。`checkSummaryShape` 还校验 contentType 枚举、keyPoints 的 `{ text, time }`、quotes ≤3 且每条 ≤80 字、terms ≤8 且名称 2–12 字、resources ≤6。
+严重度：旧格式笔记（`format < NOTE_FORMAT`）的结构缺失与概念漂移降级为 warn；当前格式（format 4 或 format 5）为 error。v5 用中文属性 + seen-meta 解析，H2 的 `01` 前缀会去掉再匹配 SECTION_ORDER_V5，H3 收在 `subsections`；概念表通过即视为带块引用（不再依赖 `^concept-`），callout 折叠视为 `detailsOk`，`flashcards` / `review` 作为控制标签跳过。标签规则（学科首个、无脏值、主题 2–6 字上限 4、类型枚举、概念 2–8 字上限 6 且与「核心概念」同名）对两种格式都生效。当前格式（format 4/5）还会检查 `contentType`（缺失 warn、未知 error）与 `quality`（缺失或不在 1–5 warn），并反查装饰回潮：出现 `cover` 字段或封面图报 `legacy-cover`、出现「## 思维导图」报 `legacy-mindmap`、出现「所属章节：」报 `legacy-chapter-tag`。`checkSummaryShape` 还校验 contentType 枚举、keyPoints 的 `{ text, time }`、quotes ≤3 且每条 ≤80 字、terms ≤8 且名称 2–12 字、resources ≤6。
 
 ## lib/note-clean.js
 
@@ -637,15 +677,15 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - `detectSource({url,title})` → `bilibili` / `douyin` / `youtube` / `null`；只做平台识别，不判断是否抖音精选。
 - `isDouyinJingxuanUrl(value)` → boolean：仅 `douyin.com` / `iesdouyin.com` 及其子域的 `/jingxuan[/...]` 路径为 true；普通 `/video/<id>`（即使带 `modal_id`）、用户页、搜索页、首页均为 false。
 - `extractDouyinId(url)` 支持 `modal_id=` 与 `/video/<id>`（用于历史重刷与通用解析，不代表允许自动处理）；`extractYoutubeId(value)` 支持 `watch?v=`、`youtu.be/`、`/shorts/`、`/embed/`、`/live/` 与裸 11 位 ID。
-- `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
+- `fetchDouyinContent({url,title,config,force,onProgress})` 返回与 `fetchContent` 同形的内容对象：`source:'douyin'`、`videoId`、`publishedAt`（来自 `createTime`，归一为 `YYYY-MM-DD`）、`transcript`、`transcriptSource:'whisper'`、`fetchStats`、`chapters:[]`、`comments:[]`、`danmaku:[]`。
 - 准入：`observeOnce` 对非精选抖音直接 skip；`processTitle` 对非精选且非 refresh 的抖音链接返回 `{ ok:false, code:'douyin-not-jingxuan' }`，`POST /api/scan` 返回 400。
 - 页面解析最多两次（第一次失败等 800ms 重试，第二次 `--virtual-time-budget` 放宽到 35 秒）；验证页、作品不存在、无可解析数据分别给 `captcha` / `missing` / `empty` 的明确提示；结果缓存 30 天（`douyinCacheDays`，version 2）。
 - 纯函数（可离线单测）：`buildDouyinChromeArgs({profile,url,attempt})`、`classifyDouyinPage(html)`。
 - 依赖：Chrome（无头解析）、ffmpeg、whisper-cli、`~/.seen/models/ggml-<model>.bin`（默认 large-v3-turbo，可在面板「诊断」里换）。
-- `fetchYoutubeContent({url,title,config,force,onProgress})` 返回同形对象：`source:'youtube'`、`videoId`、`bvid:null`、`transcript`、`transcriptSource:'youtube-subtitle'|'auto-subtitle'|'whisper'`、`fetchStats`、`chapters:[{from,content}]`、`comments:[]`、`danmaku:[]`。
+- `fetchYoutubeContent({url,title,config,force,onProgress})` 返回同形对象：`source:'youtube'`、`videoId`、`bvid:null`、`publishedAt`（来自 yt-dlp 的 `upload_date`/`release_date`/`timestamp`，归一为 `YYYY-MM-DD`）、`transcript`、`transcriptSource:'youtube-subtitle'|'auto-subtitle'|'whisper'`、`fetchStats`、`chapters:[{from,content}]`、`comments:[]`、`danmaku:[]`。
   取内容顺序：人工字幕 → 自动字幕 → 音频 + whisper.cpp → 仅元数据；结果缓存 `~/.seen/cache/youtube/<id>.json`（`youtubeCacheDays`，默认 30 天，缓存带 version 2；缺 `timedTranscript` 的旧缓存会重建，元数据/字幕刷新失败时可沿用旧转写）。
   字幕语言：先原声语言（`parseYoutubeJson` 返回的 `language`，自动字幕先找 `<lang>-orig`），再按中英日韩兜底；人工字幕始终优先于自动字幕。
-  纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。
+  纯函数（可离线单测）：`parseYoutubeJson(raw)`、`pickYoutubeSubtitle(meta)`、`buildYoutubeChapters(chapters)`、`buildYoutubeContent({meta,id,url,transcript,transcriptSource})`、`youtubeWatchUrl(id)`。`buildYoutubeChapters` 会丢弃空标题、`<Untitled Chapter N>` 和 `Untitled` 占位。
 - YouTube 依赖：yt-dlp（元数据与字幕）、ffmpeg + whisper-cli + 模型（仅无字幕时）。
 
 ## lib/ytdlp.js

@@ -13,6 +13,8 @@
  *  - fetchContent 内部捕获所有异常，永不抛出。
  */
 
+import { normalizePublishedAt } from './dates.js'
+
 export const BILI_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
@@ -453,7 +455,7 @@ export async function searchVideo(title) {
 
 /**
  * 获取视频信息；p 为 1-based 分 P 序号，cid 按分 P 选择。
- * 返回 { bvid, aid, cid, page, part, title, desc, owner, stat, pages, subtitle }。
+ * 返回 { bvid, aid, cid, page, part, title, desc, duration, publishedAt, owner, stat, pages, subtitle }。
  */
 export async function fetchView(bvid, p = 1) {
   const id = extractBvid(String(bvid ?? '')) || String(bvid ?? '').trim()
@@ -484,6 +486,7 @@ export async function fetchView(bvid, p = 1) {
     title: String(d.title ?? ''),
     desc: String(d.desc ?? ''),
     duration: toNumber(selected?.duration) ?? toNumber(d.duration) ?? 0,
+    publishedAt: normalizePublishedAt(d.pubdate),
     owner: String(d.owner?.name ?? ''),
     stat: d.stat && typeof d.stat === 'object' ? d.stat : {},
     pages,
@@ -709,6 +712,7 @@ function emptyContent(overrides = {}) {
     part: '',
     url: '',
     duration: 0,
+    publishedAt: '',
     title: '',
     desc: '',
     tags: [],
@@ -849,6 +853,7 @@ export async function fetchContent(input = {}) {
       part,
       url: canonicalVideoUrl(bvid, p),
       duration: Number(view?.duration) || 0,
+      publishedAt: view?.publishedAt || '',
       title: buildBiliDisplayTitle({ seriesTitle: view?.title || displayTitle, part, page: p }),
       desc,
       tags,

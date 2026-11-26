@@ -9,6 +9,7 @@ import {
   normalizeQuality,
   normalizeQuotes,
   normalizeResources,
+  normalizeReviewCards,
   normalizeTemplate,
   normalizeTerms,
   scoreNoteQuality,
@@ -81,7 +82,23 @@ test('normalizeQuotes keeps at most three short quotes', () => {
   ])
   assert.equal(quotes.length, 3)
   assert.equal(quotes[0].time, 1)
+  assert.equal(normalizeQuotes([{ text: '零秒', time: 0 }])[0].time, undefined)
   assert.equal(normalizeQuotes('bad').length, 0)
+})
+
+test('normalizeReviewCards keeps real short Q&A and adds question marks', () => {
+  const cards = normalizeReviewCards([
+    { question: '3A 是什么', answer: '高投入游戏的营销标签' },
+    '买断制和持续运营有什么区别？::一个先付费，一个靠长期内购',
+    { question: '', answer: '空问题' },
+    { question: '重复？', answer: '答案' },
+    { question: '重复？', answer: '另一个答案' },
+  ])
+  assert.equal(cards.length, 3)
+  assert.equal(cards[0].question, '3A 是什么？')
+  assert.equal(cards[1].question, '买断制和持续运营有什么区别？')
+  assert.equal(cards.filter((card) => card.question === '重复？').length, 1)
+  assert.equal(normalizeReviewCards('bad').length, 0)
 })
 
 test('normalizeTerms filters bad names and caps definitions', () => {

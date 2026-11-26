@@ -29,14 +29,16 @@ test('normalizeConcepts caps at 6 and drops bracketed names', () => {
 
 test('normalizeNumbers drops empty meaning and caps at 6', () => {
   const list = normalizeNumbers([
-    { value: '260 词', meaning: '道歉信篇幅' },
-    { value: '10 天', meaning: '' },
+    { value: '260 词', meaning: '道歉信篇幅', time: 123.4 },
+    { value: '10 天', meaning: '', time: 0 },
     '纯字符串',
     ...Array.from({ length: 10 }, (_, i) => ({ value: `${i} 个`, meaning: `含义${i}` })),
   ])
   assert.ok(list.length <= 6)
   assert.equal(list[0].value, '260 词')
+  assert.equal(list[0].time, 123)
   assert.ok(!list.some((item) => item.meaning === ''))
+  assert.ok(!list.some((item) => item.time === 0))
 
   const meta = normalizeNumbers([
     { value: '12:19', meaning: '视频总时长' },
@@ -61,6 +63,20 @@ test('normalizeSummary keeps question, answer, concepts and numbers', () => {
   assert.equal(s.answer, '260 词以内')
   assert.equal(s.concepts.length, 1)
   assert.equal(s.numbers.length, 1)
+})
+
+test('normalizeSummary keeps 3-5 review cards', () => {
+  const s = normalizeSummary({
+    summary: '讲 3A 成本',
+    keyPoints: [{ title: '成本', points: ['涨了'] }],
+    reviewCards: [
+      { question: '3A 成本涨了多少', answer: '约 200 倍' },
+      { question: '回本线怎么变', answer: '从 10 万份到 900 万份' },
+    ],
+  }, '标题')
+  assert.equal(s.reviewCards.length, 2)
+  assert.equal(s.reviewCards[0].question, '3A 成本涨了多少？')
+  assert.equal(s.reviewCards[0].answer, '约 200 倍')
 })
 
 test('normalizeSummary falls back to empty new fields', () => {

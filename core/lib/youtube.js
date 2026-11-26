@@ -16,6 +16,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ensureYtDlp, findYtDlp } from './ytdlp.js'
 import { buildTimedTranscript, parseSrtSegments } from './transcript.js'
+import { normalizePublishedAt } from './dates.js'
 import { ensureFfmpeg, ensureWhisperModel, estimateTranscribeMinutes, findFfmpeg, transcribeAudio } from './whisper.js'
 import { extractYoutubeId, sourceLabel } from './source.js'
 
@@ -73,7 +74,7 @@ export function buildYoutubeChapters(chapters) {
       from: Math.max(0, Math.floor(Number(item.start_time) || 0)),
       content: String(item.title || '').trim(),
     }))
-    .filter((item) => item.content)
+    .filter((item) => item.content && !/^<.*>$/.test(item.content) && !/^untitled\b/i.test(item.content))
     .sort((a, b) => a.from - b.from)
 }
 
@@ -94,6 +95,7 @@ export function parseYoutubeJson(raw) {
     author: String(data.uploader || data.channel || '').trim(),
     language: String(data.language || '').trim(),
     duration: Number(data.duration) || 0,
+    publishedAt: normalizePublishedAt(data.upload_date || data.release_date || data.timestamp),
     desc: String(data.description || '').trim(),
     tags: Array.isArray(data.tags) ? data.tags.map(String).filter(Boolean) : [],
     isLive: Boolean(data.is_live),
@@ -292,6 +294,7 @@ export function buildYoutubeContent({ meta = {}, id, url, transcript = '', timed
     desc,
     tags,
     duration: Number(meta.duration) || 0,
+    publishedAt: String(meta.publishedAt || ''),
     chapters,
     transcript: text,
     timedTranscript: String(timedTranscript || ''),

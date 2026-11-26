@@ -113,8 +113,11 @@ async function main() {
       console.log('读取失败：' + relOf(file) + '（' + (error?.message || error) + '）')
       continue
     }
-    if (!/type:\s*"?video-note"?/.test(text.slice(0, 900))) continue
-    notes.push({ relPath: relOf(file), text, parsed: parseNoteMarkdown(text) })
+    const relPath = relOf(file)
+    if (relPath.startsWith(String(config.noteRoot).replace(/\/+$/, '') + '/资料/')) continue
+    const parsed = parseNoteMarkdown(text)
+    if (!/type:\s*"?video-note"?/.test(text.slice(0, 900)) && parsed.meta?.type !== 'video-note') continue
+    notes.push({ relPath: relOf(file), text, parsed })
   }
 
   if (checkNotes) {
@@ -192,8 +195,10 @@ async function main() {
     for (const note of notes) {
       const record = stateByPath.get(note.relPath)
       if (!record) continue
-      const stateTags = Array.isArray(record.tags) ? record.tags.map(String) : []
-      const noteTags = note.parsed.tags
+      const controlTags = new Set(['flashcards', 'review'])
+      const stateTags = (Array.isArray(record.noteTags) ? record.noteTags : (Array.isArray(record.tags) ? record.tags : []))
+        .map(String).filter((tag) => !controlTags.has(tag))
+      const noteTags = note.parsed.tags.filter((tag) => !controlTags.has(tag))
       const sameSet = stateTags.length === noteTags.length && [...stateTags].sort().join('|') === [...noteTags].sort().join('|')
       if (stateTags.length && !sameSet) {
         stateFindings.push({ code: 'state-tags-drift', level: 'error', message: '状态与笔记的标签不一致：' + note.parsed.title })

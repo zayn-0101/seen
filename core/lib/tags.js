@@ -91,7 +91,30 @@ export function normalizeTagTypes(value) {
   return result
 }
 
-/** 组装最终标签：学科 → 主题 → 类型 → 概念；与学科同 key 的主题让位。 */
+/** 组装写进笔记的显示标签：只保留学科和主题；类型进正文元信息，概念进概念表。 */
+export function mergeNoteTags({ subject = '', themes = [], extras = [] } = {}) {
+  const result = []
+  const seen = new Set()
+  const push = (name) => {
+    const key = conceptKey(name)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    result.push(name)
+  }
+
+  const subjectName = normalizeTagName(subject)
+  if (subjectName) push(subjectName)
+  for (const theme of normalizeThemes(themes)) push(theme)
+  for (const extra of Array.isArray(extras) ? extras : []) {
+    const raw = String(extra ?? '').trim()
+    if (!raw || raw.includes('/')) continue
+    const name = normalizeTagName(raw)
+    if (name) push(name)
+  }
+  return result
+}
+
+/** 组装完整标签：学科 → 主题 → 类型 → 概念；与学科同 key 的主题让位。 */
 export function mergeTags({ subject = '', themes = [], types = [], concepts = [] } = {}) {
   const result = []
   const seen = new Set()

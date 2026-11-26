@@ -15,6 +15,7 @@ const META_JSON = JSON.stringify({
   title: 'But what is a neural network?',
   uploader: '3Blue1Brown',
   duration: 1120,
+  upload_date: '20231118',
   description: 'This is the first video in a series.',
   tags: ['neural network', 'deep learning'],
   thumbnail: 'https://i.ytimg.com/vi/aircAruvnKk/maxresdefault.jpg',
@@ -58,6 +59,7 @@ test('parseYoutubeJson normalises yt-dlp output', () => {
   assert.equal(meta.title, 'But what is a neural network?')
   assert.equal(meta.author, '3Blue1Brown')
   assert.equal(meta.duration, 1120)
+  assert.equal(meta.publishedAt, '2023-11-18')
   assert.equal(meta.tags.length, 2)
   assert.equal(meta.thumbnail, 'https://i.ytimg.com/vi/aircAruvnKk/maxresdefault.jpg')
   assert.deepEqual(meta.chapters, [
@@ -98,6 +100,7 @@ test('buildYoutubeChapters maps start_time and drops empty titles', () => {
     { from: 90, content: 'B' },
   ])
   assert.deepEqual(buildYoutubeChapters([{ start_time: 5, title: '  ' }]), [])
+  assert.deepEqual(buildYoutubeChapters([{ start_time: 0, title: '<Untitled Chapter 1>' }, { start_time: 9, title: 'Untitled' }]), [])
   assert.deepEqual(buildYoutubeChapters(null), [])
 })
 
@@ -110,6 +113,7 @@ test('buildYoutubeContent mirrors the fetchContent shape', () => {
   assert.equal(full.bvid, null)
   assert.equal(full.url, 'https://www.youtube.com/watch?v=aircAruvnKk')
   assert.equal(full.author, '3Blue1Brown')
+  assert.equal(full.publishedAt, '2023-11-18')
   assert.equal(full.transcript, '字幕内容')
   assert.equal(full.transcriptSource, 'youtube-subtitle')
   assert.equal(full.contentSource, 'youtube-subtitle')

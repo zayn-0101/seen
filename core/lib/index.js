@@ -29,9 +29,10 @@ import { videoIdentity, detectSource, extractDouyinId, extractYoutubeId, isDouyi
 import { fetchDouyinContent, findChrome, findFfmpeg } from './douyin.js'
 import { findWhisperCli, findWhisperModel } from './whisper.js'
 import { fetchYoutubeContent, probeYoutube, youtubeWatchUrl } from './youtube.js'
-import { renderVideoNote } from './render.js'
+import { renderVideoNoteV5 } from './render.js'
+import { cleanDisplayTitle, pickOriginalTitle } from './text.js'
 import { findRelatedVideos } from './concept.js'
-import { buildTagVocabulary, mergeTags, mergeTagInVideos, rememberTags } from './tags.js'
+import { buildTagVocabulary, mergeNoteTags, mergeTags, mergeTagInVideos, rememberTags } from './tags.js'
 import { buildHistoryFromState, findDuplicateVideos, rebuildKnowledgePages as rebuildPages } from './rebuild.js'
 import { answerQuestion } from './ask.js'
 import { searchVault, listMarkdownFiles, listMarkdownFilesDetailed } from './vault-search.js'
@@ -213,6 +214,15 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   function parseFrontmatterReview(text) {
+    const seen = String(text || '').match(/<!--\s*seen-meta\s*\n([\s\S]*?)\n-->/)
+    if (seen) {
+      try {
+        const meta = JSON.parse(seen[1])
+        if (meta?.review && typeof meta.review === 'object') return meta.review
+      } catch {
+        // 继续尝试旧版 frontmatter
+      }
+    }
     const match = String(text || '').match(/^---\r?\n([\s\S]*?)\r?\n---/)
     if (!match) return null
     const line = match[1].match(/^review:\s*(.+)$/m)
@@ -624,7 +634,8 @@ export function apply(ctx, rawConfig = {}) {
       }
 
       const fallbackTitle = rawTitle || inputBvid || inputVideoId || '未命名视频'
-      const title = (content?.matched && content.title && !/^https?:\/\//i.test(content.title)) ? content.title : (source === 'bilibili' ? cleanBiliTitle(fallbackTitle) : cleanTitle(fallbackTitle))
+      const fetchedTitle = (content?.matched && content.title && !/^https?:\/\//i.test(content.title)) ? content.title : ''
+      const title = pickOriginalTitle(rawTitle, fetchedTitle) || (source === 'bilibili' ? cleanBiliTitle(fallbackTitle) : cleanTitle(fallbackTitle))
       displayTitle = title
       const desc = content?.desc || ''
       const tags = content?.tags || []
@@ -704,7 +715,9 @@ export function apply(ctx, rawConfig = {}) {
       const contentForSummary = content
         ? { ...content, transcript, transcriptSource, timedTranscript }
         : (transcript ? { transcript, transcriptSource } : null)
-      const finalTitle = cls.title || title
+      const originalTitle = pickOriginalTitle(title, cls.title)
+      const finalTitle = cleanDisplayTitle(originalTitle)
+      displayTitle = finalTitle
       emit('summarizing', { title: finalTitle, subject, transcriptLength: transcript.length })
       const summary = await summarize(ctx, config, {
         title: finalTitle, subject, keywords, content: contentForSummary, transcript, transcriptSource,
@@ -747,16 +760,22 @@ export function apply(ctx, rawConfig = {}) {
       const previousCreatedAt = Number(previousRecord?.createdAt)
       const createdAt = Number.isFinite(previousCreatedAt) && previousCreatedAt > 0 ? previousCreatedAt : processedAt
       const noteReview = previousRecord?.review && previousRecord.review.due ? previousRecord.review : initialReview(createdAt)
-      // 四层标签：学科 → 主题 → 类型 → 概念，统一由 tags.js 组装
-      const noteTags = mergeTags({
+      // 完整四层标签供状态、索引和面板使用；笔记只显示学科 + 主题。
+      const allTags = mergeTags({
         subject,
         themes: summary.tags?.themes,
         types: summary.tags?.types,
         concepts: noteConcepts,
       })
+      const noteTags = mergeNoteTags({
+        subject,
+        themes: summary.tags?.themes,
+      })
 
-      const note = renderVideoNote({
+      const note = renderVideoNoteV5({
         title: finalTitle,
+        originalTitle,
+        displayTitle: finalTitle,
         subject,
         source,
         platform: source,
@@ -765,14 +784,17 @@ export function apply(ctx, rawConfig = {}) {
         url: content?.url || input?.url || '',
         author: content?.owner || content?.author || '',
         createdAt,
+        updatedAt: processedAt,
         summary: summary.summary,
         question: summary.question,
         answer: summary.answer,
+        reviewCards: summary.reviewCards,
         keyPoints: summary.keyPoints,
         concepts: noteConcepts,
         numbers: noteNumbers,
         discussion: summary.discussion,
         duration: Number(content?.duration) || 0,
+        publishedAt: content?.publishedAt || '',
         contentType: noteContentType,
         template: noteTemplate,
         quotes: noteQuotes,
@@ -784,6 +806,7 @@ export function apply(ctx, rawConfig = {}) {
         relatedNotes,
         fetchStats: content?.fetchStats || null,
         tags: noteTags,
+        includeConceptTags: false,
         chapters: noteChapters,
         transcriptOrigin: noteTranscriptOrigin,
         contentSource: transcriptSource || 'metadata',
@@ -872,11 +895,14 @@ export function apply(ctx, rawConfig = {}) {
       if (!Array.isArray(state.subjects[subject].videos)) state.subjects[subject].videos = []
       const videoRecord = {
         title: finalTitle,
+        originalTitle,
+        displayTitle: finalTitle,
         source,
         bvid: content?.bvid || inputBvid || '',
         videoId: content?.videoId || inputVideoId || '',
         page: notePage,
         cid: content?.cid || null,
+        publishedAt: content?.publishedAt || '',
         url: content?.url || input?.url || '',
         author: content?.owner || content?.author || '',
         notePath: writeResult.relPath,
@@ -889,7 +915,8 @@ export function apply(ctx, rawConfig = {}) {
         conceptDetails: noteConcepts.map((item) => ({ name: item.name, brief: item.brief || '', aliases: Array.isArray(item.aliases) ? item.aliases : [] })),
         terms: summary.terms || [],
         template: summary.template || {},
-        tags: noteTags,
+        tags: allTags,
+        noteTags,
         contentType: noteContentType,
         quality: noteQuality,
         review: noteReview,
@@ -918,7 +945,7 @@ export function apply(ctx, rawConfig = {}) {
           videoId: content?.videoId || inputVideoId || '',
           url: content?.url || input?.url || '',
           keywords,
-          tags: noteTags,
+          tags: allTags,
           platformLabel: sourceLabel(source),
         })
         state.stats.lastMnemon = { ok: Boolean(m?.ok), at: Date.now(), error: m?.error || '' }
@@ -941,7 +968,7 @@ export function apply(ctx, rawConfig = {}) {
       state.lastRunAt = Date.now()
       state.stats.processed += 1
       // 词表只累计主题词，供下一篇提示词复用
-      rememberTags(state, noteTags)
+      rememberTags(state, allTags)
       clearFailure(state, activeKey)
       pruneSeen(state)
       delete state.pendingVideos[pendingKey]
@@ -1430,6 +1457,7 @@ export function apply(ctx, rawConfig = {}) {
       bvid: archiveBvid,
       videoId: archiveVideoId,
       page: archivePage,
+      publishedAt: found.video.publishedAt || noteMeta?.meta?.publishedAt || '',
       owner: noteMeta?.meta?.author || found.video.author || '',
       duration: Number(noteMeta?.duration) || 0,
       chapters: [],

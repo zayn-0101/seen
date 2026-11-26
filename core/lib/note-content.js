@@ -241,9 +241,43 @@ export function normalizeQuotes(value) {
     if (!text || seen.has(text)) continue;
     seen.add(text);
     const quote = { text };
-    if (time !== null) quote.time = time;
+    // time 0 多半是模型没拿到时间时的占位，不如不显示假时间链接。
+    if (time !== null && time > 0) quote.time = time;
     out.push(quote);
     if (out.length >= TEMPLATE_LIMITS.quotes) break;
+  }
+  return out;
+}
+
+export function normalizeReviewCards(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of value) {
+    let question = '';
+    let answer = '';
+    if (typeof item === 'string') {
+      const index = item.indexOf('::');
+      if (index <= 0) continue;
+      question = item.slice(0, index);
+      answer = item.slice(index + 2);
+    } else if (item && typeof item === 'object') {
+      question = item.question ?? item.q ?? '';
+      answer = item.answer ?? item.a ?? '';
+    } else {
+      continue;
+    }
+    question = cleanText(question, 80);
+    answer = cleanText(answer, 60);
+    if (!question || !answer) continue;
+    if (!/[?？]$/.test(question)) {
+      question = question.replace(/[\s，,。．.；;：:、]+$/u, '') + '？';
+    }
+    const key = question.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ question, answer });
+    if (out.length >= 5) break;
   }
   return out;
 }

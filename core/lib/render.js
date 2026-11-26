@@ -11,12 +11,15 @@
  */
 
 import { conceptKey } from './concept.js'
+import { normalizePublishedAt } from './dates.js'
 import {
+  CONTENT_TYPES,
   normalizeContentType,
   normalizeKeyPointPoints,
   normalizeQuality,
   normalizeQuotes,
   normalizeResources,
+  normalizeReviewCards,
   normalizeTemplate,
   normalizeTerms,
   scoreNoteQuality,
@@ -24,6 +27,7 @@ import {
 } from './note-content.js'
 import { NOTE_FORMAT } from './note-check.js'
 import { manualNoteLinkTarget, normalizeNoteLayout } from './paths.js'
+import { spaceCjkMarkdown } from './text.js'
 
 export const AUTO_START = '<!-- AUTO:START -->'
 export const AUTO_END = '<!-- AUTO:END -->'
@@ -157,7 +161,7 @@ function normalizeChapters(chapters) {
   return chapters
     .filter((item) => item && typeof item === 'object')
     .map((item) => ({ from: Number(item.from) || 0, content: cleanInline(item.content) }))
-    .filter((item) => item.content)
+    .filter((item) => item.content && !/^<.*>$/.test(item.content) && !/^untitled\b/i.test(item.content))
 }
 
 function cleanInline(value) {
@@ -288,7 +292,10 @@ export function normalizeNumbers(value) {
     const key = figure + '|' + meaning
     if (seen.has(key)) continue
     seen.add(key)
-    result.push({ value: figure.slice(0, 30), meaning })
+    const time = Number(raw.time ?? raw.start)
+    const entry = { value: figure.slice(0, 30), meaning }
+    if (Number.isFinite(time) && time >= 0) entry.time = Math.floor(time)
+    result.push(entry)
     if (result.length >= 6) break
   }
   return result
@@ -366,7 +373,7 @@ function normalizeSubjects(subjects) {
  * 标签由 tags.js 按「学科 → 主题 → 类型 → 概念」组装好后传入，这里只做清洗与去重。
  * 不动形态：把空格换成连字符会毁掉「概念/被动语态」这类嵌套标签。
  */
-function normalizeTags(value, subject, concepts = []) {
+function normalizeTags(value, subject, concepts = [], { includeConceptTags = true } = {}) {
   const tags = []
   const push = (item) => {
     const tag = cleanInline(item)
@@ -378,7 +385,7 @@ function normalizeTags(value, subject, concepts = []) {
     for (const item of value.split(/[,，、]/)) push(item)
   }
   // 调用方已经拼过概念标签就不再重复，否则按核心概念补齐
-  if (!tags.some((tag) => tag.startsWith('概念/'))) {
+  if (includeConceptTags && !tags.some((tag) => tag.startsWith('概念/'))) {
     for (const item of Array.isArray(concepts) ? concepts : []) {
       const name = cleanInline(typeof item === 'string' ? item : item?.name).replace(/[/\\#^|\s]+/g, '')
       if (name) push('概念/' + name)
@@ -454,6 +461,7 @@ export function renderVideoNote(input = {}) {
   const url = String(source.url ?? '').trim()
   const author = String(source.author ?? '').trim()
   const createdAt = formatDate(source.createdAt ?? Date.now())
+  const updatedAt = formatDate(source.updatedAt ?? source.createdAt ?? Date.now())
   const noteRoot = cleanNoteRoot(source.noteRoot)
   const summary = oneLine(source.summary)
   const question = oneLine(source.question)
@@ -463,7 +471,7 @@ export function renderVideoNote(input = {}) {
   const stats = normalizeFetchStats(source.fetchStats)
   const chapters = normalizeChapters(source.chapters)
   const duration = toCount(source.duration)
-  const publishedAt = cleanInline(source.publishedAt)
+  const publishedAt = cleanInline(normalizePublishedAt(source.publishedAt))
   const contentSource = cleanInline(source.contentSource) || 'metadata'
   const transcriptOrigin = cleanInline(source.transcriptOrigin) || contentSource
   const transcriptOriginName = transcriptOriginLabel(transcriptOrigin)
@@ -505,8 +513,8 @@ export function renderVideoNote(input = {}) {
     url,
     author,
     created: createdAt,
-    updated: createdAt,
-    tags: normalizeTags(source.tags, subject, concepts),
+    updated: updatedAt,
+    tags: normalizeTags(source.tags, subject, concepts, { includeConceptTags: source.includeConceptTags !== false }),
     contentSource,
     contentQuality,
     contentType,
@@ -727,6 +735,367 @@ export function renderVideoNote(input = {}) {
   lines.push('</details>', '')
 
   return lines.join('\n')
+}
+
+const CONTENT_TYPE_LABELS = Object.fromEntries(CONTENT_TYPES.map((item) => [item.id, item.label]))
+
+function contentTypeLabel(value) {
+  const id = normalizeContentType(value)
+  return CONTENT_TYPE_LABELS[id] || '其他'
+}
+
+function platformLabel(platform) {
+  const id = String(platform || '').toLowerCase()
+  if (id === 'youtube') return 'YouTube'
+  if (id === 'douyin') return '抖音精选'
+  return 'B 站'
+}
+
+function subtitleLabel(contentSource, transcriptOriginName) {
+  const id = cleanInline(contentSource)
+  if (id === 'ai-subtitle') return 'B 站 AI 字幕'
+  if (id === 'up-subtitle') return 'UP 主字幕'
+  if (id === 'whisper') return '本地 Whisper 转写'
+  if (id === 'youtube-subtitle') return 'YouTube 字幕'
+  if (id === 'auto-subtitle') return 'YouTube 自动字幕'
+  if (id === 'archive') return '本地字幕存档' + (transcriptOriginName ? '（原文：' + transcriptOriginName + '）' : '')
+  return '无（仅简介与讨论）'
+}
+
+function noteAuthorLabel(platform) {
+  const id = String(platform || '').toLowerCase()
+  if (id === 'youtube') return '频道'
+  if (id === 'douyin') return '作者'
+  return 'UP 主'
+}
+
+function buildReviewPairs(source, fallbackCards) {
+  const explicit = normalizeReviewCards(source.reviewCards)
+  const cards = explicit.length > 0 ? explicit : normalizeReviewCards(fallbackCards)
+  return cards.slice(0, 5)
+}
+
+function renderSeenMeta(meta) {
+  return '<!-- seen-meta\n' + JSON.stringify(meta, null, 2) + '\n-->'
+}
+
+function renderV5Numbers(numbers, url, platform) {
+  const hasTime = numbers.some((item) => Number.isFinite(item.time))
+  const lines = ['### 关键数字', '']
+  if (hasTime) {
+    lines.push('| 时间 | 数字 | 含义 |', '| --- | --- | --- |')
+    for (const item of numbers) {
+      const label = Number.isFinite(item.time) ? formatDuration(item.time) : ''
+      const link = Number.isFinite(item.time) ? buildTimeLink(url, platform, item.time) : ''
+      const timeCell = link ? '[' + label + '](' + link + ')' : label
+      lines.push('| ' + escapeCell(timeCell) + ' | ' + escapeCell(item.value) + ' | ' + escapeCell(item.meaning) + ' |')
+    }
+  } else {
+    lines.push('| 数字 | 含义 |', '| --- | --- |')
+    for (const item of numbers) lines.push('| ' + escapeCell(item.value) + ' | ' + escapeCell(item.meaning) + ' |')
+  }
+  lines.push('')
+  return lines
+}
+
+function renderV5TemplateBlock(section, value, { url, platform }) {
+  if (!section || !['prerequisites', 'steps', 'exercises', 'comparisons', 'people', 'timeline'].includes(section.key)) return []
+  const items = Array.isArray(value) ? value : []
+  if (!items.length) return []
+  const lines = ['### ' + section.title, '']
+  if (section.kind === 'ordered') {
+    items.forEach((item, index) => {
+      const entry = typeof item === 'string' ? { text: item } : item
+      const text = cleanInline(entry?.text ?? entry?.content ?? '')
+      if (text) lines.push((index + 1) + '. ' + timePrefix(entry?.time, url, platform) + text)
+    })
+  } else if (section.kind === 'list') {
+    for (const item of items) {
+      const text = typeof item === 'string' ? item : item?.text ?? item?.content ?? ''
+      if (cleanInline(text)) lines.push('- ' + cleanInline(text))
+    }
+  } else {
+    const spec = TEMPLATE_TABLE_SPECS[section.key]
+    if (!spec) return []
+    lines.push('| ' + spec.headers.join(' | ') + ' |')
+    lines.push('| ' + spec.headers.map(() => '---').join(' | ') + ' |')
+    for (const item of items) {
+      if (section.key === 'timeline') {
+        const label = cleanInline(item?.label) || (Number.isFinite(Number(item?.time)) ? formatDuration(item.time) : '')
+        const event = cleanInline(item?.event ?? item?.text ?? '')
+        if (event) lines.push('| ' + escapeCell(label) + ' | ' + escapeCell(event) + ' |')
+        continue
+      }
+      const cells = spec.fields.map((field) => escapeCell(item?.[field]))
+      lines.push('| ' + cells.join(' | ') + ' |')
+    }
+  }
+  lines.push('')
+  return lines
+}
+
+function calloutBlock(type, title, bodyLines) {
+  const body = Array.isArray(bodyLines) ? bodyLines.filter((line) => String(line ?? '').trim() !== '') : []
+  return ['> [!' + type + ']- ' + title, '>', ...body.map((line) => '> ' + line)]
+}
+
+/** 视频笔记 v5：中文属性 + 摘要 + 速览 + 核心知识点 + 类型补充 + 概念表 + 折叠附录。 */
+export function renderVideoNoteV5(input = {}) {
+  const source = isPlainObject(input) ? input : {}
+  const originalTitle = cleanInline(source.originalTitle) || cleanInline(source.title) || DEFAULT_TITLE
+  const displayTitle = cleanInline(source.displayTitle) || cleanInline(source.title) || originalTitle
+  const subject = cleanInline(source.subject) || DEFAULT_SUBJECT
+  const bvid = String(source.bvid ?? '').trim()
+  const videoId = String(source.videoId ?? '').trim()
+  const platform = cleanInline(source.source || source.platform) || 'bilibili'
+  const url = String(source.url ?? '').trim()
+  const author = String(source.author ?? '').trim()
+  const createdAt = formatDate(source.createdAt ?? Date.now())
+  const updatedAt = formatDate(source.updatedAt ?? source.createdAt ?? Date.now())
+  const noteRoot = cleanNoteRoot(source.noteRoot)
+  const summary = oneLine(source.summary)
+  const question = oneLine(source.question)
+  const answer = oneLine(source.answer)
+  // 元数据版没有字幕支撑，知识点和复习卡片容易被模型从简介编出来，整节省略。
+  const contentQuality = cleanInline(source.contentQuality) || 'metadata-only'
+  const keyPoints = contentQuality === 'full' ? normalizeKeyPoints(source.keyPoints) : []
+  const discussion = normalizeStringList(source.discussion)
+  const stats = normalizeFetchStats(source.fetchStats)
+  const chapters = normalizeChapters(source.chapters)
+  const duration = toCount(source.duration)
+  const publishedAt = cleanInline(normalizePublishedAt(source.publishedAt))
+  const contentSource = cleanInline(source.contentSource) || 'metadata'
+  const transcriptOrigin = cleanInline(source.transcriptOrigin) || contentSource
+  const transcriptOriginName = transcriptOriginLabel(transcriptOrigin)
+  const concepts = contentQuality === 'full' ? normalizeConcepts(source.concepts) : []
+  const numbers = contentQuality === 'full' ? normalizeNumbers(source.numbers) : []
+  const contentType = normalizeContentType(source.contentType)
+  const template = contentQuality === 'full' ? normalizeTemplate(source.template, contentType) : {}
+  const quotes = contentQuality === 'full' ? normalizeQuotes(source.quotes) : []
+  const terms = contentQuality === 'full' ? normalizeTerms(source.terms) : []
+  const resources = contentQuality === 'full' ? normalizeResources(source.resources) : []
+  const transcriptLength = toCount(source.transcriptLength)
+  const quality = normalizeQuality(
+    source.quality,
+    scoreNoteQuality({
+      contentQuality,
+      transcriptSource: transcriptOrigin,
+      transcriptLength,
+      keyPointCount: keyPoints.length,
+      conceptCount: concepts.length,
+    })
+  )
+  const relatedNotes = (Array.isArray(source.relatedNotes) ? source.relatedNotes : [])
+    .map((item) => ({
+      title: cleanInline(item?.title),
+      notePath: String(item?.notePath ?? '').trim(),
+      reason: cleanInline(item?.reason),
+    }))
+    .filter((item) => item.title)
+    .slice(0, 5)
+  const review = normalizeReviewState(source.review)
+  // v5 只接受真正的问答；没有问答就不硬凑「标题::首条要点」的假卡片。
+  const legacyCards = buildReviewCards({ question, answer, keyPoints: [] })
+  const reviewPairs = contentQuality === 'full' ? buildReviewPairs(source, legacyCards) : []
+  const noteTags = normalizeTags(source.tags, subject, [], { includeConceptTags: false })
+  if (reviewPairs.length > 0 && !noteTags.includes('flashcards')) noteTags.push('flashcards')
+
+  const manualTarget = manualNoteLinkTarget({ noteRoot, subject, layout: normalizeNoteLayout(source.layout) })
+  const platformName = platformLabel(platform)
+  const frontmatterData = {
+    平台: platformName,
+    类型: contentTypeLabel(contentType),
+  }
+  if (author) frontmatterData[noteAuthorLabel(platform)] = author
+  if (duration > 0) frontmatterData['时长'] = formatDuration(duration)
+  if (publishedAt) frontmatterData['发布时间'] = publishedAt
+  frontmatterData['字幕'] = subtitleLabel(contentSource, transcriptOriginName)
+  if (url) frontmatterData['视频链接'] = url
+  frontmatterData['学科'] = subject
+  frontmatterData['笔记创建'] = createdAt
+  frontmatterData['笔记更新'] = updatedAt
+  frontmatterData['tags'] = noteTags
+  frontmatterData['cssclasses'] = ['seen-note']
+  const frontmatter = renderFrontmatter(frontmatterData)
+
+  const lines = [frontmatter.trimEnd(), '']
+  if (contentQuality !== 'full') {
+    lines.push('> [!warning] 内容依据有限', '> 未获取到视频字幕/转写，本文主要基于简介、标签和观众讨论整理，知识点可能不完整或有偏差。', '')
+  }
+  const abstract = ['> [!abstract] 摘要', '> **概述**', '> ' + (summary || '（暂无摘要）')]
+  if (question) abstract.push('>', '> **核心问题**', '> ' + question)
+  if (answer) abstract.push('>', '> **核心结论**', '> ' + answer)
+  lines.push(...abstract, '')
+  lines.push('学科：[[' + manualTarget + '|' + subject + ' 学习手册]]', '')
+
+  const speed = []
+  if (numbers.length > 0) speed.push(...renderV5Numbers(numbers, url, platform))
+  if (chapters.length > 0) {
+    speed.push('### 章节', '')
+    for (const chapter of chapters) {
+      const label = formatDuration(chapter.from)
+      const link = buildTimeLink(url, platform, chapter.from)
+      speed.push(link ? '- [' + label + '](' + link + ') ' + chapter.content : '- ' + label + ' ' + chapter.content)
+    }
+    speed.push('')
+  }
+  for (const section of templateSections(contentType)) {
+    speed.push(...renderV5TemplateBlock(section, template[section.key], { url, platform }))
+  }
+
+  const knowledge = []
+  if (keyPoints.length === 0) {
+    knowledge.push('- （暂无知识点）', '')
+  } else {
+    for (const topic of keyPoints) {
+      const topicLink = Number.isFinite(topic.time) ? buildTimeLink(url, platform, topic.time) : ''
+      knowledge.push(topicLink
+        ? '### ' + topic.title + ' [' + formatDuration(topic.time) + '](' + topicLink + ')'
+        : '### ' + topic.title, '')
+      if (topic.points.length === 0) knowledge.push('- （暂无要点）')
+      else {
+        for (const point of topic.points) {
+          knowledge.push('- ' + timePrefix(point?.time, url, platform) + cleanInline(point?.text ?? point))
+        }
+      }
+      knowledge.push('')
+    }
+  }
+
+  const extra = []
+  const supplementSection = templateSections(contentType).find((item) => item.key === 'doubts' || item.key === 'misconceptions')
+  if (supplementSection) {
+    const items = Array.isArray(template[supplementSection.key]) ? template[supplementSection.key] : []
+    if (items.length > 0) {
+      for (const item of items) {
+        const text = typeof item === 'string' ? item : item?.text ?? item?.content ?? ''
+        if (cleanInline(text)) extra.push('- ' + cleanInline(text))
+      }
+      extra.push('')
+    }
+  }
+
+  const conceptRows = []
+  const conceptKeys = new Set()
+  const conceptNameKeys = []
+  for (const concept of concepts) {
+    const key = conceptKey(concept.name)
+    if (key) {
+      conceptKeys.add(key)
+      conceptNameKeys.push(key)
+    }
+    for (const alias of concept.aliases) {
+      const aliasKey = conceptKey(alias)
+      if (aliasKey) conceptKeys.add(aliasKey)
+    }
+    const aliasText = concept.aliases.length ? '（' + concept.aliases.join('、') + '）' : ''
+    conceptRows.push([concept.name + aliasText, concept.brief || '—'])
+  }
+  for (const term of terms) {
+    const key = conceptKey(term.name)
+    if (!key || conceptKeys.has(key)) continue
+    // 术语只是概念名的缩短写法（3A / DEI指标）时不再重复一行。
+    if (conceptNameKeys.some((nameKey) => nameKey.length >= 2 && (key.includes(nameKey) || nameKey.includes(key)))) continue
+    conceptKeys.add(key)
+    conceptRows.push([term.name, term.definition || '—'])
+  }
+
+  const related = []
+  if (relatedNotes.length > 0) {
+    for (const item of relatedNotes) {
+      const target = item.notePath ? item.notePath.replace(/\.md$/i, '') : ''
+      const link = target ? '[[' + target + '|' + item.title + ']]' : item.title
+      related.push(item.reason ? '- ' + link + ' — ' + item.reason : '- ' + link)
+    }
+    related.push('')
+  }
+
+  const reviewLines = []
+  if (reviewPairs.length > 0) {
+    const total = reviewPairs.length
+    reviewLines.push('> [!summary]- 展开 ' + total + ' 张卡片', '>')
+    reviewPairs.forEach((card, index) => {
+      reviewLines.push('> **' + card.question + '**', '>', '> ?', '>', '> **答案：** ' + card.answer)
+      if (index < reviewPairs.length - 1) reviewLines.push('>')
+    })
+    reviewLines.push('')
+  }
+
+  const mainSections = []
+  if (speed.length > 0) mainSections.push({ title: '速览', body: speed })
+  if (keyPoints.length > 0 || contentQuality === 'full') mainSections.push({ title: '核心知识点', body: knowledge })
+  if (extra.length > 0) mainSections.push({ title: supplementSection?.title || '补充', body: extra })
+  if (conceptRows.length > 0) {
+    mainSections.push({
+      title: '核心概念与术语',
+      body: ['| 概念 / 术语 | 解释 |', '| --- | --- |', ...conceptRows.map((row) => '| ' + escapeCell(row[0]) + ' | ' + escapeCell(row[1]) + ' |'), ''],
+    })
+  }
+  if (related.length > 0) mainSections.push({ title: '相关笔记', body: related })
+  if (reviewLines.length > 0) mainSections.push({ title: '复习卡片', body: reviewLines })
+
+  const appendix = []
+  if (quotes.length > 0) {
+    const quoteLines = quotes.map((quote) => '- ' + timePrefix(quote.time, url, platform) + quote.text)
+    appendix.push(...calloutBlock('quote', '原话摘录（' + quotes.length + ' 条）', quoteLines), '')
+  }
+  if (resources.length > 0) {
+    const resourceLines = resources.map((item) => item.note ? '- **' + item.name + '** — ' + item.note : '- **' + item.name + '**')
+    appendix.push(...calloutBlock('note', '提到的资源（' + resources.length + ' 个）', resourceLines), '')
+  }
+  if (discussion.length > 0) {
+    const hasRealDiscussion = stats.danmaku > 0 || stats.comments > 0
+    const discussionLabel = hasRealDiscussion
+      ? (platform === 'youtube' ? '讨论焦点（YouTube 评论）' : '观众讨论（B 站弹幕 / 评论）')
+      : '延伸思考'
+    appendix.push(...calloutBlock('note', discussionLabel, discussion.map((item) => '- ' + item)), '')
+  }
+  const statLines = []
+  if (stats.transcript > 0) statLines.push('- 字幕：' + stats.transcript.toLocaleString('en-US') + ' 字')
+  if (platform === 'bilibili') {
+    if (stats.danmaku > 0) statLines.push('- 弹幕：抓取 ' + stats.danmaku + ' 条 / 全站 ' + (stats.totalDanmaku ? stats.totalDanmaku.toLocaleString('en-US') : '未知') + ' 条')
+    if (stats.comments > 0) statLines.push('- 评论：抓取 ' + stats.comments + ' 条 / 全站 ' + (stats.totalComments ? stats.totalComments.toLocaleString('en-US') : '未知') + ' 条')
+  } else if (platform === 'youtube') {
+    if (chapters.length > 0) statLines.push('- 章节：' + chapters.length + ' 个')
+    statLines.push('- 评论：暂未抓取（YouTube 无弹幕）')
+  } else {
+    if (stats.danmaku > 0) statLines.push('- 弹幕：抓取 ' + stats.danmaku + ' 条 / 全站 ' + (stats.totalDanmaku ? stats.totalDanmaku.toLocaleString('en-US') : '未知') + ' 条（正文未抓取）')
+    if (stats.comments > 0) statLines.push('- 评论：抓取 ' + stats.comments + ' 条 / 全站 ' + (stats.totalComments ? stats.totalComments.toLocaleString('en-US') : '未知') + ' 条（正文未抓取）')
+  }
+  if (statLines.length > 0) appendix.push(...calloutBlock('info', '抓取统计', statLines), '')
+
+  let number = 0
+  for (const section of mainSections) {
+    number += 1
+    lines.push('## ' + String(number).padStart(2, '0') + ' ' + section.title, '', ...section.body)
+  }
+  if (appendix.length > 0) lines.push(...appendix)
+  number += 1
+  lines.push('## ' + String(number).padStart(2, '0') + ' 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_BEGIN, '', MANUAL_END, '')
+
+  const meta = {
+    title: originalTitle,
+    displayTitle,
+    subject,
+    source: platform,
+    url,
+    author,
+    contentSource,
+    contentQuality,
+    contentType,
+    quality,
+    type: 'video-note',
+    format: 5,
+  }
+  if (duration > 0) meta.duration = duration
+  if (publishedAt) meta.publishedAt = publishedAt
+  if (review) meta.review = review
+  if (bvid) meta.bvid = bvid
+  if (videoId) meta.videoId = videoId
+  if (contentSource === 'archive' && transcriptOrigin && transcriptOrigin !== 'archive') meta.transcriptOrigin = transcriptOrigin
+  lines.push(renderSeenMeta(meta), '')
+
+  return frontmatter.trimEnd() + '\n' + spaceCjkMarkdown(lines.slice(1).join('\n'))
 }
 
 /** 学科学习手册 AUTO 区正文（不含 AUTO 标记）。 */

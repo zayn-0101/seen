@@ -7,6 +7,7 @@ import {
   normalizeThemes,
   normalizeTagTypes,
   mergeTags,
+  mergeNoteTags,
   buildTagVocabulary,
   rememberTags,
   buildTagIndex,
@@ -45,6 +46,15 @@ test('mergeTags orders subject, themes, types, concepts', () => {
     concepts: [{ name: '双向链接' }, { name: '仓库（Vault）' }],
   })
   assert.deepEqual(tags, ['知识管理', 'Obsidian', '类型/教程', '概念/双向链接', '概念/仓库'])
+})
+
+test('mergeNoteTags keeps only subject, themes and extras', () => {
+  const tags = mergeNoteTags({
+    subject: '知识管理',
+    themes: ['知识管理', 'Obsidian'],
+    extras: ['flashcards', '类型/教程'],
+  })
+  assert.deepEqual(tags, ['知识管理', 'Obsidian', 'flashcards'])
 })
 
 test('buildTagVocabulary returns the most used terms first', () => {

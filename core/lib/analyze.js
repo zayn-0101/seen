@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { conceptKey } from './concept.js'
-import { normalizeContentType, normalizeKeyPointPoints, normalizeQuotes, normalizeResources, normalizeTemplate, normalizeTerms } from './note-content.js'
+import { normalizeContentType, normalizeKeyPointPoints, normalizeQuotes, normalizeResources, normalizeReviewCards, normalizeTemplate, normalizeTerms } from './note-content.js'
 import { normalizeTagTypes, normalizeThemes } from './tags.js'
 
 const DEFAULT_MAX_TOKENS = 4096
@@ -637,7 +637,7 @@ function buildClassifyPrompt({ title, desc, tags, existingSubjects }) {
     '规则：',
     '1. isCourse：有知识含量的课程、教程、教学、科普、纪录片、知识分享、技能讲解、历史/文化/科技解读等为 true；纯音乐、搞笑段子、无解说游戏实况、直播闲聊、新闻播报、普通网页/搜索页/社交页/邮箱/工作软件等为 false。',
     '2. subject：学科名使用中文，2~4 个汉字的宽泛领域，例如「物理学」「计算机」「历史」「写作」「医学」。不要用细分方向（「量子力学」「React」「梯度下降」这类放到 keywords 里）。若视频属于【已有学科列表】中的某一学科，subject 必须与该学科名称完全一致，一个字都不能改；否则给出宽泛的新领域名。',
-    '3. title：去掉浏览器和平台后缀后的纯视频标题。',
+    '3. title：只保留视频标题本身，去掉浏览器和平台后缀；不要补简介、副标题、系列说明或总结，原标题已经是完整短标题时原样返回。',
     '4. keywords：3~6 个核心知识点关键词。',
     '5. confidence：0~1 之间的数字，表示分类把握。',
   ].join('\n')
@@ -795,7 +795,10 @@ export function normalizeNumbers(value) {
     const key = figure + '|' + meaning
     if (seen.has(key)) continue
     seen.add(key)
-    result.push({ value: truncateText(figure, 30), meaning })
+    const entry = { value: truncateText(figure, 30), meaning }
+    const time = Number(raw.time)
+    if (Number.isFinite(time) && time > 0) entry.time = Math.round(time)
+    result.push(entry)
     if (result.length >= 6) break
   }
   return result
@@ -809,6 +812,7 @@ export function normalizeSummary(raw, fallbackTitle) {
       question: '',
       answer: '',
       keyPoints: [],
+      reviewCards: [],
       concepts: [],
       numbers: [],
       discussion: [],
@@ -832,6 +836,7 @@ export function normalizeSummary(raw, fallbackTitle) {
   const keyPoints = normalizeKeyPoints(
     raw.keyPoints ?? raw.key_points ?? raw.keypoints ?? raw.topics ?? raw.points
   )
+  const reviewCards = normalizeReviewCards(raw.reviewCards ?? raw.review_cards ?? raw.cards)
   const concepts = normalizeConcepts(raw.concepts ?? raw.coreConcepts ?? raw.core_concepts)
   const numbers = normalizeNumbers(raw.numbers ?? raw.keyNumbers ?? raw.key_numbers ?? raw.figures)
   const discussion = normalizeDiscussion(
@@ -853,6 +858,7 @@ export function normalizeSummary(raw, fallbackTitle) {
     question,
     answer,
     keyPoints,
+    reviewCards,
     concepts,
     numbers,
     discussion,
@@ -1048,7 +1054,7 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '',
     '【输出要求】',
     '只输出一个严格合法的 JSON 对象，不要输出 Markdown 代码块、解释或多余文字：',
-    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","contentType":"tutorial","keyPoints":[{"title":"主题","time":123,"points":[{"text":"要点1","time":45}]}],"template":{"prerequisites":["前置条件"],"steps":[{"text":"操作步骤","time":123}]},"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"tags":{"themes":["主题"],"types":["教程"]},"numbers":[{"value":"260 词","meaning":"道歉信篇幅"}],"quotes":[{"text":"原话","time":123}],"terms":[{"name":"术语","definition":"解释"}],"resources":[{"name":"资源名","note":"说明"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
+    '{"summary":"不超过120字的一句话总结","question":"这期试图回答什么","answer":"给出的答案","reviewCards":[{"question":"一个必须以问号结尾的问题？","answer":"不超过60字的答案"}],"contentType":"tutorial","keyPoints":[{"title":"主题","time":123,"points":[{"text":"要点1","time":45}]}],"template":{"prerequisites":["前置条件"],"steps":[{"text":"操作步骤","time":123}]},"concepts":[{"name":"概念名","brief":"一句话解释","aliases":["别称"]}],"tags":{"themes":["主题"],"types":["教程"]},"numbers":[{"value":"260 词","meaning":"道歉信篇幅","time":123}],"quotes":[{"text":"原话","time":123}],"terms":[{"name":"术语","definition":"解释"}],"resources":[{"name":"资源名","note":"说明"}],"discussion":["观众讨论焦点"],"mnemonSummary":"不超过800字的精简总结"}',
     '',
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
@@ -1057,16 +1063,17 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '4. concepts：3~6 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；名称 2~8 个汉字，不要带括号或注释；同一概念如有别称，写进 aliases。',
     '5. tags.themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写这个视频所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；比 concepts 更宽，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
     '6. tags.types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用这些词，不要自造或改写。',
-    '7. numbers：3~6 个能支撑结论或可直接行动的量化信息，value 写「260 词」「10 天」这种形式，meaning 写它代表什么；不要收视频自身的参数（时长、体积、分辨率、播放/点赞/投币/收藏数、弹幕/评论条数、界面分区数）；没有合适的数字就给空数组，不要编造。',
+    '7. numbers：3~6 个能支撑结论或可直接行动的量化信息，value 写「260 词」「10 天」这种形式，meaning 写它代表什么，出现位置明确时给 time（整数秒）；不要收视频自身的参数（时长、体积、分辨率、播放/点赞/投币/收藏数、弹幕/评论条数、界面分区数）；没有合适的数字就给空数组，不要编造。',
     '8. discussion：1~3 条观众在弹幕/评论中关注或讨论的焦点；没有弹幕/评论素材时，根据主题给出合理的学习讨论点。',
     '9. mnemonSummary：不超过 800 字，适合写入长期记忆的精简总结，包含核心知识点与结论。',
     '10. 全部使用中文。',
     '11. time：主题与要点的 time 都写整数秒（例如 2:31 写作 151），只在字幕素材带 [mm:ss] 时间标记时给；拿不准就省略该字段，不要编造。',
     '12. contentType：从「tutorial、opinion、science、review、interview、documentary、course、other」里选一个：操作教学选 tutorial，观点评论选 opinion，知识科普选 science，产品/作品评测选 review，访谈播客选 interview，纪录片/纪实选 documentary，系列课程选 course，其余 other。',
-    '13. template：只填与 contentType 对应的字段。tutorial 填 prerequisites 与 steps；course 填 prerequisites、steps（课程脉络）与 exercises；opinion 填 arguments（claim/basis）与 doubts；science 填 mechanisms（point/evidence）与 misconceptions；review 填 comparisons（item/verdict/basis）；interview 填 people（name/view）；documentary 填 timeline（label/time/event）；other 输出空对象。没有素材支撑的字段给空数组。',
+    '13. template：只填与 contentType 对应的字段。tutorial 填 prerequisites 与 steps；course 填 prerequisites、steps（课程脉络）与 exercises；opinion 填 arguments（claim/basis）与 doubts；science 填 mechanisms（point/evidence）与 misconceptions；review 填 comparisons（item/verdict/basis）；interview 填 people（name/view）；documentary 填 timeline（label/time/event）；other 输出空对象。opinion 的 doubts 要针对视频论证本身，不要照抄观众评论；观众评论只放 discussion。没有素材支撑的字段给空数组。',
     '14. quotes：从字幕原文里摘 1~3 句最有代表性的原话，每句不超过 80 字，不改写、不拼接；带时间就写 time。没有字幕就给空数组。',
     '15. terms：3~8 个本视频真正出现的专业术语或关键词，name 2~12 个字，definition 一句话解释（不超过 80 字）；没有就给空数组。',
     '16. resources：只列视频里明确提到的书、文章、工具、网站、课程等，name 写名称，note 写一句说明；不要编 URL，没有就给空数组。',
+    '17. reviewCards：给 3~5 组真正可复习的问题与答案，问题必须以问号结尾，答案不超过 60 个汉字；覆盖视频最值得记住的结论，不要用「标题 + 第一条要点」凑数；没有足够内容可少给，但不要编造。',
   ].join('\n')
 }
 

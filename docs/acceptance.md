@@ -474,3 +474,73 @@
 - [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.6.dmg`（86M，universal）：挂载校验版本 0.5.6、签名通过、lipo 为 x86_64 + arm64
 - [x] DMG SHA256：`521cdf0c5c309bde68038b273857985b2c6d641a9ae1f66223f61a27314a7304`
 - [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.6
+
+## 2026-11-26 视频笔记 v5 模板
+
+背景：format 4 的模板存在标题重复、属性过多、颜色无层级、概念与术语重复、复习卡片凑数、折叠在 Live Preview 失效等问题。用户在示例笔记上逐项确认后，按 `docs/note-template-v5-plan.md` 分阶段实施，旧 format 4 笔记不自动改写。
+
+- [x] Phase 1 数据与标题：新增 `core/lib/text.js`（`spaceCjk` / `cleanDisplayTitle`），生成时保留 `originalTitle`、用清洗后的 `displayTitle` 作为文件名与笔记标题；`created` 与 `updated` 分开；新增 `noteTags`（学科 + 主题，写进笔记）与 `allTags`（含类型/概念，供索引与筛选）
+- [x] Phase 2 渲染：新增 `renderVideoNoteV5`，可见中文属性 + 文末 `seen-meta`、正文无 H1、`[!abstract] 摘要`（概述/核心问题/核心结论）、动态编号的 `01 速览`～`07 我的补充`、概念与术语合并为两列表格、复习卡片改为 `[!summary]-` 多行卡（问题 / `?` / 答案）、附录统一为可折叠 callout
+- [x] Phase 4 校验：`NOTE_FORMAT` 保持 4 供旧版使用，新增 `NOTE_FORMAT_V5 = 5`；`parseNoteMarkdown` 支持中文属性、`seen-meta`、编号 H2/H3、概念表；`checkNoteShape` 对 v5 使用独立区块顺序并跳过 `flashcards`/`review` 控制标签
+- [x] 示例 `docs/examples/note-format-v5-sample.md` 通过 v5 解析与结构检查：format 5、7 个主区块、概念表 8 项、结构错误 0
+- [x] `core/test/render.test.js` 8 项、`core/test/note-check.test.js` 18 项通过；新增 `core/test/text.test.js` 覆盖标题清洗与中英文空格
+- [x] 修复 `checkIndexLinks` 不识别表格中 `\\|` 转义竖线、把路径末尾反斜杠当成目录的问题；新增回归测试
+- [x] `cd core && node --test`：403 tests / 402 pass / 1 skipped / 0 fail
+- [x] `npm run check`：语法检查通过 121 个文件
+- [x] `npm run self-check`：真实库 22 篇，错误 0、警告 3（既有 `chapters-missing`）；索引 395 条双链、状态 22 条
+- [x] 文档同步：README、docs/contracts.md、docs/architecture.md、CLAUDE.md、`docs/note-template-v5-plan.md` 已更新为 format 5 口径
+- [x] 可选样式 `docs/examples/seen-note.css` 入库，README 说明复制到 vault 后启用；没有 CSS 时正文仍可读
+- [ ] 真实 B 站/抖音/YouTube 端到端生成 v5 笔记（需要真实抓取与模型调用）
+- [ ] 旧 format 4 笔记迁移脚本（默认预演、`--apply` 才写、写前备份）
+- [x] 发布时间已接入：新增 `core/lib/dates.js` 统一归一为 `YYYY-MM-DD`；B 站取 `pubdate`、YouTube 取 `upload_date`/`release_date`/`timestamp`、抖音取 `createTime`；`renderVideoNoteV5` 写入「发布时间」属性与 `seen-meta.publishedAt`；旧缓存缺该字段时保持为空
+- [x] 新增 `core/test/dates.test.js` 覆盖 Unix 秒/毫秒、`YYYYMMDD`、ISO 与非法日期；YouTube 与 v5 渲染测试补充 `publishedAt` 断言
+- [x] 未改写真实笔记库、未安装应用、未 commit/push
+
+## 2026-11-26 v5 真实 B 站端到端
+
+背景：用真实 B 站视频、真实模型和临时 vault 跑一遍 format 5 生成链路，不写用户正式笔记库、不改 state，验证模板在真实字幕和模型输出下的表现。
+
+- [x] 临时 vault 生成《我们熟悉的那个 3A 游戏时代，可能真的结束了。》：format 5、中文属性、摘要三段、01–06 动态编号、5 张真问答复习卡、附录 callout、我的补充最后、seen-meta 完整
+- [x] 发布时间取真实 pubdate 为 2026-11-17；复习卡 callout 与多行卡格式可被 Spaced Repetition 识别
+- [x] 结构校验：parseNoteMarkdown + checkNoteShape 返回 0 findings；概念表 11 项，无 3A / DEI 指标之类的重复行
+- [x] 端到端暴露并修复：复习卡只有 1 张（提示词新增 3~5 组 reviewCards）、原话全为 00:00（time=0 不再显示假链接）、概念/术语重复（按别名和包含关系去重）、文件名结尾多句号（标题去尾句读）、可质疑之处照抄观众评论（提示词要求针对论证本身）
+- [x] 新增 normalizeReviewCards 并兼容旧「问题::答案」；normalizeQuotes 丢弃零时间；cleanDisplayTitle 保留问号/感叹号、只去句读
+- [x] cd core && node --test：405 tests / 0 fail（Swift 环境不可用时跳过 1 项菜单栏进程测试）；npm run check：121 个文件通过
+- [x] 未写真实笔记库、未迁移旧 format 4、未 commit/push
+
+## 2026-11-26 v5 真实抖音端到端
+
+背景：用真实抖音精选视频（蒙曼《山河表里潼关路》，4:25）在临时 vault 跑 format 5，不写正式库、不改 state。抖音依赖无头 Chrome、ffmpeg、whisper 和本地模型，重点验证平台标题、发布时间与本地转写。
+
+- [x] 生成 `视频笔记/笔记/历史/山河表里潼关路.md`：format 5、中文属性、摘要三段、`01 速览`（6 个带时间关键数字 + 章节）、`02 核心知识点`、`03 常见误解`、`04 核心概念与术语`、`05 复习卡片`（4 张真问答）、`06 我的补充`、附录 callout
+- [x] 发布时间取真实 `createTime` 为 `2026-11-05`；字幕为本地 Whisper 转写，抓取统计 1,014 字
+- [x] `parseNoteMarkdown` + `checkNoteShape` 返回 0 findings；标题与 displayTitle 均为 `山河表里潼关路`
+- [x] 端到端暴露并修复：抖音抓取标题带长简介、分类标题又覆盖一次，导致文件名变成「山河表里潼关路 潼关为关中锁钥……」。新增 `pickOriginalTitle`，优先使用抓取/输入的真实标题，分类标题只兜底，并拦截「原题 + 大段补充」的覆盖；分类提示词禁止补副标题/总结
+- [x] `cd core && node --test`：406 tests / 406 pass / 0 fail；`npm run check`：121 个文件通过
+- [x] 未写真实笔记库、未迁移旧 format 4、未 commit/push
+
+## 2026-11-26 v5 真实 YouTube 端到端
+
+背景：用真实 YouTube 缓存（TEDx `8S0FDjFBj8o`，5:56，人工字幕）和仅元数据视频（`z4AbijUCoKU`，无字幕）在临时 vault 跑 format 5，验证英文字幕、发布时间和无字幕边界。
+
+- [x] 完整字幕视频生成 `视频笔记/笔记/演讲/How to sound smart in your TEDx Talk.md`：format 5、发布时间 2015-01-15、YouTube 字幕、12 条概念、0 findings；章节、关键数字、操作步骤、核心知识点、复习卡片均带 `t=` 时间链接
+- [x] 仅元数据视频只保留 `[!warning] 内容依据有限`、摘要、`01 速览`、`延伸思考`、抓取统计和 `02 我的补充`；不再输出核心知识点、复习卡片、关键数字和概念表
+- [x] 修复仅元数据时模型从简介编知识点/复习卡的问题；`<Untitled Chapter 1>` 占位章节在 YouTube 解析和渲染两处都过滤；没有真实评论时讨论区标签从「YouTube 评论」改为「延伸思考」
+- [x] 英文长标题截断不再只留第一句：按标点截断过短时退回最近空格，`Give Me 15 Minutes. I'll Teach You 80% of Obsidian` 生成 `Give Me 15 Minutes. I'll Teach You 80%`
+- [x] `cd core && node --test`：407 tests / 407 pass / 0 fail；`npm run check`：121 个文件通过；`npm run self-check`：22 篇 0 错误（3 条既有章节警告）
+- [x] 未写真实笔记库、未迁移旧 format 4、未 commit/push
+
+## 2026-11-26 v5 正式库迁移
+
+背景：用户确认直接迁移，把正式库 22 篇 format 4 笔记升级为 format 5。迁移前用 `osascript` 退出 Seen，确认实例锁释放；迁移后重启 Seen。原文件与 state 备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`。
+
+- [x] 正式库迁移：22 篇笔记、13 篇改名、40 个文件引用改写；state 的 notePath、transcriptPath、title、originalTitle、displayTitle、noteTags、duration 同步
+- [x] 生成 v5 版式：中文属性、文末 seen-meta、无正文 H1、摘要三段、动态编号、概念表、多行复习卡、可折叠附录、我的补充最后
+- [x] 修复迁移中暴露的 5 个问题：改名后旧文件未移除（13 组重复）、索引写到 vault 根、字幕存档 owner 未更新、先加空格导致双链无法匹配、self-check 只认可见 type 且把资料页算作笔记
+- [x] 正式库校验：`/tmp/verify-migrated-real2-54.mjs` 返回 files 82、videos 22、missing 0、structural 0、linkErrors 0、numbering 0
+- [x] 迁移后 `cd core && node --test`：407 tests / 407 pass / 0 fail；`npm run check`：122 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+- [x] 用迁移前备份重建临时副本复验：22 篇、22 份字幕、vault 根无 .md、索引旧链接 0，self-check 通过
+- [x] Seen 已重启：PID 91739 / 服务 91742，`/api/status` 返回权限正常、轮询运行中、8 个学科
+- [x] 未 commit/push
+
+已知小问题：旧笔记迁移后每篇只有 1 张真问答卡（旧的 `H3标题::首条要点` 假卡已过滤）；抓取统计数字没有千分位；少数旧文保留繁体字。

@@ -54,6 +54,18 @@ const DEFAULT_SUBJECT = '未分类'
 const OVERVIEW_FILENAME = '总览.md'
 const OBSIDIAN_CLI_CANDIDATES = ['/opt/homebrew/bin/obsidian-cli', '/usr/local/bin/obsidian-cli']
 
+/** v5 笔记把内部字段收在文末的 seen-meta 注释里。 */
+function parseSeenMeta(text) {
+  const match = String(text ?? '').match(/<!--\s*seen-meta\s*\n([\s\S]*?)\n-->/)
+  if (!match) return null
+  try {
+    const meta = JSON.parse(match[1])
+    return meta && typeof meta === 'object' ? meta : null
+  } catch {
+    return null
+  }
+}
+
 /** 当前生效的 vault 守卫（由引擎注入）；没有守卫时按可访问处理。 */
 let activeGuard = null
 /** vault 操作超时。 */
@@ -264,8 +276,16 @@ async function readNoteIdentityUnsafe({ vaultPath, relPath } = {}) {
       }
       return String(value || '').trim()
     }
-    const url = field('url')
-    return { bvid: field('bvid'), videoId: field('videoId'), source: field('source'), type: field('type'), url, page: Number(field('page')) || extractPage(url) }
+    const seen = parseSeenMeta(text) || {}
+    const url = field('url') || String(seen.url || '').trim()
+    return {
+      bvid: field('bvid') || String(seen.bvid || '').trim(),
+      videoId: field('videoId') || String(seen.videoId || '').trim(),
+      source: field('source') || String(seen.source || '').trim(),
+      type: field('type') || String(seen.type || '').trim(),
+      url,
+      page: Number(field('page')) || Number(seen.page) || extractPage(url),
+    }
   } catch (error) {
     if (error?.code === 'ENOENT') return {}
     throw error
@@ -560,6 +580,21 @@ export function updateNoteReview({ vaultPath, notePath, review } = {}) {
     } catch (error) {
       if (error?.code === 'ENOENT') return { ok: false, error: '笔记不存在：' + relPath }
       throw error
+    }
+    const seenMatch = markdown.match(/(<!--\s*seen-meta\s*\n)([\s\S]*?)(\n-->)/)
+    if (seenMatch) {
+      try {
+        const seen = JSON.parse(seenMatch[2])
+        if (seen && typeof seen === 'object') {
+          seen.review = review && typeof review === 'object' ? review : {}
+          const nextSeen = seenMatch[1] + JSON.stringify(seen, null, 2) + seenMatch[3]
+          const next = markdown.slice(0, seenMatch.index) + nextSeen + markdown.slice(seenMatch.index + seenMatch[0].length)
+          await atomicWrite({ vaultPath, relPath, content: next })
+          return { ok: true, relPath }
+        }
+      } catch {
+        // 隐藏元数据坏了，退回旧版 frontmatter 写法
+      }
     }
     const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
     if (!match) return { ok: false, error: '笔记没有 frontmatter：' + relPath }

@@ -16,6 +16,9 @@ import { TAG_TYPES } from './tags.js'
 /** 当前笔记版式版本；缺失视为 0.3 之前的旧格式，结构缺失只算警告。 */
 export const NOTE_FORMAT = 4
 
+/** v5 笔记版式；中文属性 + 文末 seen-meta。 */
+export const NOTE_FORMAT_V5 = 5
+
 export const MANUAL_START = '<!-- MANUAL:START -->'
 export const MANUAL_END = '<!-- MANUAL:END -->'
 
@@ -47,7 +50,21 @@ const SECTION_ORDER = [
   '来源统计',
 ]
 
+const SECTION_ORDER_V5 = [
+  '速览',
+  '核心知识点',
+  '可质疑之处',
+  '常见误解',
+  '核心概念与术语',
+  '相关笔记',
+  '复习卡片',
+  '我的补充',
+]
+
 const REQUIRED_ALWAYS = ['视频信息', '核心知识点', '来源统计']
+
+/** 插件控制标签，不参与主题数量与长度检查。 */
+const CONTROL_TAGS = new Set(['flashcards', 'review'])
 
 // 0.2 时代没有的区块，只在当前格式里强制要求
 const REQUIRED_CURRENT = ['我的补充']
@@ -94,9 +111,9 @@ export function parseNoteMarkdown(markdown) {
   const { frontmatter, body } = splitFrontmatter(markdown)
   const meta = {}
   for (const line of frontmatter.split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z][\w-]*):\s*(.*)$/)
+    const match = line.match(/^([^:\n]+?):\s*(.*)$/)
     if (!match) continue
-    meta[match[1]] = parseValue(match[2])
+    meta[cleanInline(match[1])] = parseValue(match[2])
   }
   let tags = []
   if (Array.isArray(meta.tags)) tags = meta.tags.map((item) => String(item))
@@ -109,40 +126,85 @@ export function parseNoteMarkdown(markdown) {
     }
   }
 
+  const seenMetaMatch = body.match(/<!--\s*seen-meta\s*\n([\s\S]*?)\n-->/)
+  if (seenMetaMatch) {
+    try {
+      const seenMeta = JSON.parse(seenMetaMatch[1])
+      if (seenMeta && typeof seenMeta === 'object') Object.assign(meta, seenMeta)
+    } catch {
+      // 隐藏元数据坏了不阻塞结构检查；正文仍可继续解析
+    }
+  }
+
   const lines = body.split(/\r?\n/)
   const sections = []
+  const subsections = []
   let current = null
+  let currentSub = null
   for (const line of lines) {
     const heading = line.match(/^##\s+(.+?)\s*$/)
     if (heading) {
-      current = { title: cleanInline(heading[1]), body: '', index: sections.length }
+      const rawTitle = cleanInline(heading[1])
+      const title = rawTitle.replace(/^\d{1,2}\s+/, '')
+      current = { title, rawTitle, body: '', index: sections.length }
       sections.push(current)
+      currentSub = null
       continue
     }
+    const subheading = line.match(/^###\s+(.+?)\s*$/)
+    if (subheading && current) {
+      const rawTitle = cleanInline(subheading[1])
+      const title = rawTitle.replace(/^\d{1,2}\s+/, '')
+      currentSub = { title, rawTitle, body: '', index: subsections.length, parent: current.title }
+      subsections.push(currentSub)
+      // 父区块 body 保留 H3 行，迁移脚本与正文展示都需要完整层级。
+      current.body += line + '\n'
+      continue
+    }
+    if (currentSub) currentSub.body += line + '\n'
     if (current) current.body += line + '\n'
   }
 
   const sectionMap = new Map(sections.map((item) => [item.title, item]))
+  const subsectionMap = new Map(subsections.map((item) => [item.title, item]))
   const infoSection = sectionMap.get('视频信息')
   let duration = 0
   if (infoSection) {
     const row = infoSection.body.match(/^\|\s*时长\s*\|\s*([0-9:]+)\s*\|/m)
     if (row) duration = clockSeconds(row[1])
   }
+  if (!duration && meta['时长']) duration = clockSeconds(meta['时长'])
+  if (!duration && Number.isFinite(Number(meta.duration))) duration = Number(meta.duration)
 
-  const conceptSection = sectionMap.get('核心概念')
+  const conceptSection = sectionMap.get('核心概念') || sectionMap.get('核心概念与术语')
   const conceptEntries = []
   if (conceptSection) {
-    for (const line of conceptSection.body.split(/\r?\n/)) {
-      const match = line.match(/^-\s+\*\*(.+?)\*\*(.*)$/)
-      if (!match) continue
-      const name = cleanInline(match[1])
-      const rest = match[2] || ''
-      conceptEntries.push({
-        name,
-        hasAlias: /（别称[:：]/.test(rest),
-        hasBlockId: /\^concept-\S+/.test(rest),
-      })
+    const isTable = /^\s*\|/m.test(conceptSection.body)
+    if (isTable) {
+      for (const line of conceptSection.body.split(/\r?\n/)) {
+        const match = line.match(/^\|\s*([^|]+?)\s*\|/)
+        if (!match) continue
+        const name = cleanInline(match[1])
+        if (!name || name === '概念 / 术语' || /^-+$/.test(name)) continue
+        const aliasMatch = name.match(/^(.+?)（([^）]+)）$/)
+        conceptEntries.push({
+          name: aliasMatch ? cleanInline(aliasMatch[1]) : name,
+          hasAlias: Boolean(aliasMatch),
+          hasBlockId: true,
+        })
+      }
+    } else {
+      for (const line of conceptSection.body.split(/\r?\n/)) {
+        const match = line.match(/^-\s+\*\*(.+?)\*\*(.*)$/)
+        if (!match) continue
+        const name = cleanInline(match[1])
+        const rest = match[2] || ''
+        conceptEntries.push({
+          name,
+          hasAlias: /（别称[:：]/.test(rest),
+          hasBlockId: /\^concept-\S+/.test(rest),
+        })
+      }
     }
   }
   const conceptBlockCount = (body.match(/\^concept-\S+/g) || []).length
@@ -159,6 +221,7 @@ export function parseNoteMarkdown(markdown) {
 
   const statsSection = sectionMap.get('来源统计')
   const statsUrl = statsSection ? (statsSection.body.match(/https?:\/\/[^\s|)]+/) || [])[0] || '' : ''
+  const isV5 = Number(meta.format) >= NOTE_FORMAT_V5
 
   return {
     frontmatter,
@@ -167,7 +230,8 @@ export function parseNoteMarkdown(markdown) {
     format: Number(meta.format) || 0,
     tags,
     title: cleanInline(meta.title),
-    subject: cleanInline(meta.subject),
+    displayTitle: cleanInline(meta.displayTitle),
+    subject: cleanInline(meta.subject || meta['学科']),
     source: cleanInline(meta.source),
     url: cleanInline(meta.url),
     type: cleanInline(meta.type),
@@ -178,13 +242,17 @@ export function parseNoteMarkdown(markdown) {
     sections,
     sectionTitles: sections.map((item) => item.title),
     sectionMap,
+    subsections,
+    subsectionTitles: subsections.map((item) => item.title),
+    subsectionMap,
     conceptEntries,
     conceptBlockCount,
     relatedLinks,
     manualLinkTarget: manualLink ? cleanInline(manualLink[1]) : '',
     manualMarkersOk: body.includes(MANUAL_START) && body.includes(MANUAL_END) && body.indexOf(MANUAL_START) < body.indexOf(MANUAL_END),
-    detailsOk: Boolean(statsSection) && /<details>/.test(statsSection.body) && /<\/details>/.test(statsSection.body),
+    detailsOk: isV5 || (Boolean(statsSection) && /<details>/.test(statsSection.body) && /<\/details>/.test(statsSection.body)),
     statsUrl,
+    isV5,
   }
 }
 
@@ -204,24 +272,25 @@ function charLength(text) {
 /** 检查一篇笔记的版式、标签与时间轴。 */
 export function checkNoteShape(note) {
   const findings = []
+  const isV5 = note.format >= NOTE_FORMAT_V5 || note.isV5
   const isCurrent = note.format >= NOTE_FORMAT
   const soft = isCurrent ? 'error' : 'warn'
   const legacyHint = isCurrent ? '' : '（旧格式，仅供参考）'
   const titles = note.sectionTitles
-
-  for (const title of REQUIRED_ALWAYS) {
+  const required = isV5 ? ['核心知识点', '我的补充'] : [...REQUIRED_ALWAYS, ...REQUIRED_CURRENT]
+  for (const title of required) {
     if (!titles.includes(title)) findings.push(finding('missing-section', soft, '缺少「## ' + title + '」' + legacyHint))
   }
-  for (const title of REQUIRED_CURRENT) {
-    if (!titles.includes(title)) findings.push(finding('missing-section', soft, '缺少「## ' + title + '」' + legacyHint))
-  }
-  const discussion = discussionTitleOf(note)
-  if (!titles.includes(discussion)) {
-    findings.push(finding('missing-section', soft, '缺少「## ' + discussion + '」' + legacyHint))
+  if (!isV5) {
+    const discussion = discussionTitleOf(note)
+    if (!titles.includes(discussion)) {
+      findings.push(finding('missing-section', soft, '缺少「## ' + discussion + '」' + legacyHint))
+    }
   }
 
-  const present = titles.filter((title) => SECTION_ORDER.includes(title))
-  const expected = SECTION_ORDER.filter((title) => present.includes(title))
+  const order = isV5 ? SECTION_ORDER_V5 : SECTION_ORDER
+  const present = titles.filter((title) => order.includes(title))
+  const expected = order.filter((title) => present.includes(title))
   if (present.join('|') !== expected.join('|')) {
     findings.push(finding('section-order', soft, '区块顺序不对：实际 ' + present.join(' → ')))
   }
@@ -230,7 +299,7 @@ export function checkNoteShape(note) {
     if (!note.manualMarkersOk) {
       findings.push(finding('manual-markers', 'error', '「我的补充」里缺 ' + MANUAL_START + ' / ' + MANUAL_END + ' 成对标记'))
     }
-    if (!note.detailsOk) findings.push(finding('stats-details', 'error', '「来源统计」缺 <details> 折叠块'))
+    if (!isV5 && !note.detailsOk) findings.push(finding('stats-details', 'error', '「来源统计」缺 <details> 折叠块'))
     // 当前格式去掉了封面、思维导图与「所属章节」标注，重新出现说明版式回退
     if (/^cover:/m.test(note.frontmatter) || /!\[封面/.test(note.body)) {
       findings.push(finding('legacy-cover', 'error', '当前格式不再抓封面，笔记里不该有 cover 字段或封面图'))
@@ -256,6 +325,7 @@ export function checkNoteShape(note) {
     const concepts = []
     for (const tag of tags) {
       const name = String(tag)
+      if (CONTROL_TAGS.has(name)) continue
       if (DIRTY_TAGS.has(name)) findings.push(finding('tag-dirty', 'error', '标签含无信息量的值「' + name + '」'))
       if (TAG_TYPES.includes(name)) findings.push(finding('tag-bare-type', 'error', '类型词「' + name + '」应写成「类型/' + name + '」'))
       if (name.startsWith('概念/')) concepts.push(name.slice(3))
@@ -301,9 +371,9 @@ export function checkNoteShape(note) {
   }
 
   // 章节时间轴
-  const chapterSection = note.sectionMap.get('章节')
+  const chapterSection = note.sectionMap.get('章节') || note.subsectionMap?.get('章节')
   if (!chapterSection) {
-    if (note.duration >= 240 && (note.source === 'bilibili' || note.source === 'youtube')) {
+    if (!isV5 && note.duration >= 240 && (note.source === 'bilibili' || note.source === 'youtube')) {
       findings.push(finding('chapters-missing', 'warn', '时长 ' + Math.round(note.duration / 60) + ' 分钟却没有「章节」（可能分段失败，也可能本来没有章节）'))
     }
   } else {
@@ -330,7 +400,7 @@ export function checkNoteShape(note) {
     }
   }
 
-  if (note.statsUrl && note.url && note.statsUrl !== note.url) {
+  if (!isV5 && note.statsUrl && note.url && note.statsUrl !== note.url) {
     findings.push(finding('stats-url-mismatch', 'warn', '来源统计里的链接与 frontmatter 不一致'))
   }
   if (note.type && note.type !== 'video-note') {
@@ -374,7 +444,7 @@ export function checkNoteLinks(note, { exists = () => true, selfPath = '' } = {}
 /** 检查索引页里所有 [[双链]] 目标是否存在。 */
 export function checkIndexLinks(markdown, { exists = () => true } = {}) {
   const findings = []
-  for (const match of String(markdown ?? '').matchAll(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)) {
+  for (const match of String(markdown ?? '').matchAll(/\[\[([^\]|#\\]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)) {
     const path = cleanInline(match[1]).replace(/\\/g, '/')
     if (!path) continue
     const rel = path.endsWith('.md') ? path : path + '.md'

@@ -1,0 +1,104 @@
+/* Seen 视频笔记：标题层级 + 属性面板两栏布局
+ * 用法：复制到 <vault>/.obsidian/snippets/seen-note.css，
+ * 在 Obsidian 设置 → 外观 → CSS 片段 中启用。
+ * 只作用于 frontmatter 带 cssclasses: ["seen-note"] 的笔记。
+ */
+.seen-note h2,
+.seen-note h2 *,
+.seen-note .HyperMD-header-2,
+.seen-note .HyperMD-header-2 *,
+.seen-note .cm-header-2 {
+  color: #1f4e79 !important;
+}
+
+.seen-note h2,
+.seen-note .HyperMD-header-2 {
+  background: linear-gradient(90deg, rgba(31, 78, 121, 0.10), rgba(31, 78, 121, 0.02));
+  border-left: 4px solid #1f4e79;
+  padding: 0.18em 0.55em;
+  border-radius: 3px;
+  font-weight: 700;
+  margin-top: 2em;
+}
+
+.seen-note h3,
+.seen-note h3 *,
+.seen-note .HyperMD-header-3,
+.seen-note .HyperMD-header-3 *,
+.seen-note .cm-header-3 {
+  color: #4a7fa5 !important;
+}
+
+.seen-note h3,
+.seen-note .HyperMD-header-3 {
+  border-left: 2px solid #9bb7cc;
+  padding-left: 0.55em;
+  font-weight: 600;
+  margin-top: 1.4em;
+}
+
+/* 加粗只加粗，不染色 */
+.seen-note strong {
+  color: var(--text-normal) !important;
+}
+
+.seen-note .tag,
+.seen-note .cm-hashtag {
+  background: #eceff1 !important;
+  color: #495057 !important;
+  border: none !important;
+}
+
+/* 属性面板：两列，视频链接与标签占整行 */
+.seen-note .metadata-properties {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 2px;
+  align-items: start;
+}
+
+.seen-note .metadata-property {
+  min-width: 0;
+  font-size: 0.9em;
+}
+
+.seen-note .metadata-property[data-property-key="视频链接"],
+.seen-note .metadata-property[data-property-key="tags"] {
+  grid-column: 1 / -1;
+}
+
+/* 隐藏 cssclasses 属性本身，保持属性面板干净 */
+.seen-note .metadata-property[data-property-key="cssclasses"] {
+  display: none !important;
+}
+
+/* 深色模式适配 */
+.theme-dark .seen-note h2,
+.theme-dark .seen-note h2 *,
+.theme-dark .seen-note .HyperMD-header-2,
+.theme-dark .seen-note .HyperMD-header-2 *,
+.theme-dark .seen-note .cm-header-2 {
+  color: #8fb8e0 !important;
+}
+.theme-dark .seen-note h2,
+.theme-dark .seen-note .HyperMD-header-2 {
+  background: linear-gradient(90deg, rgba(143, 184, 224, 0.14), rgba(143, 184, 224, 0.02));
+  border-left-color: #8fb8e0;
+}
+.theme-dark .seen-note h3,
+.theme-dark .seen-note h3 *,
+.theme-dark .seen-note .HyperMD-header-3,
+.theme-dark .seen-note .HyperMD-header-3 *,
+.theme-dark .seen-note .cm-header-3 {
+  color: #b7cfe3 !important;
+}
+.theme-dark .seen-note h3,
+.theme-dark .seen-note .HyperMD-header-3 {
+  border-left-color: #4f7d99;
+}
+.theme-dark .seen-note .tag,
+.theme-dark .seen-note .cm-hashtag {
+  background: #3a3f45 !important;
+  color: #d7dde4 !important;
+}
