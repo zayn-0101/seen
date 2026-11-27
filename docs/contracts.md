@@ -322,7 +322,7 @@ export function collectReviews(videos: any[], { now, limit = 20 } = {}): { due: 
 // due 按到期日升序、quality 降序；reviewed = review.reps > 0；averageQuality 一位小数
 ```
 
-复习进度同时存 state 的 video.review 和笔记 frontmatter 的 `review`；面板三档对应 again / hard / easy。
+复习进度同时存 state 的 video.review 和笔记：format 5 写在文末 seen-meta 的 `review`，format 4 才写 frontmatter 的 `review`；面板三档对应 again / hard / easy。
 
 ## lib/tags.js
 
@@ -360,8 +360,8 @@ export function mergeTagInVideos(videos: any[], from: string, to: string): { cha
 ```
 
 规则：
-- 四层标签由同一篇笔记的那次 LLM 调用一并给出，主题靠词表收敛，本地不做语义聚类。
-- 平台由 frontmatter `source` 表达、形态由 `类型/xxx` 表达，不再出现 `视频课程` / `B站` / `抖音精选` 这类零信息标签。
+- 完整四层标签由同一篇笔记的那次 LLM 调用一并给出，主题靠词表收敛，本地不做语义聚类；笔记可见标签只取学科、主题与 `flashcards`。
+- format 5 笔记的可见标签只写学科 + 主题 + `flashcards`；`类型/xxx` 与 `概念/xxx` 保留在 state，供标签索引、面板筛选和概念索引使用。平台由可见属性「平台」（format 4 为 frontmatter `source`）表达，不再出现 `视频课程` / `B站` / `抖音精选` 这类零信息标签。
 
 ## lib/ask.js
 
@@ -393,7 +393,7 @@ export function renderVideoNote(input: {
 }): string
 // format 4：保留旧版渲染，不输出封面、封面字段与思维导图；关键数字、核心概念、类型模板、原话、术语与资源只在 contentQuality === 'full' 时渲染
 // 重整理写 contentSource: 'archive'，并用 transcriptOrigin 保留原始字幕来源；quality 评分与来源统计标签都按 transcriptOrigin 计算
-// review = { due, interval, ease, reps } 会写进 frontmatter，并在「相关笔记」后生成「## 复习卡片」（问题::答案，最多 5 条）
+// format 4：review = { due, interval, ease, reps } 会写进 frontmatter，并在「相关笔记」后生成「## 复习卡片」（问题::答案，最多 5 条）；format 5 的 review 写进 seen-meta
 // 类型模板按 contentType 展开（教程=前置条件+操作步骤、课程=再加练习、观点=论证结构+可质疑之处、科普=机制与证据+常见误解、评测=对比、访谈=人物观点、纪录=事件时间线）；要点与步骤带时间戳，B站/YouTube 生成 t= 链接
 export function renderVideoNoteV5(input: {
   title, originalTitle, displayTitle, subject, source, platform, bvid, videoId, url, author, createdAt, updatedAt,
@@ -442,7 +442,7 @@ export async function writeVaultText({ vaultPath, relPath, content }): Promise<{
 export async function updateNoteTags({ vaultPath, notePath, tags, backup? }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 tags 行
 export async function writeConceptPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
 export async function writeTopicPage({ vaultPath, noteRoot, name, markdown }): Promise<{ relPath, absPath }>
-export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // 只改 frontmatter 的 review 行
+export async function updateNoteReview({ vaultPath, notePath, review }): Promise<{ ok: boolean, relPath?: string, error?: string }>  // format 5 优先改 seen-meta.review；没有 seen-meta 时回退 frontmatter 的 review 行
 // 三篇索引（视频索引.md / 概念索引.md / 标签索引.md）都走 writeAutoNote：只更新 AUTO 区、已存在保留标题与用户区、不存在建骨架
 // B 站身份统一 BV 前缀、保留编号其余部分大小写并带分 P；跨平台 videoId 按来源区分。
 export async function readFrontmatterBvid({ vaultPath, relPath }): Promise<string | null>
@@ -638,7 +638,7 @@ export function parseNoteMarkdown(markdown: string): {
   conceptEntries, conceptBlockCount, relatedLinks, manualLinkTarget,
   manualMarkersOk, detailsOk, statsUrl,
 }
-export function checkNoteShape(note): Finding[]           // 版式区块与顺序、四层标签、概念块引用、章节时间轴
+export function checkNoteShape(note): Finding[]           // 版式区块与顺序、标签（学科/主题；旧版含类型/概念）、概念块引用、章节时间轴
 export function checkNoteLinks(note, { exists, selfPath }): Finding[]   // 相关笔记 / 学科手册链接
 export function checkIndexLinks(markdown, { exists }): Finding[]        // 索引页里的 [[双链]]
 export function checkSummaryShape(summary): Finding[]     // 模型总结结构（回放回归）
@@ -739,7 +739,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 控制器的 `ready` 是目录准备完成后结束的 Promise；只读实例不会创建笔记目录。`getStatus()` 与 `getConfig()` 都返回 `readOnly` / `readOnlyReason`（`locked-by-other` / `lock-write-failed` / `lock-stale-unlink-failed` / `state-unreadable`），`getConfig()` 还返回 `readOnlyMessage`，状态消息里同步说明只读原因。
 - `refreshHistory({ limit, onProgress })` 按 createdAt 倒序重跑 state 里的视频，逐条通过共享队列调用 `processTitle({ refresh: true })`；重刷只覆盖笔记，内容与字幕抓取仍复用缓存。返回 `{ ok, total, done, failed, stateSaved, warnings }`，状态保存失败或单篇警告会汇总到 `warnings`；队满时返回 `code:"queue-full"`、实际完成数 `done` 与 `remaining`。
 - 写笔记前先把 `{ key, activeKey, title, subject, source, bvid, videoId, page, url, author, notePath, transcriptPath, createdAt, at }` 写入 `state.pendingVideos` 并落盘；首次落盘失败立即中止，不写笔记。启动后 `reconcilePendingState` 跨学科按 bvid+page / videoId+source 精确匹配（notePath 完全一致优先），唯一命中则从笔记回填 summary/question/answer/tags/concepts/quality/contentType/review，合并同一路径的旧记录。其他路径只在确认文件缺失且身份唯一时重新关联，有原文件的各条记录继续保留。恢复后重建索引；扫描不完整或身份有歧义时保留 pending。`ready` 与 `reprobeVault()` 共用同一个恢复任务，首次权限不足时会在重新探测成功后补跑。
-- `state.pendingReviews[notePath] = { review, at }` 用于复习进度崩溃恢复；写入笔记前先落盘 pending，恢复时只有笔记 frontmatter 的 `review` 与 pending 完全一致才写回 state。
+- `state.pendingReviews[notePath] = { review, at }` 用于复习进度崩溃恢复；写入笔记前先落盘 pending，恢复时只有笔记里的 `review` 与 pending 完全一致才写回 state（format 5 读 seen-meta，format 4 读 frontmatter）。
 - `rebuildKnowledgePages()` 按 state 重建索引、概念页、主题页、手册与总览；vault 被熔断时返回 `{ ok:false, blocked:true }`。
 - `resummarizeNote({ notePath })` 读 `资料/字幕/<笔记名>.md` 存档后按 `refresh:true` 重跑该篇；存档明确属于另一篇笔记时拒绝重整理。存档模式传 `archiveOnly:true` + `prefetchedContent`，不重新抓平台内容、不下载音频、不转写，只缺元数据时从原笔记/状态补齐。新笔记写 `contentSource: 'archive'`，并从原笔记的 `transcriptOrigin`（没有该字段时回退 `contentSource`）取原始来源写入 `transcriptOrigin`；质量分按它计算，来源统计用存档字数。已经是 `archive` 且没有记录原始来源的旧笔记无法还原，只标为「更早的字幕存档」。
 - 启动时严格读取状态。已有 `state.json` 无法读取或结构无效时，控制器返回 `readOnlyReason:"state-unreadable"`，保留原文件和知识库索引。维护命令严格读取状态后才允许写入。
@@ -751,7 +751,7 @@ export async function rememberVideo({ config, title, subject, summary, keyPoints
 - 自动识别、扫描、重试、重刷和字幕重整共用队列。失败重试跳过冷却，成功后才清理失败记录。批量重刷遇到队满时返回实际完成数和剩余数。
 - `GET /api/status?view=menubar` 返回菜单栏所需的状态和模型配置标志。默认状态接口提供完整快照。
 - `GET /api/update` 缓存最近一次成功查询 24 小时。查询失败返回 HTTP 502，可以立即重试。`force=1` 跳过成功缓存，并发检查共享请求。
-- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 先写 `pendingReviews` 落盘，再更新笔记 frontmatter 与 state。首次落盘失败返回 `{ ok:false, stateSaved:false, retryable:true }`，服务端按失败返回 400，且不碰笔记；笔记更新成功但最终 state 落盘失败时返回 `{ ok:false, partial:true, stateSaved:false, retryable:true }`，保留 pending 供下次启动恢复。
+- `getReviews()` 返回 `collectReviews(getHistory())` 的到期队列与统计；`recordReview({ notePath, rating })` 先写 `pendingReviews` 落盘，再更新笔记里的 `review`（format 5 为 seen-meta，format 4 为 frontmatter）与 state。首次落盘失败返回 `{ ok:false, stateSaved:false, retryable:true }`，服务端按失败返回 400，且不碰笔记；笔记更新成功但最终 state 落盘失败时返回 `{ ok:false, partial:true, stateSaved:false, retryable:true }`，保留 pending 供下次启动恢复。
 - `askLibrary({ question })` 检索笔记并调用 `answerQuestion`，返回 `{ ok, question, answer, citations, sources }`；笔记库没有命中时返回说明文字而不是报错。
 - `renameTag({ from, to })` 合并主题标签：逐篇 `updateNoteTags` 成功后才改该篇 state 的 `video.tags` 并立即落盘，最后更新 `tagVocabulary` 与 `rebuildKnowledgePages`；类型/概念/学科标签拒绝合并。中途失败返回 `{ ok:false, partial:true, changed, remaining, retryable:true, warnings }`，已改的笔记与 state 保持一致，未处理的保持原样；HTTP `/api/tags/merge` 与 `/api/reviews` 对 `ok || partial` 返回 200 并原样带出 `partial` / `warnings`。
 - 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。

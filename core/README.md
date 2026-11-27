@@ -28,7 +28,7 @@ onEvent(fn) / isReadOnly() / isStarted()
 
 事件类型：`foreground / stable / detected / fetching / progress / content / classified / transcript / summarizing / summarized / saved / skipped / refresh / error / status`。
 
-## 模块
+## 主要模块（节选）
 
 | 目录 | 职责 |
 |---|---|
@@ -37,6 +37,12 @@ onEvent(fn) / isReadOnly() / isStarted()
 | `lib/transcript.js` | 字幕获取、SRT 解析、时间轴 |
 | `lib/analyze.js` | 提示词与 LLM 输出解析 |
 | `lib/render.js` | Markdown 渲染（笔记、手册、总览） |
+| `lib/note-content.js` | 内容类型、类型模板字段、术语与质量分标准化 |
+| `lib/review-schedule.js` | 间隔复习调度与到期队列 |
+| `lib/note-check.js` | 笔记结构的离线解析与校验 |
+| `lib/topic-pages.js` `rebuild.js` | 概念页/主题页与知识库全量重建 |
+| `lib/ask.js` | 问笔记库的检索、回答与引用 |
+| `lib/transcript-note.js` | 字幕存档读写 |
 | `lib/obsidian.js` | vault 写入与 AUTO 区块更新 |
 | `lib/vault-path.js` `vault-access.js` | vault 路径边界校验、权限守卫与串行队列 |
 | `lib/transcript-audit.js` | 字幕存档只读审计（owner、重复、旧路径） |

@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；409 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 。callout 配色统一尚未做，当前沿用 Obsidian 默认配色。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -127,7 +127,7 @@
 | --- | --- | --- | --- |
 | B 站 | UP 主；字幕；视频链接；时长；发布时间 | 字幕字数；弹幕抓取/全站；评论抓取/全站 | 有真实弹幕/评论时显示 |
 | 抖音精选 | 作者；字幕；视频链接；时长；发布时间 | 字幕字数；评论/弹幕暂未抓取（可省略） | 无真实评论时省略 |
-| YouTube | 频道；字幕；视频链接；时长；发布时间 | 字幕字数；章节数；评论未抓取 | 无弹幕/评论时省略 |
+| YouTube | 频道；字幕；视频链接；时长；发布时间 | 字幕字数；评论未抓取 | 无弹幕/评论时省略 |
 
 通用：
 
@@ -139,8 +139,8 @@
 
 1. 仅元数据（没有字幕/转写）
    - 摘要加 [!warning] 内容依据有限
-   - 核心知识点 3～8 个，只基于标题和简介
-   - 关键数字、核心概念、术语、原话、资源、类型模板全部省略
+   - 只保留摘要、速览（没有章节时不生成）、延伸思考（没有真实讨论时）与附录
+   - 核心知识点、复习卡片、关键数字、核心概念、术语、原话、资源、类型模板全部省略
    - quality 固定 1
 2. 没有关键数字 / 没有章节 / 没有相关笔记 / 没有评论
    - 对应整节省略，不输出空表头和“暂无”
@@ -210,9 +210,9 @@
 
 ### 8.1 core/lib/render.js
 
-- renderVideoNote：v5 frontmatter、无 H1、摘要 callout、动态编号、类型矩阵、概念表、复习卡 callout、附录 callout、我的补充、抓取统计
+- renderVideoNoteV5：v5 frontmatter、无 H1、摘要 callout、动态编号、类型矩阵、概念表、复习卡 callout、附录 callout、我的补充、抓取统计
 - buildReviewCards：从单行 问题::答案 改为多行卡（问题 / ? / 答案）
-- renderSubjectManual：去除学习路径与视频笔记重复列表；术语表读取 definition 而不是 brief；mindmap 改为主题分组或删除
+- renderSubjectManual：去除学习路径与视频笔记重复列表；术语表读取 definition，旧数据没有 definition 时回退 brief（2026-11-27 修复）；mindmap 改为主题分组或删除
 - renderOverview：学科列表显示视频数
 - renderFrontmatter：支持中文键、seen-meta、cssclasses
 
@@ -245,7 +245,7 @@
 - updatedAt / createdAt 分开
 - noteTags 与 allTags
 - cssclasses 和 flashcards 标签
-- 传给 renderVideoNote 的字段调整
+- 传给 renderVideoNoteV5 的字段调整
 - 旧笔记重刷时保留路径与 review
 
 ### 8.6 core/lib/note-check.js
@@ -274,7 +274,7 @@
 
 ## 九、实施阶段
 
-### Phase 0：确认（当前）
+### Phase 0：确认（已完成）
 - 确认本方案的范围和默认决策
 - 确认是否接受 CSS 片段作为可选增强
 - 确认旧笔记迁移是否首轮执行
@@ -301,7 +301,7 @@
 ### Phase 3：Obsidian 显示
 - [x] seen-note.css（已入库 docs/examples/seen-note.css，复制到 vault 后可选启用）
 - [x] H2 色带/左边框、H3 左边线、标签灰色、属性两栏
-- [ ] callout 配色统一
+- [ ] callout 配色统一（未做，当前沿用 Obsidian 默认配色）
 - [x] Reading/Live Preview 验证
 - [x] Spaced Repetition 多行卡验证
 
@@ -325,7 +325,7 @@
 - note-check.js 支持 v5 解析与校验：中文属性、seen-meta、编号标题、H3 子区块、概念表、callout。
 - index.js 已切到 v5 渲染，传入 originalTitle/displayTitle/updatedAt/noteTags，并在重整理时解析 seen-meta 的 review。
 - obsidian.js 的收录识别与 review 更新支持 seen-meta；self-check.mjs 用 noteTags 对比状态标签。
-- 测试：cd core && node --test 407 项全部通过；npm run check 通过。
+- 测试：cd core && node --test 407 项全部通过（当时；当前 409 项）；npm run check 通过。
 - 样例已改为 callout 版式，附录在「我的补充」之前，并通过 v5 校验。
 - 2026-11-27 附录改为独立编号（完整结构下 `07`，其余按实际区块顺延）并默认展开，我的补充顺延为最后一节：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-v059-20261127-120407/video-notes.tgz`。
 - 平台发布时间已接入：B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime`，统一经 `dates.js` 归一为 `YYYY-MM-DD`；旧缓存没有该字段时保持为空。
@@ -371,9 +371,9 @@
 - 标题清洗和文件名变更会影响双链；必须独立迁移并充分备份。
 - 标签模型拆分后，标签索引必须使用 state 全量标签，否则类型/概念分区会丢。
 - 旧笔记不自动改写，避免一次性大范围破坏。
-- 我的补充、关键数字时间列、概念块引用三个默认决策如与预期不符，会在 Phase 0 调整。
+- 我的补充、关键数字时间列、概念块引用三个默认决策已落地；后续如需调整，在维护阶段按新方案处理。
 
-## 十三、默认决策（待用户确认）
+## 十三、已确认的默认决策
 
 1. 尾部 details 全部改成 callout，统一浅色样式；复习卡默认折叠，附录默认展开。
 2. 核心知识点：每个 H3 第一条固定为结论句，不强行合并主题；超过 10 个 H3 时合并相近主题。
@@ -383,6 +383,6 @@
 6. CSS：作为可选增强，随应用安装/提供一键安装，模板本身不依赖。
 7. 标题空格：正文、标题、文件名统一执行 spaceCjk；旧笔记迁移时改名。
 
-## 十四、下一步
+## 十四、维护与后续
 
-用户确认本方案后，按 Phase 1 → Phase 4 实施；先改代码和测试，不改正式笔记模板；最后用一篇真实笔记和现有 22 篇旧笔记做回归验证。
+模板已按 Phase 1 → Phase 5 落地并发布；后续改动先更新本方案与契约，再改代码和测试，最后用真实笔记与正式库回归。callout 配色统一仍可作为可选样式改进。

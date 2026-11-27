@@ -77,6 +77,25 @@ test('manual and overview render with AUTO block', () => {
   assert.ok(overview.includes('[[视频笔记/资料/手册/机器学习|机器学习]]'))
 })
 
+test('manual term table reads definition and falls back to brief', () => {
+  const manual = renderSubjectManual({
+    subject: '机器学习',
+    videos: [{
+      title: '梯度下降详解',
+      notePath: '视频笔记/机器学习/梯度下降详解',
+      summary: '摘要',
+      createdAt: Date.now(),
+      terms: [
+        { name: '梯度下降', definition: '沿负梯度方向更新参数' },
+        { name: '学习率', brief: '每次更新的步长' },
+      ],
+    }],
+    noteRoot: '视频笔记',
+  })
+  assert.match(manual, /\*\*梯度下降\*\* — 沿负梯度方向更新参数/)
+  assert.match(manual, /\*\*学习率\*\* — 每次更新的步长/)
+})
+
 test('upsertAutoBlock preserves user content', () => {
   const original = 'header\n\n<!-- AUTO:START -->\nold\n<!-- AUTO:END -->\n\nUSER CONTENT'
   const updated = upsertAutoBlock(original, autoBlock('new body'))

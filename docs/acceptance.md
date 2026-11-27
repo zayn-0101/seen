@@ -1,6 +1,6 @@
 # 验收清单
 
-> 实施记录（2026-11-12）。完成后逐项勾选。
+> 实施记录（2026-11-12 起按时间追加）。以下为历史验收记录，当前状态以文末最新版本为准；早期测试数字不再更新。
 
 ## 自动化
 
@@ -477,7 +477,7 @@
 
 ## 2026-11-26 视频笔记 v5 模板
 
-背景：format 4 的模板存在标题重复、属性过多、颜色无层级、概念与术语重复、复习卡片凑数、折叠在 Live Preview 失效等问题。用户在示例笔记上逐项确认后，按 `docs/note-template-v5-plan.md` 分阶段实施，旧 format 4 笔记不自动改写。
+背景：format 4 的模板存在标题重复、属性过多、颜色无层级、概念与术语重复、复习卡片凑数、折叠在 Live Preview 失效等问题。用户在示例笔记上逐项确认后，按 `docs/note-template-v5-plan.md` 分阶段实施，旧 format 4 笔记不自动改写。本节记录 2026-11-26 当时的实施状态；附录在 2026-11-27 改为独立编号并默认展开，见文末两节。
 
 - [x] Phase 1 数据与标题：新增 `core/lib/text.js`（`spaceCjk` / `cleanDisplayTitle`），生成时保留 `originalTitle`、用清洗后的 `displayTitle` 作为文件名与笔记标题；`created` 与 `updated` 分开；新增 `noteTags`（学科 + 主题，写进笔记）与 `allTags`（含类型/概念，供索引与筛选）
 - [x] Phase 2 渲染：新增 `renderVideoNoteV5`，可见中文属性 + 文末 `seen-meta`、正文无 H1、`[!abstract] 摘要`（概述/核心问题/核心结论）、动态编号的 `01 速览`～`07 我的补充`、概念与术语合并为两列表格、复习卡片改为 `[!summary]-` 多行卡（问题 / `?` / 答案）、附录统一为可折叠 callout
@@ -626,3 +626,11 @@
 - [x] `git push origin main`（`76ee91d..8c7b25f`）与 tag `v0.5.9` 已推送，tag 指向 `8c7b25f`
 - [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ，资产 `Seen-v0.5.9.dmg` 89,261,206 bytes
 - [x] 本机 `/Applications/Seen.app` 已是 0.5.9，后续生成的 format 5 笔记使用动态编号的附录（完整结构下 07）、最后一节我的补充和默认展开的附录 callout
+
+## 2026-11-27 学科手册术语表修复
+
+背景：学科手册的术语表读取 state 里 `video.terms` 的 `brief` 字段，但 state 实际存的是 `definition`，导致术语只有名称、没有解释。
+
+- [x] `core/lib/render.js` 的术语表改为优先读取 `definition`，旧数据没有 `definition` 时回退 `brief`
+- [x] `core/test/render.test.js` 增加回归测试，覆盖 `definition` 和 `brief` 回退
+- [x] `cd core && node --test`：409 tests / 409 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0

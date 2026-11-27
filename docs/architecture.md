@@ -23,8 +23,8 @@
       → transcript.fetchTranscript()：播放器字幕（校验 AI 字幕 URL 的 aid+cid）→ yt-dlp SRT → 下载音频 + 本地 Whisper 转写
       → classify()：LLM JSON → {isCourse, subject, title, keywords}
       → 非课程：markSeen，静默
-      → summarize()：LLM JSON → {summary, keyPoints, discussion, mnemonSummary}
-      → renderVideoNote()
+      → summarize()：LLM JSON → {summary, question, answer, keyPoints, reviewCards, concepts, numbers, template, quotes, terms, resources, contentType, tags, discussion, mnemonSummary}
+      → renderVideoNoteV5()（旧 renderVideoNote 仅保留给 format 4）
       → writeVideoNote()（原子写；冲突处理）
       → updateSubjectManual()（只更新 AUTO 区）
       → updateOverview()
@@ -67,6 +67,7 @@
   └─ POST /api/check      前台权限、Obsidian、mnemon、B站、YouTube、LLM 诊断
 ```
 
+- 上面的列表是主要端点；搜索、复习、标签、安装、模型设置等完整路由见 `server/index.js`。
 - `server/index.js` 构造一个最小的 Cordis Context（`llm` / `tools` / `effect`），调用引擎的 `apply()`，拿回控制器 API（完整清单见 `docs/contracts.md`）。
 - `server/llm.js` 把本机 Magpie 网关（`http://127.0.0.1:3425/v1`）适配成流式接口，也支持任意 OpenAI-compatible 服务。
 - 多个 Seen 实例共用同一状态目录与 `instance.lock`：启动时先把 owner 写入唯一临时目录，再用 `renameSync` 原子替换/创建锁目录；清理陈旧锁前核对目录 inode/dev，只删除自己的 owner 文件再 `rmdir`，非空目录不删，避免误删其他进程刚创建的新锁；同 PID 重复启动按占用处理。后启动的实例为只读并在状态里说明原因（锁被占用/锁写入失败/旧锁无法清理/状态文件无法读取），停掉占用者后可接管；状态文件本身损坏时需先修复或从备份恢复。
@@ -106,7 +107,7 @@
 
 重写笔记前的 .bak 与迁移副本放在 vault 外的 `~/.seen/backups/`。
 
-- 视频笔记：可见中文属性 + 文末 seen-meta（含 contentType / quality / format 5 / review；重整理写 contentSource: archive，并用 transcriptOrigin 保留原始字幕来源）+ 摘要 + 动态编号的速览/核心知识点/类型补充/概念与术语表/相关笔记/复习卡片 + 动态编号的附录（完整结构下 07；原话/资源/观众讨论/抓取统计，默认展开）+ 我的补充（顺延，最后一节；不抓封面、不画思维导图）。旧 format 4 笔记不自动改写。
+- 视频笔记：可见中文属性 + 文末 seen-meta（含 title / displayTitle / source / url / author / contentType / quality / format 5 / review 等机器字段；重整理写 contentSource: archive，并用 transcriptOrigin 保留原始字幕来源）+ 摘要 + 动态编号的速览/核心知识点/类型补充/概念与术语表/相关笔记/复习卡片 + 动态编号的附录（完整结构下 07；原话/资源/观众讨论/抓取统计，默认展开）+ 我的补充（顺延，最后一节；不抓封面、不画思维导图）。旧 format 4 笔记不自动改写。
 - 学科学习手册：AUTO 区（mindmap + 学习路径 + 视频链接 + 核心概念 + 术语表 + 常见对比 + 待解问题）+ 用户「我的补充」区。
 - 总览：AUTO 区（学科 mindmap + 学科列表 + 最近更新 + 知识库概况）；`flat` 布局下学科手册与笔记同级，`structured` 布局下分到 `笔记/` 与 `资料/手册/`。
 - 概念页/主题页：按出现篇数阈值自动建页，只维护 AUTO 区；主题页的相关概念只链接真实存在的概念页。

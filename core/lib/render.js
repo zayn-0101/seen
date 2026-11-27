@@ -1165,7 +1165,7 @@ export function subjectManualAutoBody(input = {}) {
     const terms = Array.isArray(video.terms) ? video.terms : []
     for (const item of terms) {
       const name = cleanInline(typeof item === 'string' ? item : item?.name)
-      const brief = cleanInline(typeof item === 'string' ? '' : item?.brief)
+      const brief = cleanInline(typeof item === 'string' ? '' : (item?.definition ?? item?.brief))
       const key = conceptKey(name)
       if (!key) continue
       if (!termMap.has(key)) termMap.set(key, { name, brief, videos: [] })

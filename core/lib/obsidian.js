@@ -578,7 +578,7 @@ export function updateNoteTags({ vaultPath, notePath, tags, backup } = {}) {
   })
 }
 
-/** 更新笔记 frontmatter 里的 review 字段（复习状态），保留其余内容。 */
+/** 更新笔记里的 review 字段（format 5 优先写 seen-meta，format 4 回退 frontmatter），保留其余内容。 */
 export function updateNoteReview({ vaultPath, notePath, review } = {}) {
   const relPath = String(notePath || '').trim().replace(/\\/g, '/')
   if (!relPath) return Promise.resolve({ ok: false, error: '缺少 notePath' })

@@ -9,7 +9,7 @@ macOS 菜单栏常驻小应用，作为 Seen 本地服务的控制器。Swift + 
 ./build.sh --install    # 同目录暂存后安装到 ~/Applications/Seen.app，失败或中断回滚（SIGKILL/断电除外）
 ```
 
-功能、登录自启、图标替换和排障说明见根目录 [README](../README.md) 的「菜单栏应用（macOS）」章节。
+功能、登录自启、图标替换和排障说明见根目录 [README](../README.md) 的快速开始、通知、常见问题与「菜单栏应用」相关段落。
 
 ## 结构
 
