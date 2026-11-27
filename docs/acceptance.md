@@ -559,3 +559,13 @@
 - [x] 本次补卡改动已本地提交，未 push
 
 已知小问题：部分卡片偏数字型事实；两篇只有 4 张卡（生成时被元问题过滤）；没有把 `reviewCards` 写回 state，刷新或重整理如果不走模型，无法从 state 恢复这些卡。
+
+## 2026-11-27 v0.5.7 发布
+
+- [x] `package.json` 从 0.5.6 升到 0.5.7，提交 `a1ac63e chore: 升版本到 0.5.7`
+- [x] `cd core && node --test`：408 项通过，0 失败；`npm run check`：123 个文件通过；`npm run self-check`：22 篇笔记，错误 0，警告 0
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.7.dmg`（85M，universal）：版本 0.5.7、固定证书签名通过、内嵌代码含 `renderVideoNoteV5`
+- [x] SHA256：`d7d0a6c6de1206c28527f37edd4fc3be6959a23fc8e4d5af15d4c665fea222a3`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-095817`；安装后进程 PID 55884、服务 PID 55901，vault 权限正常
+- [x] `git push origin main` 与 tag `v0.5.7` 已推送；GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.7
+- [x] 本机 `/Applications/Seen.app` 已是 0.5.7，新视频自动整理使用 format 5
