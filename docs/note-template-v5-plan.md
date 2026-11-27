@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；407 项测试通过，自检 22 篇 0 错误 0 警告。尚未 commit/push。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移已本地提交 `88da1f1`，补卡改动待提交；尚未 push。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  ensureVaultDirs, writeVideoNote, writeTranscriptNote, updateSubjectManual, updateOverview, readFrontmatterBvid, readVaultText, updateNoteTags,
+  ensureVaultDirs, writeVideoNote, writeTranscriptNote, updateSubjectManual, updateOverview, readFrontmatterBvid, readVaultText, updateNoteTags, writeVaultText,
 } from '../lib/obsidian.js'
 import { renderTranscriptNote } from '../lib/transcript-note.js'
 
@@ -13,6 +13,21 @@ async function setup() {
   await ensureVaultDirs({ vaultPath: vault, noteRoot: '视频笔记', stateDir: null })
   return vault
 }
+
+test('writeVaultText replaces a note through the vault layer', async () => {
+  const vault = await setup()
+  try {
+    const relPath = '视频笔记/笔记/示例/覆盖写入.md'
+    const first = await writeVaultText({ vaultPath: vault, relPath, content: '第一版' })
+    assert.equal(first.ok, true)
+    assert.equal(await readVaultText({ vaultPath: vault, relPath }).then((result) => result.text), '第一版')
+    await writeVaultText({ vaultPath: vault, relPath, content: '第二版' })
+    assert.equal(await readVaultText({ vaultPath: vault, relPath }).then((result) => result.text), '第二版')
+    assert.equal((await writeVaultText({ vaultPath: vault, relPath: '', content: 'x' })).ok, false)
+  } finally {
+    rmSync(vault, { recursive: true, force: true })
+  }
+})
 
 test('writeVideoNote handles same/different bvid', async () => {
   const vault = await setup()

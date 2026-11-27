@@ -544,3 +544,18 @@
 - [x] 未 commit/push
 
 已知小问题：旧笔记迁移后每篇只有 1 张真问答卡（旧的 `H3标题::首条要点` 假卡已过滤）；抓取统计数字没有千分位；少数旧文保留繁体字。
+## 2026-11-27 旧笔记补真复习卡
+
+背景：22 篇旧 format 4 笔记迁移到 format 5 后，每篇只剩 1 张真问答卡（旧的 `H3 标题::首条要点` 假卡已过滤）。用户选择批量补卡，不重新下载视频，只基于现有笔记正文生成。
+
+- [x] 新增 `scripts/refill-review-cards.mjs`：默认预演，`--apply` 才写；支持 `--limit` / `--only` / `--cache` / `--refresh`；只替换 `## 0X 复习卡片` 的 `[!summary]-` callout，保留四个附录 callout 和 `## 07 我的补充`
+- [x] `core/lib/obsidian.js` 增加 `writeVaultText`，通过 vault 队列原子覆盖写；`core/test/obsidian.test.js` 增加创建、覆盖、读回与空路径测试
+- [x] 提示词要求 3~5 组真问答，问题以问号结尾，答案不超过 60 个汉字；过滤「笔记/视频/作者/主播/文中/片中」这类指代材料的元问题
+- [x] 卡片正文统一走 `spaceCjk`，与笔记正文的中英文、数字空格保持一致
+- [x] 生成结果：22 篇，每篇 4~5 张；问题均为完整问句，答案分别为独立行
+- [x] 写前备份：`~/.seen/backups/review-cards-20261127-084019/manifest.json`（首次生成备份在 `review-cards-20261127-083854`）
+- [x] 校验：22 篇 format 5、`checkNoteShape` findings 0、每篇 4~5 张卡、`我的补充` 仍是最后一节、四个附录 callout 仍在
+- [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+- [x] 本次补卡改动已本地提交，未 push
+
+已知小问题：部分卡片偏数字型事实；两篇只有 4 张卡（生成时被元问题过滤）；没有把 `reviewCards` 写回 state，刷新或重整理如果不走模型，无法从 state 恢复这些卡。

@@ -37,6 +37,7 @@ seen/
 │   ├── maintain-vault.mjs        按 state 重建索引、概念页、主题页、手册与总览
 │   ├── migrate-vault.mjs         笔记目录迁移（含备份与路径重写）
 │   ├── migrate-note-format-v5.mjs 旧笔记迁移到 format 5（默认预演，备份后写入）
+│   ├── refill-review-cards.mjs    旧笔记补 3~5 张真复习卡（默认预演，备份后写入）
 │   ├── retag-notes.mjs           重打历史笔记的标签
 │   ├── restore-state.mjs        核验或恢复最近两份状态备份
 │   ├── strip-cover.mjs           清掉旧笔记里的封面

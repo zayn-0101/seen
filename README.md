@@ -288,6 +288,8 @@ npm run prune:install -- --apply --keep 2  # 真正删除
 
 每篇视频笔记会带一组「复习卡片」：真正的问答，3~5 张，放在默认折叠的 [!summary]- callout 里，插件识别的是多行卡格式（问题 / ? / 答案）。装了 Spaced Repetition 后，用 #flashcards 笔记即可复习卡片；review 进度保存在文末 seen-meta，面板「今日复习」只列今天到期的笔记。
 
+旧版式迁移后如果卡片不足，可运行 `node scripts/refill-review-cards.mjs` 预演，确认后加 `--apply`；写前会备份到 `~/.seen/backups/review-cards-<时间>/`。
+
 三个按钮的含义：
 
 - **记住了**：按 1 → 3 → 7 → 16 → 35 天逐级拉长；

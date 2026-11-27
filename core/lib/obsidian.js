@@ -541,6 +541,16 @@ export function readVaultText({ vaultPath, relPath } = {}) {
   })
 }
 
+/** 整篇覆盖写入一篇 vault 内的 Markdown；调用方负责保留需要的内容。 */
+export function writeVaultText({ vaultPath, relPath, content } = {}) {
+  const rel = toPosix(String(relPath ?? '')).replace(/^\/+/, '')
+  if (!rel) return Promise.resolve({ ok: false, error: '缺少文件路径' })
+  return runVaultTask(async () => {
+    await atomicWrite({ vaultPath, relPath: rel, content: String(content ?? '') })
+    return { ok: true, relPath: rel }
+  })
+}
+
 /** 只改 frontmatter 的 tags 行（保留其它字段与正文）。 */
 export function updateNoteTags({ vaultPath, notePath, tags, backup } = {}) {
   const relPath = toPosix(String(notePath ?? ''))
