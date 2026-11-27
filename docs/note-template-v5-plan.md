@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成不编号的 `## 附录`，渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成 `07 附录` 并默认展开，我的补充顺延为 `08`；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -90,12 +90,12 @@
   - [!summary]- 展开 N 张卡片
   - 内部多行卡：问题行、空行、? 行、空行、答案行；每张卡之间空行
   - #flashcards 标签由配置决定是否添加
-- ## 附录（不编号，全部可折叠 callout）
+- 07 附录（默认展开 callout）
   - 原话摘录
   - 提到的资源
   - 观众讨论（仅真实弹幕/评论；无数据则省略）
   - 抓取统计：字幕字数、弹幕抓取/全站、评论抓取/全站
-- 07 我的补充
+- 08 我的补充
   - 作为最后一节，放一行提示：记录疑问、联想或待查资料
   - 保留 MANUAL:START / MANUAL:END 手写保护区
 
@@ -249,7 +249,7 @@
 ### 8.6 core/lib/note-check.js
 
 - NOTE_FORMAT 仍为 4，新增 NOTE_FORMAT_V5 = 5；v5 用 note.format >= 5 或 isV5 分支识别
-- 新 SECTION_ORDER_V5：速览、核心知识点、可质疑之处/常见误解、核心概念与术语、相关笔记、复习卡片、我的补充
+- 新 SECTION_ORDER_V5：速览、核心知识点、可质疑之处/常见误解、核心概念与术语、相关笔记、复习卡片、附录、我的补充
 - 支持中文属性、seen-meta、编号 H2 与 H3 子区块、表格概念、多行复习卡、callout 折叠
 - 概念检查不再依赖 ^concept- 块引用；改为校验概念表与 state.concepts 一致
 - 保留标签、学科、时间链接、抓取统计检查；flashcards/review 作为控制标签跳过
@@ -292,7 +292,7 @@
 - [x] 概念与术语表（无正文块引用）
 - [x] 相关笔记
 - [x] 复习卡片多行卡
-- [x] ## 附录（不编号）内的可折叠 callout
+- [x] 07 附录内的 callout（默认展开）
 - [x] 我的补充
 - [x] 动态编号
 
@@ -325,7 +325,7 @@
 - obsidian.js 的收录识别与 review 更新支持 seen-meta；self-check.mjs 用 noteTags 对比状态标签。
 - 测试：cd core && node --test 407 项全部通过；npm run check 通过。
 - 样例已改为 callout 版式，附录在「我的补充」之前，并通过 v5 校验。
-- 2026-11-27 附录独立成不编号的 `## 附录`：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`。
+- 2026-11-27 附录独立成 `07 附录` 并默认展开，我的补充顺延为 `08`：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`。
 - 平台发布时间已接入：B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime`，统一经 `dates.js` 归一为 `YYYY-MM-DD`；旧缓存没有该字段时保持为空。
 - README、docs/contracts.md、docs/architecture.md、CLAUDE.md 已同步；docs/acceptance.md 已追加 v5 验收段。
 - 真实 B 站端到端（`BV1cUsu6ZEYp`，临时 vault，未写用户库）通过：生成 5 张真问答卡、原话不再出现 `[00:00]`、概念表无 `3A`/`DEI指标` 重复行、文件名去掉结尾句号；结构检查 0 findings。
@@ -336,13 +336,13 @@
 - YouTube 暴露并修复：无字幕时模型仍从简介编出知识点与复习卡，v5 改为元数据版整节省略；`<Untitled Chapter 1>` 占位章节被过滤；没有抓取到评论时，讨论区标签从「YouTube 评论」改为「延伸思考」。
 - 2026-11-26 正式库迁移完成：22 篇、13 篇改名、40 个文件引用更新，备份 `~/.seen/backups/v5-2026-11-26T16-23-02`；修复改名未移走旧文件、索引写到 vault 根、字幕存档 owner、链接空格顺序、self-check 不识别 v5 五个问题。
 - 迁移后验证：`node --test` 407/407、`npm run check` 122 个文件、`npm run self-check` 22 篇 0 错误 0 警告。
-- 尚未做：commit/push（push 需用户确认）。
+- 已发布：v0.5.7、v0.5.8。
 
 ## 十、验收标准
 
 - 新生成笔记结构符合本方案，属性面板只显示约定字段。
 - 正文只有文件名一个标题，不出现 H1。
-- 摘要、核心知识点、概念表、复习卡、附录、我的补充顺序正确。
+- 摘要、核心知识点、概念表、复习卡、07 附录、08 我的补充顺序正确。
 - 视频链接、UP 主、BV 号、字幕来源不在抓取统计重复。
 - 复习卡片默认折叠；展开后问题、?、答案分行可读。
 - Spaced Repetition 能识别 #flashcards 笔记，5 张卡都能复习。
@@ -375,7 +375,7 @@
 
 1. 尾部 details 全部改成可折叠 callout，统一浅色样式。
 2. 核心知识点：每个 H3 第一条固定为结论句，不强行合并主题；超过 10 个 H3 时合并相近主题。
-3. 我的补充：放在所有附录之后，作为最后一节；加一行提示。
+3. 我的补充：放在 07 附录之后作为 08，最后一节；加一行提示。
 4. 概念块引用：移除正文 ^concept-，概念索引使用 state.concepts。
 5. flashcards 标签：默认加；可在配置中关闭。
 6. CSS：作为可选增强，随应用安装/提供一键安装，模板本身不依赖。

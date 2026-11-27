@@ -89,7 +89,7 @@ function yamlString(value) {
 
 function callout(type, title, lines) {
   const body = (Array.isArray(lines) ? lines : []).filter((line) => String(line ?? '').trim() !== '')
-  return ['> [!' + type + ']- ' + title, '>', ...body.map((line) => '> ' + line)]
+  return ['> [!' + type + '] ' + title, '>', ...body.map((line) => '> ' + line)]
 }
 
 function calloutText(type, title, lines) {
@@ -129,7 +129,7 @@ function parseStats(body) {
     if (!match) continue
     const label = clean(match[1])
     const value = clean(match[2])
-    if (!/^(字幕|弹幕|评论|章节)$/.test(label)) continue
+    if (!/^(字幕|弹幕|评论)$/.test(label)) continue
     lines.push('- ' + label + '：' + value)
   }
   return lines
@@ -382,9 +382,9 @@ function transformNote(note, video, originalTitle) {
     appendix.push(calloutText('note', label, discussion), '')
   }
   if (stats.length > 0) appendix.push(calloutText('info', '抓取统计', stats), '')
-  if (appendix.length > 0) bodyLines.push('## 附录', '', ...appendix)
+  if (appendix.length > 0) bodyLines.push('## 07 附录', '', ...appendix)
 
-  bodyLines.push('## 07 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_START, buildManual(note), MANUAL_END, '')
+  bodyLines.push('## 08 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_START, buildManual(note), MANUAL_END, '')
 
   let sectionNumber = 0
   for (let i = 0; i < bodyLines.length; i += 1) {

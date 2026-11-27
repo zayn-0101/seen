@@ -834,12 +834,12 @@ function renderV5TemplateBlock(section, value, { url, platform }) {
   return lines
 }
 
-function calloutBlock(type, title, bodyLines) {
+function calloutBlock(type, title, bodyLines, collapsed = true) {
   const body = Array.isArray(bodyLines) ? bodyLines.filter((line) => String(line ?? '').trim() !== '') : []
-  return ['> [!' + type + ']- ' + title, '>', ...body.map((line) => '> ' + line)]
+  return ['> [!' + type + ']' + (collapsed ? '-' : '') + ' ' + title, '>', ...body.map((line) => '> ' + line)]
 }
 
-/** 视频笔记 v5：中文属性 + 摘要 + 速览 + 核心知识点 + 类型补充 + 概念表 + 折叠附录。 */
+/** 视频笔记 v5：中文属性 + 摘要 + 速览 + 核心知识点 + 类型补充 + 概念表 + 附录。 */
 export function renderVideoNoteV5(input = {}) {
   const source = isPlainObject(input) ? input : {}
   const originalTitle = cleanInline(source.originalTitle) || cleanInline(source.title) || DEFAULT_TITLE
@@ -1037,18 +1037,18 @@ export function renderVideoNoteV5(input = {}) {
   const appendix = []
   if (quotes.length > 0) {
     const quoteLines = quotes.map((quote) => '- ' + timePrefix(quote.time, url, platform) + quote.text)
-    appendix.push(...calloutBlock('quote', '原话摘录（' + quotes.length + ' 条）', quoteLines), '')
+    appendix.push(...calloutBlock('quote', '原话摘录（' + quotes.length + ' 条）', quoteLines, false), '')
   }
   if (resources.length > 0) {
     const resourceLines = resources.map((item) => item.note ? '- **' + item.name + '** — ' + item.note : '- **' + item.name + '**')
-    appendix.push(...calloutBlock('note', '提到的资源（' + resources.length + ' 个）', resourceLines), '')
+    appendix.push(...calloutBlock('note', '提到的资源（' + resources.length + ' 个）', resourceLines, false), '')
   }
   if (discussion.length > 0) {
     const hasRealDiscussion = stats.danmaku > 0 || stats.comments > 0
     const discussionLabel = hasRealDiscussion
       ? (platform === 'youtube' ? '讨论焦点（YouTube 评论）' : '观众讨论（B 站弹幕 / 评论）')
       : '延伸思考'
-    appendix.push(...calloutBlock('note', discussionLabel, discussion.map((item) => '- ' + item)), '')
+    appendix.push(...calloutBlock('note', discussionLabel, discussion.map((item) => '- ' + item), false), '')
   }
   const statLines = []
   if (stats.transcript > 0) statLines.push('- 字幕：' + stats.transcript.toLocaleString('en-US') + ' 字')
@@ -1056,20 +1056,20 @@ export function renderVideoNoteV5(input = {}) {
     if (stats.danmaku > 0) statLines.push('- 弹幕：抓取 ' + stats.danmaku + ' 条 / 全站 ' + (stats.totalDanmaku ? stats.totalDanmaku.toLocaleString('en-US') : '未知') + ' 条')
     if (stats.comments > 0) statLines.push('- 评论：抓取 ' + stats.comments + ' 条 / 全站 ' + (stats.totalComments ? stats.totalComments.toLocaleString('en-US') : '未知') + ' 条')
   } else if (platform === 'youtube') {
-    if (chapters.length > 0) statLines.push('- 章节：' + chapters.length + ' 个')
     statLines.push('- 评论：暂未抓取（YouTube 无弹幕）')
   } else {
     if (stats.danmaku > 0) statLines.push('- 弹幕：抓取 ' + stats.danmaku + ' 条 / 全站 ' + (stats.totalDanmaku ? stats.totalDanmaku.toLocaleString('en-US') : '未知') + ' 条（正文未抓取）')
     if (stats.comments > 0) statLines.push('- 评论：抓取 ' + stats.comments + ' 条 / 全站 ' + (stats.totalComments ? stats.totalComments.toLocaleString('en-US') : '未知') + ' 条（正文未抓取）')
   }
-  if (statLines.length > 0) appendix.push(...calloutBlock('info', '抓取统计', statLines), '')
+  if (statLines.length > 0) appendix.push(...calloutBlock('info', '抓取统计', statLines, false), '')
+
+  if (appendix.length > 0) mainSections.push({ title: '附录', body: appendix })
 
   let number = 0
   for (const section of mainSections) {
     number += 1
     lines.push('## ' + String(number).padStart(2, '0') + ' ' + section.title, '', ...section.body)
   }
-  if (appendix.length > 0) lines.push('## 附录', '', ...appendix)
   number += 1
   lines.push('## ' + String(number).padStart(2, '0') + ' 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_BEGIN, '', MANUAL_END, '')
 
