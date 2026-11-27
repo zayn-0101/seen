@@ -581,6 +581,19 @@
 - [x] `docs/examples/note-format-v5-sample.md` 加入 `## 附录`
 - [x] 正式库 22 篇笔记全部补 `## 附录`，原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`
 - [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
-- [ ] 0.5.8 构建、安装、push 与 GitHub Release 待执行
+- [x] 0.5.8 已构建、安装、push 并发布，见下一节
 
 已知取舍：`## 附录` 不参与 01~07 编号，避免附录变成第八个主区块；四个 callout 仍默认折叠，需要展开时点标题。
+
+## 2026-11-27 v0.5.8 发布
+
+背景：附录独立成节完成后，按用户已授权的完整流程升版本、构建、安装、推送并发布。
+
+- [x] `package.json` 升到 0.5.8，与附录修复一起提交 `24fbe70 fix: 附录独立成节`
+- [x] 发布前验证：`cd core && node --test` 408 tests / 408 pass / 0 fail；`npm run check` 123 个文件通过；`npm run self-check` 22 篇错误 0 警告 0
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.8.dmg`（85M，universal）：版本 0.5.8、固定证书签名通过、内嵌代码含附录渲染逻辑
+- [x] DMG SHA256：`e3a1cafe7b0877f1414b6e7ecb5ad7fadce233facfe4dcfcda6be350febd0d36`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-114218`；安装后进程 PID 87801、服务 PID 87817，vault 权限正常、轮询运行中
+- [x] `git push origin main`（`4d27475..24fbe70`）与 tag `v0.5.8` 已推送
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 ，资产 `Seen-v0.5.8.dmg` 89,261,194 bytes
+- [x] 本机 `/Applications/Seen.app` 已是 0.5.8，新视频自动整理使用带 `## 附录` 的 format 5
