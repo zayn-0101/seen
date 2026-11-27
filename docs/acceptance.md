@@ -634,3 +634,16 @@
 - [x] `core/lib/render.js` 的术语表改为优先读取 `definition`，旧数据没有 `definition` 时回退 `brief`
 - [x] `core/test/render.test.js` 增加回归测试，覆盖 `definition` 和 `brief` 回退
 - [x] `cd core && node --test`：409 tests / 409 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+
+## 2026-11-27 v0.5.10 发布
+
+背景：术语表修复只在仓库代码里，已安装的 0.5.9 仍用旧渲染器，8 篇学科手册的 119 个术语仍只有名称。按用户确认，升版本、构建、安装、重启重建知识库并发布。
+
+- [x] `package.json` 升到 0.5.10，提交 `f5905b4 chore: release v0.5.10`
+- [x] 发布前验证：`cd core && node --test` 409/409；`npm run check` 123 个文件通过；`npm run self-check` 22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.10.dmg`（85M，universal，版本 0.5.10，固定证书签名 `Seen Local Signing`）
+- [x] DMG SHA256：`b311d39fc3a80b3d616492e2fb44b27a9743ac0691e013c8e816e273259b8d23`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-175826`；安装后进程 PID 6762、服务 PID 6784，`/api/status` 返回 ok、vault 正常、8 个学科
+- [x] 重启后启动重建完成：8 篇学科手册共 119 个术语全部补齐解释，`no_explanation=0`；抽样「人工智能」手册首条为 `- **Harness** — 原意「马具」，指把模型与工具连接起来、让模型听懂指令的工作环境。`
+- [x] `git push origin main`（`82cc71e..f5905b4`）与 tag `v0.5.10` 已推送，tag 指向 `f5905b4`
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.10 ，资产 `Seen-v0.5.10.dmg` 89,218,847 bytes

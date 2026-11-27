@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；409 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 。callout 配色统一尚未做，当前沿用 Obsidian 默认配色。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；409 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ；v0.5.10 已发布并推送（提交 `f5905b4`，学科手册术语表修复）：https://github.com/zayn-0101/seen/releases/tag/v0.5.10 。callout 配色统一尚未做，当前沿用 Obsidian 默认配色。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
