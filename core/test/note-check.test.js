@@ -367,6 +367,8 @@ test('v5 notes parse Chinese properties, seen-meta and concept table', async () 
     numbers: [{ value: '1 个', meaning: '测试数字', time: 60 }],
     concepts: [{ name: '3A 游戏', brief: '营销标签', aliases: ['AAA'] }],
     terms: [{ name: '买断制', definition: '一次性付费' }],
+    quotes: [{ text: '原话', time: 12 }],
+    stats: { transcript: 1000, danmaku: 1, comments: 1 },
     tags: ['游戏产业', '主机游戏', '行业趋势', '公司治理', '玩家体验'],
     noteRoot: '视频笔记',
   })
@@ -378,7 +380,7 @@ test('v5 notes parse Chinese properties, seen-meta and concept table', async () 
   assert.equal(note.subject, '游戏产业')
   assert.equal(note.source, 'bilibili')
   assert.equal(note.duration, 2414)
-  assert.deepEqual(note.sectionTitles, ['02 速览', '03 核心知识点', '04 核心概念与术语', '05 复习卡片', '06 我的补充'].map((item) => item.replace(/^\d+\s+/, '')))
+  assert.deepEqual(note.sectionTitles, ['02 速览', '03 核心知识点', '04 核心概念与术语', '05 复习卡片', '附录', '06 我的补充'].map((item) => item.replace(/^\d+\s+/, '')))
   assert.ok(note.subsectionMap.has('关键数字'))
   assert.deepEqual(note.conceptEntries.map((item) => item.name), ['3A 游戏', '买断制'])
   assert.deepEqual(checkNoteShape(note), [])

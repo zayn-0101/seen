@@ -401,7 +401,7 @@ export function renderVideoNoteV5(input: {
   contentSource, contentQuality, duration, publishedAt, relatedNotes, tags, noteRoot, layout,
   contentType, template, quotes, terms, resources, quality, transcriptLength, review, reviewCards
 }): string
-// format 5：中文可见属性 + 文末 seen-meta；正文无 H1；摘要 callout；动态编号；概念与术语表（无 ^concept-）；多行复习卡 callout；附录 callout；我的补充固定在最后
+// format 5：中文可见属性 + 文末 seen-meta；正文无 H1；摘要 callout；动态编号；概念与术语表（无 ^concept-）；多行复习卡 callout；## 附录（不编号）内含四个可折叠 callout；我的补充固定在最后
 // reviewCards 优先于 question/answer：最多 5 张，问题自动补问号，答案 ≤60 字；没有复习卡时不造假卡
 // contentQuality !== 'full' 时只写摘要、章节和附录，不输出核心知识点、复习卡片、关键数字、概念和模板；没有真实评论/弹幕时讨论区标题用「延伸思考」
 // 旧 renderVideoNote 仍输出 format 4；旧笔记不自动改写

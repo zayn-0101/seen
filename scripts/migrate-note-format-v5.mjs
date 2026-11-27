@@ -382,7 +382,7 @@ function transformNote(note, video, originalTitle) {
     appendix.push(calloutText('note', label, discussion), '')
   }
   if (stats.length > 0) appendix.push(calloutText('info', '抓取统计', stats), '')
-  if (appendix.length > 0) bodyLines.push(...appendix)
+  if (appendix.length > 0) bodyLines.push('## 附录', '', ...appendix)
 
   bodyLines.push('## 07 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_START, buildManual(note), MANUAL_END, '')
 

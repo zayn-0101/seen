@@ -569,3 +569,18 @@
 - [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-095817`；安装后进程 PID 55884、服务 PID 55901，vault 权限正常
 - [x] `git push origin main` 与 tag `v0.5.7` 已推送；GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.7
 - [x] 本机 `/Applications/Seen.app` 已是 0.5.7，新视频自动整理使用 format 5
+
+## 2026-11-27 附录独立成节
+
+背景：用户发现 `## 06 复习卡片` 下还包含原话摘录、提到的资源、观众讨论、抓取统计四个 callout，而且全部默认折叠。原因是四个 callout 与 `## 07 我的补充` 之间没有新的二级标题，Obsidian 按标题层级把它们归到 06 下。
+
+- [x] `renderVideoNoteV5` 在第一个附录 callout 前输出不编号的 `## 附录`，`我的补充` 仍是最后一个编号区块
+- [x] `scripts/migrate-note-format-v5.mjs` 同步输出 `## 附录`，迁移后的旧笔记不再把附录挂在复习卡片下
+- [x] `SECTION_ORDER_V5` 在 `复习卡片` 与 `我的补充` 之间加入 `附录`，v5 自检按新区块顺序校验
+- [x] `core/test/render.test.js` 与 `core/test/note-check.test.js` 补断言：`## 附录` 位于复习卡片之后、第一个附录 callout 之前；聚焦测试 27/27 通过
+- [x] `docs/examples/note-format-v5-sample.md` 加入 `## 附录`
+- [x] 正式库 22 篇笔记全部补 `## 附录`，原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`
+- [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+- [ ] 0.5.8 构建、安装、push 与 GitHub Release 待执行
+
+已知取舍：`## 附录` 不参与 01~07 编号，避免附录变成第八个主区块；四个 callout 仍默认折叠，需要展开时点标题。

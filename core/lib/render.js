@@ -1069,7 +1069,7 @@ export function renderVideoNoteV5(input = {}) {
     number += 1
     lines.push('## ' + String(number).padStart(2, '0') + ' ' + section.title, '', ...section.body)
   }
-  if (appendix.length > 0) lines.push(...appendix)
+  if (appendix.length > 0) lines.push('## 附录', '', ...appendix)
   number += 1
   lines.push('## ' + String(number).padStart(2, '0') + ' 我的补充', '', '> 记录疑问、联想或待查资料。', '', MANUAL_BEGIN, '', MANUAL_END, '')
 

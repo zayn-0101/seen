@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成不编号的 `## 附录`，渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；0.5.8 待发布。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -90,7 +90,7 @@
   - [!summary]- 展开 N 张卡片
   - 内部多行卡：问题行、空行、? 行、空行、答案行；每张卡之间空行
   - #flashcards 标签由配置决定是否添加
-- 附录（按顺序，全部可折叠 callout）
+- ## 附录（不编号，全部可折叠 callout）
   - 原话摘录
   - 提到的资源
   - 观众讨论（仅真实弹幕/评论；无数据则省略）
@@ -292,7 +292,7 @@
 - [x] 概念与术语表（无正文块引用）
 - [x] 相关笔记
 - [x] 复习卡片多行卡
-- [x] 附录 callout
+- [x] ## 附录（不编号）内的可折叠 callout
 - [x] 我的补充
 - [x] 动态编号
 
@@ -325,6 +325,7 @@
 - obsidian.js 的收录识别与 review 更新支持 seen-meta；self-check.mjs 用 noteTags 对比状态标签。
 - 测试：cd core && node --test 407 项全部通过；npm run check 通过。
 - 样例已改为 callout 版式，附录在「我的补充」之前，并通过 v5 校验。
+- 2026-11-27 附录独立成不编号的 `## 附录`：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`。
 - 平台发布时间已接入：B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime`，统一经 `dates.js` 归一为 `YYYY-MM-DD`；旧缓存没有该字段时保持为空。
 - README、docs/contracts.md、docs/architecture.md、CLAUDE.md 已同步；docs/acceptance.md 已追加 v5 验收段。
 - 真实 B 站端到端（`BV1cUsu6ZEYp`，临时 vault，未写用户库）通过：生成 5 张真问答卡、原话不再出现 `[00:00]`、概念表无 `3A`/`DEI指标` 重复行、文件名去掉结尾句号；结构检查 0 findings。
