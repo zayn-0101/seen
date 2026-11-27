@@ -613,3 +613,16 @@
 - [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
 
 已知取舍：`06 复习卡片` 仍默认折叠，因为卡片是先自测再展开的内容；附录是资料，默认展开。
+
+## 2026-11-27 v0.5.9 发布
+
+背景：附录重编号与展开完成后，按用户「按你推荐的来」和既有完整发布流程升版本、构建、安装、推送并发布。
+
+- [x] `package.json` 升到 0.5.9，与代码、迁移脚本、测试、示例和文档一起提交 `8c7b25f fix: 附录改为 07 并默认展开`
+- [x] 发布前验证：`cd core && node --test` 408/408；`npm run check` 123 个文件通过；`npm run self-check` 22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.9.dmg`（85M，universal，版本 0.5.9，固定证书签名）
+- [x] DMG SHA256：`147d2ef8c69c7718737f5ef1bdfe7f4ea0d7eb6d014cb76441f0dec3bee42772`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-121237`；安装后进程 PID 99884、服务 PID 99913，`/api/status` 返回 ok、vault 正常、8 个学科
+- [x] `git push origin main`（`76ee91d..8c7b25f`）与 tag `v0.5.9` 已推送，tag 指向 `8c7b25f`
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ，资产 `Seen-v0.5.9.dmg` 89,261,206 bytes
+- [x] 本机 `/Applications/Seen.app` 已是 0.5.9，后续生成的 format 5 笔记使用 `07 附录` / `08 我的补充` 和默认展开的附录 callout

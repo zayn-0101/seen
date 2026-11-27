@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成 `07 附录` 并默认展开，我的补充顺延为 `08`；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成 `07 附录` 并默认展开，我的补充顺延为 `08`；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ，22 篇正式笔记已同步为 `07 附录` / `08 我的补充`。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -336,7 +336,7 @@
 - YouTube 暴露并修复：无字幕时模型仍从简介编出知识点与复习卡，v5 改为元数据版整节省略；`<Untitled Chapter 1>` 占位章节被过滤；没有抓取到评论时，讨论区标签从「YouTube 评论」改为「延伸思考」。
 - 2026-11-26 正式库迁移完成：22 篇、13 篇改名、40 个文件引用更新，备份 `~/.seen/backups/v5-2026-11-26T16-23-02`；修复改名未移走旧文件、索引写到 vault 根、字幕存档 owner、链接空格顺序、self-check 不识别 v5 五个问题。
 - 迁移后验证：`node --test` 407/407、`npm run check` 122 个文件、`npm run self-check` 22 篇 0 错误 0 警告。
-- 已发布：v0.5.7、v0.5.8。
+- 已发布：v0.5.7、v0.5.8、v0.5.9。
 
 ## 十、验收标准
 
