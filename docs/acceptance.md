@@ -583,7 +583,7 @@
 - [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
 - [x] 0.5.8 已构建、安装、push 并发布，见下一节
 
-已知取舍：`## 附录` 不参与 01~07 编号，避免附录变成第八个主区块；四个 callout 仍默认折叠，需要展开时点标题。
+已知取舍（v0.5.8 当时；v0.5.9 已改为参与编号并默认展开，完整结构下为 `07 附录`）：`## 附录` 不参与 01~07 编号，避免附录变成第八个主区块；四个 callout 仍默认折叠，需要展开时点标题。
 
 ## 2026-11-27 v0.5.8 发布
 
@@ -600,16 +600,16 @@
 
 ## 2026-11-27 附录重编号与展开
 
-背景：用户认为 `06 复习卡片 → 附录 → 07 我的补充` 的结构很怪，附录是正文内容，不需要默认折叠。推荐方案是附录参与编号成为 `07 附录`，我的补充顺延为 `08`，四个附录 callout 全部展开；用户确认「按你推荐的来」。
+背景：用户认为 `06 复习卡片 → 附录 → 07 我的补充` 的结构很怪，附录是正文内容，不需要默认折叠。推荐方案是附录参与编号（完整结构下为 `07 附录`），我的补充顺延为最后一节（完整结构下为 `08`），四个附录 callout 全部展开；用户确认「按你推荐的来」。
 
-- [x] `renderVideoNoteV5` 把附录加入动态编号，输出 `07 附录`；`我的补充` 顺延为 `08`，仍是最后一节
+- [x] `renderVideoNoteV5` 把附录加入动态编号（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`）；`我的补充` 顺延为最后一节，仍是最后一块
 - [x] 原话摘录、提到的资源、观众讨论/延伸思考、抓取统计四个附录 callout 去掉折叠标记 `-`，默认展开；`06 复习卡片` 的 `[!summary]-` 仍保持折叠
-- [x] 抓取统计只保留字幕、弹幕、评论；YouTube 去掉「章节」统计行，B 站/抖音仍为三行
-- [x] `scripts/migrate-note-format-v5.mjs` 同步输出 `07 附录` / `08 我的补充`，附录 callout 默认展开，`parseStats` 不再接受「章节」
+- [x] 抓取统计只保留字幕、弹幕、评论；YouTube 去掉「章节」统计行，B 站/抖音仍为三行；迁移后又清掉 3 篇 YouTube 笔记里残留的 `> - 章节：N 个`，清理后备份在 `~/.seen/backups/stats-v059-20261127-122605/video-notes.tgz`
+- [x] `scripts/migrate-note-format-v5.mjs` 同步把附录改为编号区块、我的补充放在最后并顺延，附录 callout 默认展开，`parseStats` 不再接受「章节」
 - [x] `core/test/render.test.js` 更新编号、展开 callout 和顺序断言；聚焦测试 27/27 通过
-- [x] 正式库 22 篇笔记重编为 `07 附录` / `08 我的补充`，四个附录 callout 展开；原文备份在 `~/.seen/backups/appendix-v059-20261127-120407/video-notes.tgz`
+- [x] 正式库 22 篇笔记按实际区块重编，附录不再无编号：3 篇完整结构为 `07 附录` / `08 我的补充`，13 篇为 `06 附录` / `07 我的补充`，6 篇为 `05 附录` / `06 我的补充`；四个附录 callout 展开；原文备份在 `~/.seen/backups/appendix-v059-20261127-120407/video-notes.tgz`
 - [x] `docs/examples/note-format-v5-sample.md` 与 Obsidian 预览副本同步为 07/08 和展开 callout
-- [x] README、CLAUDE.md、docs/contracts.md、docs/architecture.md、docs/note-template-v5-plan.md 已改为「07 附录、默认展开、08 我的补充」
+- [x] README、CLAUDE.md、docs/contracts.md、docs/architecture.md、docs/note-template-v5-plan.md 已改为「附录参与动态编号、默认展开，我的补充最后顺延」
 - [x] `cd core && node --test`：408 tests / 408 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
 
 已知取舍：`06 复习卡片` 仍默认折叠，因为卡片是先自测再展开的内容；附录是资料，默认展开。
@@ -625,4 +625,4 @@
 - [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261127-121237`；安装后进程 PID 99884、服务 PID 99913，`/api/status` 返回 ok、vault 正常、8 个学科
 - [x] `git push origin main`（`76ee91d..8c7b25f`）与 tag `v0.5.9` 已推送，tag 指向 `8c7b25f`
 - [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ，资产 `Seen-v0.5.9.dmg` 89,261,206 bytes
-- [x] 本机 `/Applications/Seen.app` 已是 0.5.9，后续生成的 format 5 笔记使用 `07 附录` / `08 我的补充` 和默认展开的附录 callout
+- [x] 本机 `/Applications/Seen.app` 已是 0.5.9，后续生成的 format 5 笔记使用动态编号的附录（完整结构下 07）、最后一节我的补充和默认展开的附录 callout

@@ -150,6 +150,7 @@ test('renderVideoNoteV5 uses Chinese properties, numbered sections and collapsib
   assert.ok(md.includes('> [!quote] 原话摘录（1 条）'))
   assert.ok(md.includes('> [!note] 提到的资源（1 个）'))
   assert.ok(md.includes('> [!info] 抓取统计'))
+  assert.ok(!md.includes('章节：'))
   assert.ok(!md.includes('> [!quote]-'))
   assert.ok(md.indexOf('## 07 附录') < md.indexOf('> [!quote] 原话摘录'))
   assert.ok(md.indexOf('> [!quote] 原话摘录') < md.indexOf('## 08 我的补充'))

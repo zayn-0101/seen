@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录已独立成 `07 附录` 并默认展开，我的补充顺延为 `08`；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ，22 篇正式笔记已同步为 `07 附录` / `08 我的补充`。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；408 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -34,7 +34,7 @@
 2. 元数据只放属性面板；正文只放内容。
 3. 一个信息只留一个地方：视频链接、UP 主、BV 号、字幕来源不再出现在抓取统计。
 4. 颜色有语义：H2 主区、H3 子区、链接、标签各用固定层级，不用颜色表达“随便强调”。
-5. 默认折叠用 callout，不用 details；details 在 Live Preview 里不可交互。
+5. 需要默认折叠的内容用 callout，不用 details；details 在 Live Preview 里不可交互。复习卡片默认折叠，附录默认展开。
 6. 插件兼容优先：复习卡片用 Spaced Repetition 的多行卡格式，问题、?、答案分行。
 7. 样式可降级：没有 seen-note.css 时，标题层级、属性、callout 仍能读，只是颜色和两列排版简化。
 
@@ -64,6 +64,8 @@
 - cssclasses 只放 seen-note，由 CSS 隐藏；没有 CSS 时也不影响内容。
 
 ### 3.2 正文结构
+
+编号按实际出现的区块连续顺延；下面列的是完整结构（完整结构下附录为 07、我的补充为 08；缺少「相关笔记」时附录为 06、我的补充为 07，再少一个区块则继续顺延）。
 
 - 摘要 callout：!abstract 摘要
   - 概述：2～3 句背景、矛盾和讨论范围，不提前给最终结论
@@ -325,7 +327,7 @@
 - obsidian.js 的收录识别与 review 更新支持 seen-meta；self-check.mjs 用 noteTags 对比状态标签。
 - 测试：cd core && node --test 407 项全部通过；npm run check 通过。
 - 样例已改为 callout 版式，附录在「我的补充」之前，并通过 v5 校验。
-- 2026-11-27 附录独立成 `07 附录` 并默认展开，我的补充顺延为 `08`：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-heading-2026-11-27T03-36-18-524Z`。
+- 2026-11-27 附录改为独立编号（完整结构下 `07`，其余按实际区块顺延）并默认展开，我的补充顺延为最后一节：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-v059-20261127-120407/video-notes.tgz`。
 - 平台发布时间已接入：B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime`，统一经 `dates.js` 归一为 `YYYY-MM-DD`；旧缓存没有该字段时保持为空。
 - README、docs/contracts.md、docs/architecture.md、CLAUDE.md 已同步；docs/acceptance.md 已追加 v5 验收段。
 - 真实 B 站端到端（`BV1cUsu6ZEYp`，临时 vault，未写用户库）通过：生成 5 张真问答卡、原话不再出现 `[00:00]`、概念表无 `3A`/`DEI指标` 重复行、文件名去掉结尾句号；结构检查 0 findings。
@@ -342,7 +344,7 @@
 
 - 新生成笔记结构符合本方案，属性面板只显示约定字段。
 - 正文只有文件名一个标题，不出现 H1。
-- 摘要、核心知识点、概念表、复习卡、07 附录、08 我的补充顺序正确。
+- 摘要、核心知识点、概念表、复习卡、附录、我的补充顺序正确（完整结构下为 07/08）。
 - 视频链接、UP 主、BV 号、字幕来源不在抓取统计重复。
 - 复习卡片默认折叠；展开后问题、?、答案分行可读。
 - Spaced Repetition 能识别 #flashcards 笔记，5 张卡都能复习。
@@ -373,9 +375,9 @@
 
 ## 十三、默认决策（待用户确认）
 
-1. 尾部 details 全部改成可折叠 callout，统一浅色样式。
+1. 尾部 details 全部改成 callout，统一浅色样式；复习卡默认折叠，附录默认展开。
 2. 核心知识点：每个 H3 第一条固定为结论句，不强行合并主题；超过 10 个 H3 时合并相近主题。
-3. 我的补充：放在 07 附录之后作为 08，最后一节；加一行提示。
+3. 我的补充：放在附录之后，最后一节（完整结构下为 08）；加一行提示。
 4. 概念块引用：移除正文 ^concept-，概念索引使用 state.concepts。
 5. flashcards 标签：默认加；可在配置中关闭。
 6. CSS：作为可选增强，随应用安装/提供一键安装，模板本身不依赖。
