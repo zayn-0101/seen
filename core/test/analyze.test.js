@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseJson, normalizeClassify, normalizeSummary, summarize } from '../lib/analyze.js'
+import { parseJson, normalizeClassify, normalizeSummary, summarize, buildSummarizePrompt } from '../lib/analyze.js'
 
 test('parseJson handles fences, trailing commas and prose', () => {
   assert.deepEqual(parseJson('\u0060\u0060\u0060json\n{"a":1,}\n\u0060\u0060\u0060'), { a: 1 })
@@ -30,6 +30,26 @@ test('normalizeSummary', () => {
   const fallback = normalizeSummary(null, '标题')
   assert.equal(fallback.summary, '标题')
   assert.deepEqual(fallback.keyPoints, [])
+})
+
+test('buildSummarizePrompt requires denser key points for long videos', () => {
+  const long = buildSummarizePrompt({
+    title: '长视频',
+    subject: '测试',
+    content: { transcript: '一段讲解。' },
+    longTranscript: true,
+  })
+  assert.match(long, /8~15 个主题/)
+  assert.match(long, /覆盖全片/)
+
+  const short = buildSummarizePrompt({
+    title: '短视频',
+    subject: '测试',
+    content: { transcript: '一段讲解。' },
+    longTranscript: false,
+  })
+  assert.match(short, /3~12 个主题/)
+  assert.doesNotMatch(short, /8~15 个主题/)
 })
 
 test('summarize 拒绝只有标题的回复并重试要求 keyPoints', async () => {

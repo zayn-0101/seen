@@ -890,7 +890,7 @@ export function splitTranscript(text, maxChars = 6000, overlap = 300) {
 
 /** 长字幕分块压缩，保证最终总结能看到全部内容。 */
 async function digestTranscript(ctx, config, { title, transcript }) {
-  const chunks = splitTranscript(transcript, 6000, 300).slice(0, 12)
+  const chunks = splitTranscript(transcript, 7000, 300).slice(0, 12)
   if (chunks.length <= 1) return transcript
   const parts = []
   for (let i = 0; i < chunks.length; i += 1) {
@@ -904,15 +904,15 @@ async function digestTranscript(ctx, config, { title, transcript }) {
       '【字素材结束】',
       '',
       '要求：',
-      '- 只提取讲解中真实出现的事实、步骤、概念、数字、结论；不要编造。',
-      '- 用 5~12 条短句列出，保留关键术语和操作顺序。',
+      '- 只提取讲解中真实出现的事实、步骤、概念、数字、结论、案例和转折；不要编造。',
+      '- 用 8~16 条短句列出，保留关键术语、数字、操作顺序和论证分支；每条尽量带上字幕中的 [mm:ss] 时间标记。',
       '- 不要输出 JSON，不要输出标题，只输出要点文本。',
     ].join('\n')
     try {
       const text = await callLlm(ctx, config, {
         system: '你是课程字幕压缩助手，只做忠实的信息压缩，不补充字幕之外的内容。',
         messages: [userMessage(prompt)],
-        maxTokens: 3000,
+        maxTokens: 4000,
       })
       const cleaned = cleanText(text)
       if (cleaned) parts.push('【第 ' + (i + 1) + ' 段】' + cleaned)
@@ -940,14 +940,14 @@ async function mergeDigests(ctx, config, { title, parts = [] }) {
     '要求：',
     '- 同一件事在多段里出现时只保留一次，合并同类项。',
     '- 严格按原片的推进顺序排列，不要重新组织。',
-    '- 用 8~20 条短句输出，保留关键术语、数字、结论。',
+    '- 用 20~40 条短句输出，保留关键术语、数字、结论、案例和 [mm:ss] 时间标记；不要只留结论。',
     '- 不要输出 JSON、标题或额外说明。',
   ].join('\n')
   try {
     const text = await callLlm(ctx, config, {
       system: '你是课程纪要编辑，只做去重与主线整理，不补充原文之外的内容。',
       messages: [userMessage(prompt)],
-      maxTokens: 3000,
+      maxTokens: 5000,
     })
     const cleaned = cleanText(text)
     return cleaned || list.join('\n\n')
@@ -1014,7 +1014,7 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
   return parts.join('\n\n')
 }
 
-function buildSummarizePrompt({ title, subject, keywords, content, transcriptChunked = false, vocabulary = [] }) {
+export function buildSummarizePrompt({ title, subject, keywords, content, transcriptChunked = false, longTranscript = false, vocabulary = [] }) {
   const keywordList = Array.isArray(keywords)
     ? keywords.map((keyword) => cleanText(keyword)).filter(Boolean)
     : []
@@ -1059,7 +1059,9 @@ function buildSummarizePrompt({ title, subject, keywords, content, transcriptChu
     '规则：',
     '1. summary：不超过 120 个汉字，概括视频核心内容。',
     '2. question / answer：用一到两句话说清「这期试图回答什么问题」和「最终给出了什么答案」。若视频只是知识罗列、没有明确问题，两者都留空字符串。',
-    '3. keyPoints：有字幕时 3~20 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。要点写成 {"text":"...","time":123} 对象，time 尽量给，拿不准省略。',
+    longTranscript
+      ? '3. keyPoints：这是长视频（字幕超过 8000 字），输出 8~15 个主题，每个主题 2~5 条要点；必须覆盖全片从开头到结尾的主要论证、案例和转折，不能只写开头、结论或最显眼的几个点；并列分支（原因、案例、反例、行业背景）各自成主题。素材确实单薄时再少写。主题和要点都要具体、可复习。要点写成 {"text":"...","time":123} 对象，time 尽量给，拿不准省略。'
+      : '3. keyPoints：有字幕时 3~12 个主题，每个主题 1~5 条要点；无字幕时 3~8 个主题；主题和要点都要具体、可复习。要点写成 {"text":"...","time":123} 对象，time 尽量给，拿不准省略。',
     '4. concepts：3~6 个真正的核心概念（术语、方法、框架、事件），每个配一句话解释；不要输出「视频」「内容」「观点」这类泛化词；名称 2~8 个汉字，不要带括号或注释；同一概念如有别称，写进 aliases。',
     '5. tags.themes：2~4 个主题词，每个 2~6 个汉字（英文名不超过 12 个字符），写这个视频所属的领域或主题，例如「人工智能」「游戏设计」「语言文化」；比 concepts 更宽，不要写具体概念名，不要写平台名（B站/抖音/YouTube），不要重复「学科」那一栏的学科名，不要写「视频」「教程」「干货」这类形态词，不要带括号、书名号、引号。',
     '6. tags.types：从「教程、科普、访谈、评测、观点、纪录、播客、课程」里选 0~2 个，必须原样使用这些词，不要自造或改写。',
@@ -1168,16 +1170,18 @@ export async function summarize(ctx, config, input = {}) {
   const { title = '', subject = '', keywords = [], content = null, transcript = '', transcriptSource = '', vocabulary = [] } = input || {}
   const fallbackTitle = cleanText(title)
   const transcriptText = cleanText(transcript || content?.transcript || '')
+  const longTranscript = transcriptText.length > 8000
   let transcriptDigest = transcriptText
   let transcriptChunked = false
-  if (transcriptText.length > 8000) {
+  // 略高于素材 14000 字的上限，避免只超出几百字就触发分块压缩而丢掉论证分支。
+  if (transcriptText.length > 15000) {
     transcriptDigest = await digestTranscript(ctx, config, { title, transcript: transcriptText })
     transcriptChunked = transcriptDigest !== transcriptText
   }
   const promptContent = content
     ? { ...content, transcript: transcriptDigest, transcriptSource: transcriptSource || content?.transcriptSource || '' }
     : { transcript: transcriptDigest, transcriptSource }
-  const prompt = buildSummarizePrompt({ title, subject, keywords, content: promptContent, transcriptChunked, vocabulary })
+  const prompt = buildSummarizePrompt({ title, subject, keywords, content: promptContent, transcriptChunked, longTranscript, vocabulary })
 
   const request = async (extra) => {
     let text
