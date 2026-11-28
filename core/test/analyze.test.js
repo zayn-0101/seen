@@ -52,6 +52,54 @@ test('buildSummarizePrompt requires denser key points for long videos', () => {
   assert.doesNotMatch(short, /8~15 个主题/)
 })
 
+test('summarize keeps timed transcript beyond 14k up to the material cap', async () => {
+  const seenPrompts = []
+  const ctx = {
+    llm: {
+      stream: (args) => {
+        seenPrompts.push(JSON.stringify(args))
+        return JSON.stringify({ summary: '一句真正的摘要', keyPoints: [{ title: '主题', points: ['要点'] }] })
+      },
+    },
+  }
+  const timed = '[00:00] 开头 ' + '中'.repeat(15000) + ' [20:00] 尾部标记'
+  await summarize(ctx, {}, {
+    title: '长视频',
+    transcript: '纯文本开头。',
+    content: { transcript: '纯文本开头。', timedTranscript: timed },
+  })
+  assert.equal(seenPrompts.length, 1)
+  assert.match(seenPrompts[0], /尾部标记/)
+})
+
+test('summarize digests the timed transcript over the cap and drops the raw text', async () => {
+  const prompts = []
+  const ctx = {
+    llm: {
+      stream: (args) => {
+        const prompt = args.messages
+          .map((message) => (message.content || []).map((part) => part.text || '').join(''))
+          .join('\n')
+        prompts.push(prompt)
+        if (prompt.includes('压缩成高密度的知识要点')) return '分段摘要 [00:00] 开头'
+        if (prompt.includes('合并成一份不重复')) return '合并摘要 [00:00] 尾部标记'
+        return JSON.stringify({ summary: '一句真正的摘要', keyPoints: [{ title: '主题', points: ['要点'] }] })
+      },
+    },
+  }
+  const longTimed = '[00:00] 开头 ' + '内容'.repeat(15000) + ' [45:00] 尾部标记'
+  await summarize(ctx, {}, {
+    title: '超长视频',
+    transcript: '纯文本开头。',
+    content: { transcript: '纯文本开头。', timedTranscript: longTimed },
+  })
+  assert.ok(prompts.length > 2)
+  assert.ok(prompts.slice(0, -1).some((prompt) => prompt.includes('尾部标记')))
+  const finalPrompt = prompts[prompts.length - 1]
+  assert.match(finalPrompt, /合并摘要/)
+  assert.ok(!finalPrompt.includes('内容'.repeat(100)))
+})
+
 test('summarize 拒绝只有标题的回复并重试要求 keyPoints', async () => {
   const replies = [
     JSON.stringify({ summary: '标题' }),

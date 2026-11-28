@@ -18,6 +18,8 @@ import { normalizeTagTypes, normalizeThemes } from './tags.js'
 
 const DEFAULT_MAX_TOKENS = 4096
 const LLM_TIMEOUT_MS = 300000
+// 带时间轴字幕完整送入的上限。超过后必须走分块摘要，不能直接截断丢尾部。
+const MAX_MATERIAL_TRANSCRIPT_CHARS = 28000
 const JSON_FAIL = Symbol('json-fail')
 
 /* ------------------------------------------------------------------ */
@@ -890,7 +892,8 @@ export function splitTranscript(text, maxChars = 6000, overlap = 300) {
 
 /** 长字幕分块压缩，保证最终总结能看到全部内容。 */
 async function digestTranscript(ctx, config, { title, transcript }) {
-  const chunks = splitTranscript(transcript, 7000, 300).slice(0, 12)
+  // 不再限制 12 块：超过 12 块的长字幕如果被截掉，尾部内容会静默丢失。
+  const chunks = splitTranscript(transcript, 7000, 300)
   if (chunks.length <= 1) return transcript
   const parts = []
   for (let i = 0; i < chunks.length; i += 1) {
@@ -918,7 +921,7 @@ async function digestTranscript(ctx, config, { title, transcript }) {
       if (cleaned) parts.push('【第 ' + (i + 1) + ' 段】' + cleaned)
     } catch { /* 单块失败不阻塞其他块 */ }
   }
-  if (!parts.length) return truncateText(transcript, 14000)
+  if (!parts.length) return truncateText(transcript, MAX_MATERIAL_TRANSCRIPT_CHARS)
   // 分块压缩只解决了长度问题，块之间仍会重复、断裂；再合并一次才能理出主线
   return await mergeDigests(ctx, config, { title, parts })
 }
@@ -985,7 +988,7 @@ function buildMaterialBlock(content, { transcriptText = null } = {}) {
         : content.transcriptSource === 'whisper'
           ? '（来源：语音识别 Whisper 转写，自动识别，可能存在同音错字）'
           : ''
-    parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcriptBody, 14000))
+    parts.push('【视频字幕/讲解文本' + sourceLabel + '】\n' + truncateText(transcriptBody, MAX_MATERIAL_TRANSCRIPT_CHARS))
   }
 
   const danmaku = Array.isArray(content.danmaku)
@@ -1169,17 +1172,26 @@ export async function editSummary(ctx, config, input = {}) {
 export async function summarize(ctx, config, input = {}) {
   const { title = '', subject = '', keywords = [], content = null, transcript = '', transcriptSource = '', vocabulary = [] } = input || {}
   const fallbackTitle = cleanText(title)
-  const transcriptText = cleanText(transcript || content?.transcript || '')
-  const longTranscript = transcriptText.length > 8000
-  let transcriptDigest = transcriptText
+  const plainTranscript = cleanText(transcript || content?.transcript || '')
+  const timedTranscript = cleanText(content?.timedTranscript || '')
+  // 带时间轴字幕信息更全；有它时优先用它判断长度、做分块，而不是只看纯文本。
+  const materialTranscript = timedTranscript || plainTranscript
+  const longTranscript = materialTranscript.length > 8000
+  let transcriptDigest = materialTranscript
   let transcriptChunked = false
-  // 略高于素材 14000 字的上限，避免只超出几百字就触发分块压缩而丢掉论证分支。
-  if (transcriptText.length > 15000) {
-    transcriptDigest = await digestTranscript(ctx, config, { title, transcript: transcriptText })
-    transcriptChunked = transcriptDigest !== transcriptText
+  if (materialTranscript.length > MAX_MATERIAL_TRANSCRIPT_CHARS) {
+    transcriptDigest = await digestTranscript(ctx, config, { title, transcript: materialTranscript })
+    transcriptChunked = transcriptDigest !== materialTranscript
   }
+  // 分块后必须清空原始 timedTranscript：否则 buildMaterialBlock 会优先用原文并再次截断，
+  // 分块摘要等于白做，尾部内容仍然丢失。
   const promptContent = content
-    ? { ...content, transcript: transcriptDigest, transcriptSource: transcriptSource || content?.transcriptSource || '' }
+    ? {
+        ...content,
+        transcript: transcriptDigest,
+        transcriptSource: transcriptSource || content?.transcriptSource || '',
+        timedTranscript: transcriptChunked ? '' : content?.timedTranscript,
+      }
     : { transcript: transcriptDigest, transcriptSource }
   const prompt = buildSummarizePrompt({ title, subject, keywords, content: promptContent, transcriptChunked, longTranscript, vocabulary })
 
@@ -1205,7 +1217,7 @@ export async function summarize(ctx, config, input = {}) {
       '（注意：上一次你的回复无法解析为合法 JSON，或者缺少 summary 和至少一个非空 keyPoints。请严格只输出一个合法 JSON 对象本身，必须包含 summary 与非空 keyPoints 数组；前后不要任何解释文字、不要 markdown 代码块、不要尾逗号。）'
     )
   }
-  const finalResult = result || buildDigestFallback(fallbackTitle, transcriptDigest || transcriptText)
+  const finalResult = result || buildDigestFallback(fallbackTitle, transcriptDigest || materialTranscript)
   if (config?.editorPass) {
     const edited = await editSummary(ctx, config, {
       title: fallbackTitle,

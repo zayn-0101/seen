@@ -1,6 +1,6 @@
 # 拾影视频笔记 v5 模板优化方案（完整版）
 
-> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；410 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ；v0.5.10 已发布并推送（提交 `f5905b4`，学科手册术语表修复）：https://github.com/zayn-0101/seen/releases/tag/v0.5.10 。v0.5.11 已发布并推送（提交 `18072be`，长视频总结密度调整，22 篇正式笔记已重生成）：https://github.com/zayn-0101/seen/releases/tag/v0.5.11 。callout 配色统一尚未做，当前沿用 Obsidian 默认配色。
+> 状态：Phase 1–5 已完成。真实 B 站、抖音和 YouTube 端到端生成通过；正式库 22 篇旧 format 4 笔记已迁移到 format 5，原文件与状态备份在 `~/.seen/backups/v5-2026-11-26T16-23-02`；22 篇旧笔记已补 3~5 张真复习卡（2026-11-27），备份在 `~/.seen/backups/review-cards-20261127-084019`；412 项测试通过，自检 22 篇 0 错误 0 警告。迁移提交 `88da1f1`、补卡提交 `28bcb0a`、版本提交 `a1ac63e`；v0.5.7 已发布并推送：https://github.com/zayn-0101/seen/releases/tag/v0.5.7 。2026-11-27 附录改为独立编号并默认展开（完整结构下为 `07 附录`，无相关笔记时为 `06`，再少一个区块时为 `05`），我的补充顺延为最后一节；渲染器、迁移脚本、校验、示例和 22 篇正式笔记已同步；v0.5.8 已发布：https://github.com/zayn-0101/seen/releases/tag/v0.5.8 。v0.5.9 已发布并推送（提交 `8c7b25f`）：https://github.com/zayn-0101/seen/releases/tag/v0.5.9 ；v0.5.10 已发布并推送（提交 `f5905b4`，学科手册术语表修复）：https://github.com/zayn-0101/seen/releases/tag/v0.5.10 。v0.5.11 已发布并推送（提交 `18072be`，长视频总结密度调整，22 篇正式笔记已重生成）：https://github.com/zayn-0101/seen/releases/tag/v0.5.11 。callout 配色统一尚未做，当前沿用 Obsidian 默认配色。
 > 样例：docs/examples/note-format-v5-sample.md
 > 可选样式：docs/examples/seen-note.css
 
@@ -230,7 +230,7 @@
   - summary 2～3 句，不提前下最终结论
   - keyPoints 每个主题第一条为结论句
   - 长视频（字幕 >8000 字）要求 8~15 个主题、每主题 2~5 条要点，覆盖全片论证、案例和转折，并列分支各自成主题（2026-11-28）
-  - 字幕 >15000 字才分块摘要；分块保留论证分支和 `[mm:ss]`，合并后 20~40 条
+  - 有效字幕（优先带时间轴版本）不超过 28000 字时完整送入；超过 28000 字才从带时间轴原文分块摘要（7000 字/块），分块保留论证分支和 `[mm:ss]`，合并后 20~40 条；分块后清空原始字幕，避免二次截断（2026-11-28 修复）
   - numbers 增加 time 可选
   - 术语与概念去重
   - 复习卡片可选：由程序从 question/answer/concepts 生成，不额外调用模型
@@ -327,7 +327,7 @@
 - note-check.js 支持 v5 解析与校验：中文属性、seen-meta、编号标题、H3 子区块、概念表、callout。
 - index.js 已切到 v5 渲染，传入 originalTitle/displayTitle/updatedAt/noteTags，并在重整理时解析 seen-meta 的 review。
 - obsidian.js 的收录识别与 review 更新支持 seen-meta；self-check.mjs 用 noteTags 对比状态标签。
-- 测试：cd core && node --test 407 项全部通过（当时；当前 410 项）；npm run check 通过。
+- 测试：cd core && node --test 407 项全部通过（当时；当前 412 项）；npm run check 通过。
 - 样例已改为 callout 版式，附录在「我的补充」之前，并通过 v5 校验。
 - 2026-11-27 附录改为独立编号（完整结构下 `07`，其余按实际区块顺延）并默认展开，我的补充顺延为最后一节：render.js、迁移脚本、`SECTION_ORDER_V5`、render/note-check 测试、示例和 22 篇正式笔记同步；22 篇原文备份在 `~/.seen/backups/appendix-v059-20261127-120407/video-notes.tgz`。
 - 平台发布时间已接入：B 站 `pubdate`、YouTube `upload_date`/`release_date`/`timestamp`、抖音 `createTime`，统一经 `dates.js` 归一为 `YYYY-MM-DD`；旧缓存没有该字段时保持为空。
