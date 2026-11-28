@@ -647,3 +647,33 @@
 - [x] 重启后启动重建完成：8 篇学科手册共 119 个术语全部补齐解释，`no_explanation=0`；抽样「人工智能」手册首条为 `- **Harness** — 原意「马具」，指把模型与工具连接起来、让模型听懂指令的工作环境。`
 - [x] `git push origin main`（`82cc71e..f5905b4`）与 tag `v0.5.10` 已推送，tag 指向 `f5905b4`
 - [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.10 ，资产 `Seen-v0.5.10.dmg` 89,218,847 bytes
+
+## 2026-11-28 长视频总结密度调整
+
+背景：3A 笔记按旧逻辑重生成后，核心知识点从 12 个主题 / 48 条要点降到 6 个主题 / 14 条要点（核心区 695 字），结构合规但内容明显变薄。原因是 `summarize` 在字幕超过 8,000 字时先压成 8~20 条短句，论证分支被丢掉。用户选择先调提示词密度、只重跑 3A，确认后再批量。
+
+- [x] `core/lib/analyze.js`：长视频（字幕 >8,000 字）总结要求 8~15 个主题、每主题 2~5 条要点，覆盖全片论证、案例和转折；分块阈值从 8,000 字调到 15,000 字，分块 7,000 字、每块 8~16 条并保留 `[mm:ss]`，合并后 20~40 条
+- [x] `core/test/analyze.test.js` 新增长/短视频提示词密度断言
+- [x] 3A 最终样张：11,096 字、14 个核心主题、61 条要点、79 个时间链接；核心区 6,984 字，旧笔记为 5,936 字 / 核心 2,678 字
+- [x] 为恢复时间链接，从缓存重建 4 篇 B 站笔记的带时间戳字幕：DSH 21,730 字、GTA 千亿豪赌 9,395 字、鹤岗 7,614 字、Obsidian 入门 11,035 字
+- [x] 批量重生成剩余 21 篇，0 失败；正文 109,997 → 128,752 字（+17%），核心知识点 41,827 → 54,703 字（+31%），时间链接 221 → 463；13 篇变长、8 篇变短
+- [x] 2 篇 YouTube 笔记（第二大脑、Give Me 15 Minutes）因缓存无时间轴，重生成后补回旧章节块（9 条 / 8 条）
+- [x] 连同 3A，22 篇正文约 139,848 字，核心知识点约 61,687 字
+- [x] 22 篇复习进度、笔记创建日期与「我的补充」正文全部保留；22 篇仍为 format 5，旧标记 0
+- [x] 备份：`~/.seen/backups/3a-timed-20261128-002648`（3A 笔记与字幕）、`~/.seen/backups/batch-regen-20261128-011110`（全库笔记与 state）
+- [x] `cd core && node --test`：410 tests / 410 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0
+
+已知取舍：北京外卖、第二大脑、割裂的 30 帧、中国人不知道「司机」4 篇重生成后正文变短；逐篇读过，主要是旧版过细分支被合并，主要结论和信息点仍在。`buildMaterialBlock` 仍把带时间轴字幕截到 14,000 字，DSH 这类 20k+ 字长视频的尾部可能没有送入模型，留待后续优化。
+
+## 2026-11-28 v0.5.11 发布
+
+背景：密度调整在仓库代码中完成，正式库 22 篇已重生成；按用户「走」执行完整发布流程。
+
+- [x] `package.json` 升到 0.5.11，与 `analyze.js`、测试、README、CLAUDE.md、模板方案提交 `18072be feat: 提高长视频总结信息密度`
+- [x] 发布前验证：`cd core && node --test` 410/410；`npm run check` 123 个文件通过；`npm run self-check` 22 篇 0 错误 0 警告
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.11.dmg`（85M，universal，版本 0.5.11，固定证书 `Seen Local Signing`）
+- [x] DMG SHA256：`2865be0366a15750730cfb4e4a9bbc26afeef2bc4f00cc09da6a441e6655e52d`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261128-101345`；安装后进程 PID 40667、服务 PID 40670，`/api/status` 返回 ok、polling true、vault 正常、8 个学科
+- [x] 已确认安装包内 `analyze.js` 含新密度规则（`8~15 个主题`）
+- [x] `git push origin main` 与 tag `v0.5.11` 已推送，tag 指向 `18072be`
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.11 ，资产 `Seen-v0.5.11.dmg` 89,262,779 bytes
