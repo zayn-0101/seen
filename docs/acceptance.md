@@ -690,4 +690,17 @@
 - [x] 4 篇变短笔记（北京外卖、第二大脑、割裂的 30 帧、中国人不知道「司机」）逐篇复核，确认是旧版过细分支被合并，主要结论和信息点仍在，本次不重跑
 - [x] `cd core && node --test`：412 tests / 412 pass / 0 fail；`npm run check`：123 个文件通过；`npm run self-check`：22 篇（当前格式 22 / 旧格式 0）错误 0 警告 0；索引 382 条双链
 - [x] 备份：`~/.seen/backups/longfix-20261128-105733/`（`video-notes.tgz`、`state.tgz`）
-- [ ] 尚未升版本、构建安装或推送；`/Applications/Seen.app` 仍为 0.5.11，安装版仍用 14,000 字截断的旧代码
+- [x] 2026-11-28 已升版本 0.5.12 并完成发布，见下一节
+
+## 2026-11-28 v0.5.12 发布
+
+背景：长字幕完整送入与 4 篇长笔记重跑已在仓库完成，按用户要求先做文档收尾，再走完整发布流程。
+
+- [x] `package.json` 升到 0.5.12；修复提交 `8cc35de fix: 长字幕完整送入模型`，版本提交 `648eac1 chore: release v0.5.12`
+- [x] 发布前验证：`cd core && node --test` 412/412；`npm run check` 123 个文件；`npm run self-check` 22 篇 0 错误 0 警告
+- [x] `./scripts/make-release.sh` 产出 `dist/Seen-v0.5.12.dmg`（85M，universal，版本 0.5.12，固定证书 `Seen Local Signing`）
+- [x] DMG SHA256：`a77a1ac24d4da30b7246270194a824234ae003797c1dc7810e6959d060cd163b`
+- [x] 安装到 `/Applications/Seen.app`，旧版本备份在 `~/.seen/install-backups/Seen.app.20261128-131503`；安装后进程 PID 2074、服务 PID 2107，`/api/status` 返回 ok、polling true、vault 正常、8 个学科
+- [x] 已确认安装包内 `analyze.js` 含 `MAX_MATERIAL_TRANSCRIPT_CHARS = 28000`
+- [x] `git push origin main`（`9c8311a..648eac1`）与 tag `v0.5.12` 已推送，tag 指向 `648eac1`
+- [x] GitHub Release 已发布并设为 latest：https://github.com/zayn-0101/seen/releases/tag/v0.5.12 ，资产 `Seen-v0.5.12.dmg` 89,219,418 bytes
